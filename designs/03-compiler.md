@@ -96,6 +96,11 @@ body ::= e ...                           ; psyntax 实际只生成一个
 | 7 ~ 14 | 合在 `codegen.sls` 的一遍按上下文（value / effect / test / tail）生成栈式代码中：lambda → Procedure 子类（无自由变量者静态方法 + 单例）；库变量 → 模块静态字段；库中无自由变量且不被再赋值的 lambda 为"已知过程"，入口先预链接（创建并写入字段与位置，等同旧系统的静态链接，支持跨库前向调用），参数个数相符的调用直接 `call` 静态子句方法；自尾调用 → 重新赋参数并跳回方法开头；其余尾调用加 `tail.`（try 内不加）；尾位置的 `apply` 展开后 `tail. callvirt InvokeN`；谓词原语在 test 上下文直接生成比较；后面的操作数含 try 时先把全部操作数存入临时变量（lift-try）；`.maxstack` 由发射器计算 |
 | 15 emit-lcil | `lcil.sls`，块状结构逐行写出 |
 
+与 ChezScheme 的对照（`~/workspace/ChezScheme/s`）：
+- **原语数据**：Chez 的 `primdata.ss` 用 `define-symbol-flags*` 声明每个原语的签名（参数类型 → 结果类型，如 `[sig [(fixnum fixnum) -> (boolean)]]`）、谓词信息与细分标志（`pure`、`mifoldable`、`discard`、`unrestricted`、`safeongoodargs`、`arith-op`、`cp02` …），按库分组。我们的 `primitives.ss` 由 C# 特性生成，只有重载、`pure`/`unsafe`/`allow-tail-call` 与内联模板名，没有类型签名。M6 做类型推断与拆箱（iron-033）时应仿照 Chez 加入签名与"可折叠 / 可丢弃"的区分。
+- **内联**：Chez 的 `cpprim.ss` 用 `define-inline 级别 名字 [子句 …]` 表驱动地写了 600 多个内联处理器，安全级别（2）先做类型检查、失败时退回库调用（`build-libcall`）。我们的内联模板写在代码生成的 `case` 中，带检查的 `car`/`cdr` 等仍是静态调用。以后宜把模板移到独立的表驱动模块，并加入"检查 + 退回"的安全内联。
+- **pass 粒度**：Chez 的 `np-languages.ss` 定义了 L1 ~ L16 等二十多个语言，`cpnanopass.ss` 中 `np-recognize-let`、`np-convert-assignments`、`np-recognize-loops`、`np-convert-closures`、`np-optimize-direct-call`、`np-simplify-if` 等几十个小 pass 各做一件事。我们第一版把第 7 ~ 14 步合在一个代码生成过程里；M6 优化时宜按 Chez 的方式拆成独立 pass（循环识别、闭包转换、直接调用优化、if 化简各一个语言层次）。
+
 内联模板：`void` `$car` `$cdr` `cons` `eq?` `not` `null?` `pair?`、`$fx` 算术 / 位运算 / 比较 / 零与符号判断、`$fl` 算术与比较（`<=`、`>=` 对 NaN 为假）；其余原语静态调用。`call/cc`、`call-with-values`、`values` 用原语表中的后备实现（静态调用）；`ffi-*`、`pinvoke-call-internal`、`define-clr-class-internal` 编译为运行时报"尚不支持"。第一版不生成序列点（注解在 parse-core 剥离）。
 
 ## 5. 尾调用

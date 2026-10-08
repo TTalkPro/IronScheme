@@ -17,3 +17,8 @@
 ## 从 M4 转来
 
 - 编译器第一版未做：类型推断与拆箱、已知 RTD 访问器内联、`call-with-values` 消费者内联、跨库直接调用、序列点（调试信息）。生成代码的统计见 iron-024 结论（2269 个过程类，62% 静态）。
+
+## 从 M5 转来
+
+- 新系统中每次 `eval` 都经新编译器（nanopass 各 pass + 发射），逐条 eval 很多的程序明显变慢：trigtest 在 stage1 上 52 秒（stage0 解释 eval 17 秒）。可考虑：简单表达式直接解释、缓存、减少 pass 开销、把编译器自身的 nanopass 代码优化。
+- 与 ChezScheme 的对照与建议见 `designs/03-compiler.md` §4.1 末尾（原语签名、表驱动安全内联、pass 拆分）。

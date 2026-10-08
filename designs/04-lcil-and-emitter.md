@@ -125,6 +125,7 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 | `(pair a d)` `(list e …)` `(dlist e … 表尾)` `(vec e …)` `(bv "十六进制")` | 序对与表（未被共享的表尾序对连成 `list`/`dlist`，避免长表深度嵌套）、向量、字节向量 |
 | `(rtd "名字" uid 父 sealed? opaque? ((mutable\|immutable "字段") …))` | 记录类型；uid 为 `(sym …)`（非生成性）、`(str …)` 或 `(false)`（生成性）；父为编码或 `(false)` |
 | `(rec rtd f …)` | 记录（含简单条件） |
+| `(rcd rtd 父)` | 记录构造描述符（只支持没有 protocol 的；nanopass 生成的代码把展开时创建的 RCD 作为常量）；父为编码或 `(false)` |
 | `(cnd 简单条件 …)` | 复合条件 |
 | `(ann 表达式 源位置 剥离后的表达式)` | reader 注解 |
 | `(eqht 键 值 …)` | eq 哈希表（psyntax 的 rib 索引用它）；条目按键（符号、字符串、定长整数的文本）排序，保证确定 |

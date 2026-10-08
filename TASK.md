@@ -32,8 +32,8 @@
 | [iron-025](tasks/iron-025-lower-calls-prims-interop.md) | 调用、原语与互操作降级 | M4 | iron-024、iron-012 | 完成 |
 | [iron-026](tasks/iron-026-normalize-and-linearize.md) | 上下文规范化、try 提升与线性化 | M4 | iron-025 | 完成 |
 | [iron-027](tasks/iron-027-compiler-driver.md) | 编译驱动 | M4 | iron-026、iron-021 | 完成 |
-| [iron-028](tasks/iron-028-phase-a-stage0-build.md) | Phase A：stage0 编译出新 boot 镜像 | M5 | iron-027、iron-021、iron-017 | 未开始 |
-| [iron-029](tasks/iron-029-host-and-repl.md) | 新宿主 IronScheme.Host 与 REPL | M5 | iron-021、iron-010、iron-008 | 未开始 |
+| [iron-028](tasks/iron-028-phase-a-stage0-build.md) | Phase A：stage0 编译出新 boot 镜像 | M5 | iron-027、iron-021、iron-017 | 完成 |
+| [iron-029](tasks/iron-029-host-and-repl.md) | 新宿主 IronScheme.Host 与 REPL | M5 | iron-021、iron-010、iron-008 | 完成 |
 | [iron-030](tasks/iron-030-phase-b-fixpoint.md) | Phase B：自举不动点 | M6 | iron-028、iron-029 | 未开始 |
 | [iron-031](tasks/iron-031-r6rs-and-system-libraries.md) | R6RS 测试与系统库编译达标 | M6 | iron-030 | 未开始 |
 | [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 未开始 |

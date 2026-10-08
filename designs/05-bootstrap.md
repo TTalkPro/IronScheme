@@ -42,6 +42,17 @@
    判据：stage2 与 stage3 的 Lcil 文本一致，dll 逐字节一致
 ```
 
+### 3.1 Phase A 的实际做法（iron-028）
+
+`tools/build-stage1.sh` → stage0 执行种子后运行 `ironscheme-buildscript-nano.sps`：
+
+1. 在 bootstrap 库集合中展开 37 个 boot 源文件；
+2. 求出新 boot 的导出位置，并在构建进程中把它们绑定到同名值（psyntax 导出取脚本所用的源码副本，其余取运行中系统），使 nanopass 宏能在构建进程中执行；
+3. 在 bootstrap 集合中加载 `(ironscheme compiler)`（连同 nanopass），经 `serialize-all` 取得 24 个库的 invoke 代码放进 boot；编译器的 `compile-core` 等经图例导出；
+4. 用新编译器编译全部 62 个形式。确定性模式下 bootstrap 展开使用 gensym 领域 `boot:`，避免与运行中系统同名库的 gensym 冲突。
+
+nanopass 的宏不随 boot 安装（boot 只含其运行时代码）；用户程序 `(import (nanopass))` 时从源码加载另一份。新宿主 `IronScheme.Host` 加载 stage1，`eval` 走镜像内的新编译器（内存模式常量传活对象，04 §3）。
+
 ## 4. stage0 解释器
 
 | 项 | 决定 |
