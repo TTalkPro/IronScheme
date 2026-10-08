@@ -1,0 +1,97 @@
+(lcil 1
+  (assembly "closure" (references "IronScheme.Core") (entry "#Module" "Initialize"))
+  (type "#Module"
+    (attrs abstract sealed)
+    (method "Init0"
+      (attrs static)
+      (params)
+      (ret "System.Object")
+      (locals)
+      (clr-namespaces)
+      (body
+        (ldsfld "_Module$0" "Instance")
+        (ret)))
+    (method "Initialize"
+      (attrs static)
+      (params)
+      (ret "System.Object")
+      (body
+        (call "#Module" "Init0" () "System.Object")
+        (ret))))
+  (type "_Module$1"
+    (base "IronScheme.Core.Procedure")
+    (attrs sealed)
+    (field "c0" "System.Object")
+    (method "C0"
+      (attrs)
+      (params "System.Object")
+      (ret "System.Object")
+      (locals)
+      (clr-namespaces)
+      (body
+        (label start)
+        (ldarg 0)
+        (ldfld "_Module$1" "c0")
+        (unbox.any "System.Int32")
+        (ldarg 1)
+        (unbox.any "System.Int32")
+        (add)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "Invoke1"
+      (attrs override)
+      (params "System.Object")
+      (ret "System.Object")
+      (body
+        (ldarg 0)
+        (ldarg 1)
+        (tail)
+        (call "_Module$1" "C0" ("System.Object") "System.Object")
+        (ret)))
+    (method ".ctor"
+      (attrs ctor)
+      (params)
+      (body
+        (ldarg 0)
+        (call "IronScheme.Core.Procedure" ".ctor" () "System.Void")
+        (ret))))
+  (type "_Module$0"
+    (base "IronScheme.Core.Procedure")
+    (attrs sealed)
+    (field "Instance" "_Module$0" static)
+    (method "C0"
+      (attrs static)
+      (params "System.Object")
+      (ret "System.Object")
+      (locals)
+      (clr-namespaces)
+      (body
+        (label start)
+        (newobj "_Module$1" ())
+        (dup)
+        (ldarg 0)
+        (stfld "_Module$1" "c0")
+        (ret)))
+    (method "Invoke1"
+      (attrs override)
+      (params "System.Object")
+      (ret "System.Object")
+      (body
+        (ldarg 1)
+        (tail)
+        (call "_Module$0" "C0" ("System.Object") "System.Object")
+        (ret)))
+    (method ".ctor"
+      (attrs ctor)
+      (params)
+      (body
+        (ldarg 0)
+        (call "IronScheme.Core.Procedure" ".ctor" () "System.Void")
+        (ret)))
+    (method ".cctor"
+      (attrs cctor)
+      (params)
+      (body
+        (newobj "_Module$0" ())
+        (stsfld "_Module$0" "Instance")
+        (ret)))))

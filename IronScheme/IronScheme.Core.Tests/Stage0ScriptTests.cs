@@ -18,9 +18,11 @@ namespace IronScheme.Core.Tests
     static string SolutionDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", ".."));
     static string ConsoleDir => Path.Combine(SolutionDir, "IronScheme.Console");
 
-    public static IEnumerable<string> Scripts() =>
+    /// <summary>compiler/tests/*.sps；slow- 开头的（如编译整个种子）归入 Slow 类别，可用 --filter "TestCategory!=Slow" 跳过。</summary>
+    public static IEnumerable<TestCaseData> Scripts() =>
       Directory.GetFiles(Path.Combine(Path.GetFullPath(Path.Combine(TestContext.CurrentContext.TestDirectory ?? ".", "..", "..", "..", "..")), "IronScheme.Console", "compiler", "tests"), "*.sps")
-        .Select(Path.GetFileName).OrderBy(n => n);
+        .Select(Path.GetFileName).OrderBy(n => n)
+        .Select(n => { var d = new TestCaseData(n).SetName(n); return n.StartsWith("slow-") ? d.SetCategory("Slow") : d; });
 
     [TestCaseSource(nameof(Scripts))]
     public void Script(string name)
@@ -34,7 +36,8 @@ namespace IronScheme.Core.Tests
         RedirectStandardOutput = true,
         RedirectStandardError = true,
       };
-      foreach (var a in new[] { stage0, "-I", "lib", "boot-seed.core", Path.Combine("compiler", "tests", name) }) psi.ArgumentList.Add(a);
+      foreach (var a in new[] { stage0, "-I", "lib", "-I", Path.Combine("lib", "nanopass-framework-scheme"), "boot-seed.core", Path.Combine("compiler", "tests", name) })
+        psi.ArgumentList.Add(a);
       using var p = Process.Start(psi);
       var stderr = p.StandardError.ReadToEndAsync();
       string stdout = p.StandardOutput.ReadToEnd();
