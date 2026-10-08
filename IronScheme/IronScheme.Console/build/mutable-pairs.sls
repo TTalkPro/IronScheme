@@ -13,7 +13,7 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme clr))
 
-  (clr-using IronScheme.Runtime)   
+  (clr-using IronScheme.Core)
     
   (define/contract (set-car! lst:pair val)
     (clr-field-set! Cons car lst val))      

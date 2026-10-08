@@ -18,4 +18,9 @@ namespace IronScheme.Core
     /// <summary>条件的可读形式由宿主用 Scheme 打印器生成（iron-029）；此处只给出简单形式。</summary>
     public override string ToString() => "SchemeException: " + (Condition?.ToString() ?? "()");
   }
+
+  /// <summary>顶层程序以未处理的条件结束（psyntax/main.sls 的 load/program），宿主据此返回非零退出码。</summary>
+  public sealed class ProgramFailedException : Exception
+  {
+  }
 }

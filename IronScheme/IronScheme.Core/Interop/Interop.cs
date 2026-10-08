@@ -84,8 +84,32 @@ namespace IronScheme.Core
       Array.CreateInstance(elementType, (int)ConvertTo(size, typeof(int), "clr-new-array"));
 
     /// <summary>(clr-cast T e)：转换为 T 后再转回 Scheme 表示；null 得到 T 的默认值（与旧系统一致）。</summary>
-    public static object Cast(Type type, object value) =>
-      value == null && type.IsValueType ? ConvertFrom(Activator.CreateInstance(type), type) : ConvertFrom(ConvertTo(value, type, "clr-cast"), type);
+    public static object Cast(Type type, object value)
+    {
+      if (value == null && type.IsValueType) return ConvertFrom(Activator.CreateInstance(type), type);
+      // 整数类型之间（含 char）按 IL 的 conv 指令转换：不检查溢出，截断取低位（与旧编译器一致）
+      if ((IsNumeric(type) || type == typeof(char)) && value is int or long or char or byte or sbyte or short or ushort or uint or ulong)
+      {
+        long v = value is char c ? c : value is ulong ul ? unchecked((long)ul) : System.Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        object r = Type.GetTypeCode(type) switch
+        {
+          TypeCode.Byte => unchecked((byte)v),
+          TypeCode.SByte => unchecked((sbyte)v),
+          TypeCode.Int16 => unchecked((short)v),
+          TypeCode.UInt16 => unchecked((ushort)v),
+          TypeCode.Char => unchecked((char)v),
+          TypeCode.Int32 => unchecked((int)v),
+          TypeCode.UInt32 => unchecked((uint)v),
+          TypeCode.Int64 => v,
+          TypeCode.UInt64 => unchecked((ulong)v),
+          TypeCode.Single => (float)v,
+          TypeCode.Double => (double)v,
+          _ => null,
+        };
+        if (r != null) return ConvertFrom(r, type);
+      }
+      return ConvertFrom(ConvertTo(value, type, "clr-cast"), type);
+    }
 
     public static object Is(Type type, object value) => RT.Bool(type.IsInstanceOfType(value));
 
@@ -173,8 +197,9 @@ namespace IronScheme.Core
         Type pt = i < fixedCount ? ps[i].ParameterType : null;
         if (pt == null)
         {
-          // params 部分：若恰好传入一个匹配的数组，按数组整体传递
+          // params 部分：若恰好传入一个数组（或可转换为该数组类型的向量），按数组整体传递
           if (args.Length == ps.Length && ps[^1].ParameterType.IsInstanceOfType(args[i])) { total += 2; continue; }
+          if (args.Length == ps.Length && args[i] is Array && CanConvert(args[i], ps[^1].ParameterType)) { total += 1; continue; }
           pt = ps[^1].ParameterType.GetElementType();
         }
         int s = ScoreOne(args[i], pt);
@@ -202,6 +227,7 @@ namespace IronScheme.Core
       {
         var arrType = ps[^1].ParameterType;
         if (args.Length == ps.Length && arrType.IsInstanceOfType(args[^1])) result[^1] = args[^1];
+        else if (args.Length == ps.Length && args[^1] is Array && CanConvert(args[^1], arrType)) result[^1] = ConvertTo(args[^1], arrType, who);
         else
         {
           var et = arrType.GetElementType();
@@ -229,8 +255,8 @@ namespace IronScheme.Core
       if (t.IsEnum) return a is Symbol || a is Cons || IsSchemeNumber(a);
       if (t == typeof(string)) return a is StringBuilder;
       if (t == typeof(bool)) return true;                         // 旧系统：非布尔按真值转换
-      if (t == typeof(char)) return a is SchemeChar sc && sc.Value < 0x10000;
-      if (IsNumeric(t)) return IsSchemeNumber(a);
+      if (t == typeof(char)) return (a is SchemeChar sc && sc.Value < 0x10000) || a is int;
+      if (IsNumeric(t)) return IsSchemeNumber(a) || a is char;
       if (t.IsArray) return a is object[] || a is Cons || (a is Array arr && arr.GetType().GetElementType() != null);
       return false;
     }
@@ -255,6 +281,9 @@ namespace IronScheme.Core
         if (t == typeof(string) && a is StringBuilder sb) return sb.ToString();
         if (t == typeof(bool)) return RT.IsTrue(a);
         if (t == typeof(char) && a is SchemeChar sc && sc.Value < 0x10000) return (char)sc.Value;
+        // 字符与整数之间按数值转换（旧编译器对 (clr-cast Int32 (clr-cast Char c)) 生成 IL 数值转换）
+        if (t == typeof(char) && a is int code) return checked((char)code);
+        if (IsNumeric(t) && a is char ch) return ConvertNumber((int)ch, t);
         if (IsNumeric(t) && IsSchemeNumber(a)) return ConvertNumber(a, t);
         if (t.IsArray)
         {

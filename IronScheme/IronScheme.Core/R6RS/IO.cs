@@ -1106,7 +1106,6 @@ namespace IronScheme.Core
       Append = 8,
     }
 
-    static FieldInfo enum_value = null;
 
     static FileOptions ToFileOptions(object fo)
     {
@@ -1118,12 +1117,14 @@ namespace IronScheme.Core
       {
         return FileOptions.NoFail;
       }
-      if (enum_value == null)
+      // file-options 是 build/enums.sls 的 enum 记录，位掩码在字段 value 中（旧系统按 CLR 字段反射读取）
+      if (fo is Record r && r.Rtd != null)
       {
-        enum_value = fo.GetType().GetField("value", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        foreach (var fd in r.Rtd.GetAllFields())
+          if (fd.Name == "value") return (FileOptions)Convert.ToInt32(r.Fields[fd.Index], System.Globalization.CultureInfo.InvariantCulture);
       }
-
-      return (FileOptions)(int)enum_value.GetValue(fo);
+      AssertionViolation("file-options", "not a file-options enum set", fo);
+      return 0;
     }
 
     static FileMode GetMode(FileOptions fo, string filename)

@@ -14,7 +14,7 @@ See docs/license.txt. |#
     (ironscheme typed)
     (ironscheme syntax utils))
 
-  (clr-using IronScheme.Runtime)
+  (clr-using IronScheme.Core)
 
   (define-syntax define-vector-type
     (lambda (x)

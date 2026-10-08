@@ -40,7 +40,7 @@
           void gensym set-symbol-value! symbol-value compile-core))
           
   (define (application-directory) 
-    (clr-static-prop-get IronScheme.Runtime.Builtins ApplicationDirectory))
+    (clr-static-prop-get IronScheme.Core.Builtins ApplicationDirectory))
 
   (define current-directory
     (case-lambda

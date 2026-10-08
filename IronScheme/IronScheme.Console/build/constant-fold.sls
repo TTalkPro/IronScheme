@@ -27,7 +27,7 @@ See docs/license.txt. |#
     (rnrs arithmetic bitwise))
 
   (define (set-allow-constant-fold! proc)
-    (clr-prop-set! IronScheme.Runtime.Callable AllowConstantFold proc #t))
+    proc) ; 新运行时：可折叠信息只来自 compiler/primitives.ss，此处不再记录
     
   (define (enable-constant-fold . procs)
     (for-each set-allow-constant-fold! procs))

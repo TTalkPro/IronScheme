@@ -154,10 +154,9 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme typed))
   
-  (clr-using IronScheme.Runtime)  
+  (clr-using IronScheme.Core)
   (clr-using System.Text)
   (clr-using Oyster.Math)
-  (clr-using IronScheme.Scripting.Math)
      
   (define (native-endianness) 'little)
   

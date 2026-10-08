@@ -26,16 +26,16 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme clr))
   
-  (clr-using IronScheme.Runtime)
+  (clr-using IronScheme.Core)
   
   (define/contract (procedure-arity proc:procedure)
-    (clr-prop-get Callable Arity proc))
+    (clr-prop-get Procedure Arity proc))
     
   (define/contract (procedure-name proc:procedure)
     (string->symbol (clr-call Object ToString proc)))
 
   (define/contract (procedure-form proc:procedure)
-    (clr-prop-get Callable Form proc))
+    (clr-prop-get Procedure Form proc))
 
   (define/contract (procedure-environment proc:procedure)
     #f)

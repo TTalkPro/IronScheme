@@ -206,9 +206,7 @@ See docs/license.txt. |#
   (clr-using System)
   (clr-using System.IO)
   (clr-using System.Text)
-  (clr-using IronScheme.Runtime)  
-  (clr-using IronScheme.Runtime.R6RS)
-  (clr-using IronScheme.Runtime.psyntax)
+  (clr-using IronScheme.Core)
   
   (define (codec? obj)
     (clr-is Encoding obj))
@@ -882,10 +880,10 @@ See docs/license.txt. |#
     (read port))
     
   (define (get-output-string port)
-    (clr-call IronScheme.Runtime.StringWriter GetBuffer port))
+    (clr-call IronScheme.Core.StringWriter GetBuffer port))
     
   (define (open-output-string)
-    (clr-new IronScheme.Runtime.StringWriter))
+    (clr-new IronScheme.Core.StringWriter))
   
   (define (open-string-output-port)
     (let ((p (open-output-string)))

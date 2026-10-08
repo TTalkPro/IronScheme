@@ -67,7 +67,7 @@ See docs/license.txt. |#
     (ironscheme unsafe))
     
   (clr-using System.Collections)
-  (clr-using IronScheme.Runtime.R6RS)
+  (clr-using IronScheme.Core)
   
   (define (hashtable? obj)
     (clr-is Hashtable obj))

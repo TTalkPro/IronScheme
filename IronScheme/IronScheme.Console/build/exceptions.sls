@@ -40,7 +40,7 @@ See docs/license.txt. |#
       dynamic-wind
       values))
       
-  (clr-using IronScheme.Runtime)
+  (clr-using IronScheme.Core)
       
   (define (values . x)
     (if (and (not (null? x))
@@ -57,7 +57,7 @@ See docs/license.txt. |#
     (make-parameter
       (list 
         (lambda (condition)
-          ($throw (clr-new IronScheme.Runtime.SchemeException condition))))))
+          ($throw (clr-new IronScheme.Core.SchemeException condition))))))
 
   (define/contract (with-exception-handler handler:procedure thunk:procedure)
     (with-exception-handlers (cons handler (*current-exception-handlers*))
@@ -77,7 +77,7 @@ See docs/license.txt. |#
           (apply condition
                  (append cc
                         (list (make-stacktrace-condition
-                                (clr-static-call IronScheme.Runtime.R6RS.Exceptions 
+                                (clr-static-call IronScheme.Core.Exceptions 
                                                  GetStackTrace))))))))
 
   (define (raise obj)
@@ -167,4 +167,19 @@ See docs/license.txt. |#
     (raise
       (condition
         (if who (make-who-condition who) (condition))
-        (make-i/o-file-protection-error filename)))))
+        (make-i/o-file-protection-error filename))))
+
+  ;; 新运行时（IronScheme.Core）经 RuntimeHooks 回调这些过程，取代旧 Glue.il 对 boot dll 的直接引用
+  ($set-runtime-hook! 'raise raise)
+  ($set-runtime-hook! 'raise-continuable raise-continuable)
+  ($set-runtime-hook! 'with-exception-handler with-exception-handler)
+  ($set-runtime-hook! 'assertion-violation assertion-violation)
+  ($set-runtime-hook! 'undefined-error undefined-error)
+  ($set-runtime-hook! 'lexical-error lexical-error)
+  ($set-runtime-hook! 'syntax-error syntax-error)
+  ($set-runtime-hook! 'i/o-port-violation i/o-port-violation)
+  ($set-runtime-hook! 'file-not-found-violation file-not-found-violation)
+  ($set-runtime-hook! 'file-in-use-violation file-in-use-violation)
+  ($set-runtime-hook! 'file-already-exists-violation file-already-exists-violation)
+  ($set-runtime-hook! 'io-decoding-error io-decoding-error)
+  ($set-runtime-hook! 'io-encoding-error io-encoding-error))

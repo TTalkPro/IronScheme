@@ -28,7 +28,7 @@ See docs/license.txt. |#
           (ironscheme contracts)
           (ironscheme clr))
           
-  (clr-using IronScheme.Runtime.R6RS)          
+  (clr-using IronScheme.Core)
           
   (define/contract (record-type-name rtd:record-type-descriptor)
     (string->symbol (clr-prop-get RecordTypeDescriptor Name rtd)))

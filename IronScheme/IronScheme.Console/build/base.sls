@@ -281,9 +281,7 @@ See docs/license.txt. |#
     (ironscheme unsafe))
     
   (clr-using System.Text)
-  (clr-using IronScheme.Runtime)
-  (clr-using Microsoft.Scripting)
-  (clr-using IronScheme.Scripting)
+  (clr-using IronScheme.Core)
   
   (define (char->integer chr)
     (if (clr-is SchemeChar chr)
@@ -422,10 +420,10 @@ See docs/license.txt. |#
     (clr-static-call String (Format String Object[]) (->string fmt) (list->vector args)))
   
   (define/contract (symbol->string sym:symbol)
-    (clr-static-call SymbolTable IdToString sym))
+    (clr-field-get Symbol Name sym))
     
   (define/contract (string->symbol str:string)
-    (clr-static-call SymbolTable StringToObject (->string str)))
+    (clr-static-call Symbol Intern (->string str)))
 
   (define/contract (list->vector lst:list)
     (clr-static-call Builtins ListToVector lst))
@@ -542,7 +540,7 @@ See docs/license.txt. |#
   (define/contract vector-map
     (case-lambda
       [(p:procedure vec:vector)
-        ((lambda: ((p : Callable)(vec : Object[])(len : Int32))
+        ((lambda: ((p : Procedure)(vec : Object[])(len : Int32))
           (let ((res (clr-cast Object[] (make-vector len '()))))
             (do ((i 0 ($fx+ i 1)))
                 (($fx=? i len) res)
@@ -563,7 +561,7 @@ See docs/license.txt. |#
   (define/contract vector-for-each
     (case-lambda
       [(p:procedure vec:vector)
-        ((lambda: ((p : Callable)(vec : Object[])(len : Int32))
+        ((lambda: ((p : Procedure)(vec : Object[])(len : Int32))
           (do ((i 0 ($fx+ i 1)))
               (($fx=? i len))
             (p ($vector-ref vec i))))
@@ -582,7 +580,7 @@ See docs/license.txt. |#
     (case-lambda
       [(p:procedure str:string)
         (let: (((len : Int32) (string-length str))
-               ((p : Callable) p))
+               ((p : Procedure) p))
           (do ((i 0 ($fx+ i 1)))
               (($fx=? i len))
             (p (string-ref str i))))]

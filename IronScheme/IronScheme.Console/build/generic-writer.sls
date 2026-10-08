@@ -144,7 +144,7 @@ See docs/license.txt. |#
         
         
   (define (multiple-values? obj)
-    (clr-is IronScheme.Runtime.MultipleValues obj))
+    (clr-is IronScheme.Core.MultipleValues obj))
     
   (define (write-mv obj port readable?)
     (let f ((vals (call-with-values (lambda () obj) list)))

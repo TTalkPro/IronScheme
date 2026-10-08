@@ -94,7 +94,7 @@
             (lambda ()
               (load/unsafe filename)
               #f))
-      ($throw (clr-new IronScheme.Runtime.ProgramFailedException))))
+      ($throw (clr-new IronScheme.Core.ProgramFailedException))))
 
   (define (load/unsafe filename)
     (apply load-r6rs-top-level filename 'load (cdr (command-line)))

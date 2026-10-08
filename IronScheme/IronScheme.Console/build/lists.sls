@@ -345,14 +345,14 @@ See docs/license.txt. |#
               (cons a (f (car rest) (cdr rest)))))]))
 
   (define (list-copy lst)
-    (clr-static-call IronScheme.Runtime.Cons 
+    (clr-static-call IronScheme.Core.Cons 
                      FromList 
                      lst))
 
   (define (append-fast! a b)
     (let ((c ($cdr a)))
       (if (null? c)
-          (clr-field-set! IronScheme.Runtime.Cons cdr a b)
+          (clr-field-set! IronScheme.Core.Cons cdr a b)
           (append-fast! c b))))
 
   (define (append! a b)

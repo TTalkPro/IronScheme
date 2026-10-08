@@ -41,13 +41,9 @@ See docs/license.txt. |#
     (ironscheme unsafe)
     (ironscheme clr))
     
-  (clr-using IronScheme.Runtime)   
-  (clr-using Microsoft.Scripting) 
-  (clr-using Microsoft.Scripting.Math)
+  (clr-using IronScheme.Core)
   (clr-using Oyster.Math)
   (clr-using System.Text)
-  (clr-using IronScheme.Scripting) 
-  (clr-using IronScheme.Scripting.Math)
   
   (define (valuetype-vector? obj)
     (and (clr-is Array obj)
@@ -55,7 +51,7 @@ See docs/license.txt. |#
           (clr-prop-get Type IsValueType t))))
   
   (define (condition? obj)
-    (clr-is IronScheme.Runtime.R6RS.Condition obj))
+    (clr-is IronScheme.Core.Condition obj))
     
   (define (fixnum? obj)
     (clr-is Int32 obj))
@@ -104,10 +100,10 @@ See docs/license.txt. |#
     (clr-is Byte[] obj))
 
   (define (symbol? obj)
-    (clr-is SymbolId obj))
+    (clr-is Symbol obj))
     
   (define (boolean? obj)
     (clr-is Boolean obj))
    
   (define (procedure? obj)
-    (clr-is Callable obj)))
+    (clr-is Procedure obj)))

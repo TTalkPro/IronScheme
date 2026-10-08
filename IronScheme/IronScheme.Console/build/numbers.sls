@@ -157,10 +157,7 @@ See docs/license.txt. |#
     (ironscheme clr))
     
   (clr-using Oyster.Math)
-  (clr-using Microsoft.Scripting.Math)
-  (clr-using IronScheme.Scripting) 
-  (clr-using IronScheme.Scripting.Math)
-  (clr-using IronScheme.Runtime)    
+  (clr-using IronScheme.Core)
     
   (define (make-rectnum r1 r2)
     (clr-static-call ComplexFraction Make r1 r2))
@@ -1254,4 +1251,8 @@ See docs/license.txt. |#
                     (f (+ i 1) (cdr n))))
                 (put-string p "e")
                 (display (- k 1) p)
-                (r)])))])))
+                (r)])))]))
+
+  ;; 新运行时（IronScheme.Core）经 RuntimeHooks 回调这些过程（见 build/exceptions.sls）
+  ($set-runtime-hook! 'exact exact)
+  ($set-runtime-hook! 'inexact inexact))

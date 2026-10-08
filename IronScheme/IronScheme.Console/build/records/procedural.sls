@@ -20,7 +20,7 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme unsafe))
     
-  (clr-using IronScheme.Runtime.R6RS)
+  (clr-using IronScheme.Core)
   
   (define (record-type-descriptor? obj)
     (clr-is RecordTypeDescriptor obj))

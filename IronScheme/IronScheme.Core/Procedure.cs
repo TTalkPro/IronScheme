@@ -45,6 +45,12 @@ namespace IronScheme.Core
     /// <summary>过程名，用于错误信息与打印。编译器生成的类重写为源码中的名字。</summary>
     public virtual string Name => GetType().Name;
 
+    /// <summary>procedure-arity 的结果；未知时为 unspecified（build/misc.sls）。</summary>
+    public virtual object Arity => Unspecified.Instance;
+
+    /// <summary>procedure-form 的结果（过程的形参表）；未知时为 unspecified（build/misc.sls）。</summary>
+    public virtual object Form => Unspecified.Instance;
+
     public override string ToString() => "#<procedure " + Name + ">";
 
     protected object ArityError(int given) =>
