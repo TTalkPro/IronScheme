@@ -3,5 +3,6 @@
   <Project Path="IronScheme.Core/IronScheme.Core.csproj" />
   <Project Path="IronScheme.Emit/IronScheme.Emit.csproj" />
   <Project Path="IronScheme.Host/IronScheme.Host.csproj" />
+  <Project Path="IronScheme.PrimGen/IronScheme.PrimGen.csproj" />
   <Project Path="Oyster.IntX/Oyster.IntX.csproj" />
 </Solution>
