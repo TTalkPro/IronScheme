@@ -14,3 +14,7 @@
 
 ## 验收标准
 - 手写 Lcil 生成的"迷你 boot 镜像"（定义几个全局过程并登记钩子）能被加载并调用。
+
+## 从 iron-008 转来
+
+- 原语 `load-library-dll`；旧 `Ports.cs` 中的 `AssemblyLoad`、`Load`、`ShowImports`、`IsSameAge`、`GetPath`（`~/` 前缀解析）。

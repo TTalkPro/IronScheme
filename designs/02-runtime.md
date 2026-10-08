@@ -24,7 +24,7 @@
 | fixnum | `int`（32 位） | 不变。`build/arithmetic/fixnums.sls` 依赖 32 位宽度，改成 64 位留作以后 |
 | flonum / bignum / 有理数 | `double` / `IntX` / `Fraction` | 不变 |
 | 复数 | `ComplexFraction`、`Complex64` | `Complex64` 从 DLR 移入 |
-| 字符 | `SchemeChar` | 不变 |
+| 字符 | BMP 内为 `System.Char`，之外为 `SchemeChar` | 不变（iron-010 核对旧 reader 后更正：旧系统就是这样的双表示，`build/base.sls` 两种都处理） |
 | 字符串 | `string`（不可变）或 `StringBuilder`（可变） | 不变。`build/base.sls` 依赖这种二元表示 |
 | 记录 | `Record`（见 §7） | **替换**运行时生成的 CLR 类型 |
 | 多值 | `MultipleValues`（包装 `object[]`） | 不变 |
@@ -62,6 +62,15 @@ public abstract class Procedure {
 }
 public sealed class Box { public object Value; }   // 被赋值且被捕获的变量
 ```
+
+**两个基类**（iron-006 实现时确定）：
+
+| 基类 | 用于 | 约定 |
+|---|---|---|
+| `Procedure` | 固定参数个数的过程，含没有剩余参数子句的 case-lambda | 只重写对应个数的 `InvokeK`；默认 `InvokeN` 按长度分派到 `InvokeK`，未重写的 `InvokeK` 报参数个数错误 |
+| `VariadicProcedure` | 有剩余参数的过程（含带剩余参数子句的 case-lambda） | 主体写在 `InvokeN`（用 `RestList` 打包剩余参数）；`InvokeK` 默认转发到 `InvokeN`，常见个数可另行重写以免分配数组 |
+
+两类都满足"`InvokeN` 是统一入口"。若只用一个基类、两个方向都默认转发，参数个数错误时会无限递归。
 
 - **编译器为每个 lambda 生成一个 `Procedure` 子类**：
   - 自由变量是实例字段（扁平闭包）。

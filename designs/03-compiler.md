@@ -83,13 +83,20 @@ body ::= e ...                           ; psyntax 实际只生成一个
 
 ## 6. 原语的编译
 
-原语表每项形如：
+原语表（`Console/compiler/primitives.ss`，由 `IronScheme.PrimGen` 生成，iron-012）格式：
 
 ```scheme
-(car  (static "IronScheme.Core.Lists" "Car" 1) (inline car) (flags pure))
-($fx+ (static "IronScheme.Core.Fixnums" "Add" 2) (inline fx+) (flags unsafe))
-($try/finally (special try-finally))
+(primitive-table 1
+  (primitive car
+    (overload "IronScheme.Core.Builtins" "Car" 1 #f () car))           ; 类型 方法 固定参数个数 剩余参数? (标志…) 内联模板
+  (primitive $fx-
+    (overload "IronScheme.Core.Unsafe" "FxNeg" 1 #f (pure unsafe) $fx-)
+    (overload "IronScheme.Core.Unsafe" "FxSub" 2 #f (pure unsafe) $fx-))
+  (special $try/finally try-finally)                                    ; 编译器专门处理
+  …)
 ```
+
+标志为 `pure`（可常量折叠）、`unsafe`（不检查类型）、`allow-tail-call`。`special` 条目有 10 个：`$and?` `$or?` `$break` `$throw` `$try/finally`（作用于未求值的参数表达式）、`call/cc` 与 `call-with-current-continuation`（逃逸帧）、`call-with-values`、`apply`、`values`；其中有同名 `primitive` 条目的，该条目是非内联时的后备实现。
 
 | 种类 | 编译方式 |
 |---|---|

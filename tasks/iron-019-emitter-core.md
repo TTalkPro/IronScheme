@@ -18,3 +18,7 @@
 ## 验收标准
 - 手写 Lcil：阶乘（循环与递归）、闭包计数器、try/finally、相互尾递归一百万层、调用 `System.String::ToUpper` 与 `Interop.Call`，都能生成 dll 并正确运行。
 - ILVerify 无错误。
+
+## 从 iron-011 转来
+
+- 互操作指令静态决议时与运行时保持同一套规则（打分方式、索引器映射、转换规则）；参数转换调用 `Interop.Convert<T>`，返回值调用 `Interop.ConvertFrom`；决议不了时生成对 `Interop.Call` 等方法的调用。类型名解析用 `TypeResolver`。

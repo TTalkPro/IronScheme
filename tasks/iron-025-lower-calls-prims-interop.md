@@ -14,3 +14,11 @@
 
 ## 验收标准
 - 快照测试；对每个内联模板有对照用例。
+
+## 从 iron-009 转来
+
+- 已知 RTD 的访问器与修改器可以内联为"类型检查 + 取 / 写 `Record.Fields[FieldDescriptor.Index]`"。
+
+## 从 iron-011 转来
+
+- FFI 形式生成的代码调用 `Helpers.FFIConvertTo<T>`、`FFIConvertFrom<T>`、`FFIDelegate<T>`、`FFIFunctionPointer(Delegate)`（新签名，不再传 CodeContext）。

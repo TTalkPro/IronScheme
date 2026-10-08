@@ -18,3 +18,11 @@
 ## 验收标准
 - 手写 Lcore 小程序（闭包、尾递归一百万层、多值、逃逸续延、try/finally、互操作调用）运行正确。
 - 规模控制在一两千行 C#。
+
+## 从 iron-011 转来
+
+- `clr-*-internal` 形式直接调用 `Interop`：类型说明用 `TypeResolver.Resolve(说明, 当前命名空间列表)` 解析；`clr-using-internal` / `clr-reference-internal` 维护解释器中的命名空间列表与已加载程序集（编译期副作用，见 03 §7）。
+
+## 从 iron-012 转来
+
+- 原语表中的 `special` 条目 `$and?` `$or?` `$break` `$throw` `$try/finally` 作用于未求值的参数表达式，解释器需专门处理（`$and?`/`$or?` 短路、结果为布尔；`$try/finally` 第二个参数在 finally 中求值；`$throw` 抛出参数；`$break` 调用 `Debugger.Break`）。其余 `$` 原语可直接调用 `IronScheme.Core.Unsafe` 中的实现。

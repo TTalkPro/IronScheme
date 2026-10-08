@@ -15,3 +15,12 @@
 ## 验收标准
 - 往返测试：各类常量、共享结构、环、嵌套记录。
 - psyntax 语法对象在交叉编译场景下能重建（结合 iron-009 的结论）。
+
+## 从 iron-008 转来
+
+- 原语 `serialize-port`、`deserialize-port`（旧版用 BinaryFormatter，`psyntax/main.sls` 导入它们），改为基于 fasl 实现。
+- 旧 `Helpers.DeserializeAssemblyConstants` 由 fasl 常量读取取代。
+
+## 从 iron-009 转来
+
+- 记录常量重建：非生成性 RTD 用 `Records.LookupNongenerative(名字, uid)` 取回；psyntax 的 `stx` 等记录的 uid 是展开时生成的 gensym 常量（见 iron-009 结论）。记录实例为 `Record`（`Rtd` + `Fields`），条件为 `Condition` / `CompoundCondition`。

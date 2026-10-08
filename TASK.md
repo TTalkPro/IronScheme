@@ -10,13 +10,13 @@
 | [iron-003](tasks/iron-003-spike-dotnet-capabilities.md) | 验证 .NET 10 的关键能力 | M0 | 无 | 完成 |
 | [iron-004](tasks/iron-004-core-project-skeleton.md) | 建立 IronScheme.Core 项目骨架 | M1 | iron-003 | 完成 |
 | [iron-005](tasks/iron-005-values-and-symbols.md) | 值表示与符号值槽 | M1 | iron-004 | 完成 |
-| [iron-006](tasks/iron-006-procedure-model.md) | 过程模型与控制原语 | M1 | iron-005 | 未开始 |
-| [iron-007](tasks/iron-007-runtime-hooks.md) | 运行时钩子取代 Glue.il | M1 | iron-006 | 未开始 |
-| [iron-008](tasks/iron-008-port-runtime-library.md) | 迁移运行时库 | M1 | iron-005、iron-006、iron-007 | 未开始 |
-| [iron-009](tasks/iron-009-records.md) | 记录的统一表示 | M1 | iron-005 | 未开始 |
-| [iron-010](tasks/iron-010-reader.md) | 手写 reader | M1 | iron-005、iron-007 | 未开始 |
-| [iron-011](tasks/iron-011-interop-runtime.md) | CLR 互操作运行时 | M1 | iron-006 | 未开始 |
-| [iron-012](tasks/iron-012-primgen.md) | 原语表生成工具 PrimGen | M1 | iron-008（以及 iron-009 ~ iron-011 完成后再生成完整版） | 未开始 |
+| [iron-006](tasks/iron-006-procedure-model.md) | 过程模型与控制原语 | M1 | iron-005 | 完成 |
+| [iron-007](tasks/iron-007-runtime-hooks.md) | 运行时钩子取代 Glue.il | M1 | iron-006 | 完成 |
+| [iron-008](tasks/iron-008-port-runtime-library.md) | 迁移运行时库 | M1 | iron-005、iron-006、iron-007 | 完成 |
+| [iron-009](tasks/iron-009-records.md) | 记录的统一表示 | M1 | iron-005 | 完成 |
+| [iron-010](tasks/iron-010-reader.md) | 手写 reader | M1 | iron-005、iron-007 | 完成 |
+| [iron-011](tasks/iron-011-interop-runtime.md) | CLR 互操作运行时 | M1 | iron-006 | 完成 |
+| [iron-012](tasks/iron-012-primgen.md) | 原语表生成工具 PrimGen | M1 | iron-008（以及 iron-009 ~ iron-011 完成后再生成完整版） | 完成 |
 | [iron-013](tasks/iron-013-adapt-scheme-sources.md) | Scheme 源码适配新运行时 | M2 | iron-008、iron-009、iron-010、iron-011、iron-007 | 未开始 |
 | [iron-014](tasks/iron-014-deterministic-gensym.md) | 构建模式下的确定性 gensym | M2 | iron-001 | 未开始 |
 | [iron-015](tasks/iron-015-generate-text-seed.md) | 生成文本种子 boot-seed.core | M2 | iron-001、iron-013、iron-014 | 未开始 |

@@ -14,3 +14,7 @@
 
 ## 验收标准
 - 在 stage0 上用新编译器编译 `build/` 中的单个库（如 `lists.sls`）得到 Lcil，经 iron-emit 生成 dll。
+
+## 从 iron-008 转来
+
+- 原语 `compile-core`、`compile-library`、`compile-bootfile` 的新实现（旧版在 `IronScheme/Runtime/Builtins.cs:464-743`）。

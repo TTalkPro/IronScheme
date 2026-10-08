@@ -15,3 +15,13 @@
 ## 验收标准
 - 旧系统能完整展开修改后的 36 个 boot 源文件，无展开错误。
 - 源码中不再出现旧运行时与 DLR 的类型名（逐项清单记录在本任务文件末尾）。
+
+## 从 iron-008 转来
+
+- `set-symbol-value!` 已是 C# 原语，`build/misc.sls` 中另有定义；`symbol->string` 在 `build/pretty-print.sls` 中出现：决定保留哪一边。
+- `Callable` 的 `Arity`、`Form`、`AllowConstantFold` 在 Scheme 中被直接访问（`clr-prop-get`），新 `Procedure` 没有这些成员：改写调用处或为 `Procedure` 增加对应成员。
+- `time-it` 只支持无参 thunk（现有用法都是无参）。
+
+## 从 iron-009 转来
+
+- `build/records/procedural.sls`、`inspection.sls`、`conditions.sls` 等中的 `(clr-using IronScheme.Runtime.R6RS)` 改为 `IronScheme.Core`；类型名 `RecordTypeDescriptor`、`RecordConstructorDescriptor`、`FieldDescriptor`、`Condition` 不变。
