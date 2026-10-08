@@ -25,6 +25,11 @@ See docs/license.txt. |#
   (define (record-object-rtd x) (clr-field-get IronScheme.Core.Record Rtd x))
   (define (record-object-fields x) (clr-field-get IronScheme.Core.Record Fields x))
   (define (rtd? x) (clr-is IronScheme.Core.RecordTypeDescriptor x))
+  ;; 记录构造描述符：只支持没有 protocol 的（nanopass 生成的代码把展开时创建的 RCD 作为常量）
+  (define (rcd? x) (clr-is IronScheme.Core.RecordConstructorDescriptor x))
+  (define (rcd-type x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor type x))
+  (define (rcd-parent x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor parent x))
+  (define (rcd-protocol x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor protocol x))
   (define (annotation? x) (clr-is IronScheme.Core.Annotation x))
   (define (mutable-string? x) (clr-is System.Text.StringBuilder x))
   ;; 只支持 eq 哈希表（make-eq-hashtable 得到的类型恰为 Hashtable）；psyntax 的 rib 用它做索引
@@ -36,7 +41,7 @@ See docs/license.txt. |#
   ;; 有 eq? 身份、可能被共享的对象
   (define (shareable? x)
     (or (pair? x) (vector? x) (bytevector? x) (mutable-string? x)
-        (rtd? x) (record-object? x) (compound-condition? x) (annotation? x) (eq-hashtable? x)))
+        (rtd? x) (rcd? x) (record-object? x) (compound-condition? x) (annotation? x) (eq-hashtable? x)))
 
   ;; 哈希表条目：键为符号、字符串、定长整数时按其文本排序，使编码确定（表的枚举顺序取决于对象哈希值）
   (define (sorted-entries ht)
@@ -74,6 +79,7 @@ See docs/license.txt. |#
                (loop (annotation-source* x))
                (loop (annotation-stripped* x)))
               ((compound-condition? x) (for-each loop (simple-conditions x)))
+              ((rcd? x) (loop (rcd-type x)) (loop (rcd-parent x)))
               ((eq-hashtable? x)
                (for-each (lambda (e) (loop (car e)) (loop (cdr e))) (sorted-entries x)))))))))
 
@@ -165,6 +171,10 @@ See docs/license.txt. |#
                  ,(encode (annotation-source* x))
                  ,(encode (annotation-stripped* x))))
           ((compound-condition? x) `(cnd ,@(map encode (simple-conditions x))))
+          ((rcd? x)
+           (when (procedure? (rcd-protocol x))
+             (assertion-violation 'encode-constant "cannot encode a record constructor descriptor with a protocol" x))
+           `(rcd ,(encode (rcd-type x)) ,(let ((p (rcd-parent x))) (if (rcd? p) (encode p) '(false)))))
           ((eq-hashtable? x)
            `(eqht ,@(apply append (map (lambda (e) (list (encode (car e)) (encode (cdr e)))) (sorted-entries x)))))
           (else (assertion-violation 'encode-constant "cannot encode object" x))))

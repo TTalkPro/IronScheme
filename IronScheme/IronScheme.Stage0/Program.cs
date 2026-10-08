@@ -36,6 +36,9 @@ static int Main(string[] args)
   }
 
   var sw = Stopwatch.StartNew();
+  // psyntax 在 boot 初始化时读取命令行，所以要在执行种子 / 加载 boot 之前设置：脚本及其参数
+  int scriptIndex = args[0] == "--boot" ? 2 : 1;
+  if (args[0] != "--core" && args.Length > scriptIndex) Builtins.CommandLineArgs = args[scriptIndex..];
   Interpreter.Initialize();
   try
   {
@@ -59,7 +62,6 @@ static int Main(string[] args)
     }
     if (args.Length == 1) return 0;
 
-    Builtins.CommandLineArgs = args[1..];
     sw.Restart();
     try
     {

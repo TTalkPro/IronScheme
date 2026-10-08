@@ -5,7 +5,7 @@
 (define (front x)
   (let* ((l0 (parse-core x))
          (an (analyze l0))
-         (l1 (cp0-lite (simplify-letrec l0 an))))
+         (l1 (cp0-lite (check-forward (simplify-letrec l0 an) an))))
     (convert-assignments l1 an)))
 
 (define forms

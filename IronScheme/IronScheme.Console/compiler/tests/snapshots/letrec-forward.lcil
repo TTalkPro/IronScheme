@@ -1,7 +1,8 @@
 (lcil 1
   (assembly "letrec-forward" (references "IronScheme.Core") (entry "#Module" "Initialize"))
   (constants
-    (0 (list (fix 1) (fix 2))))
+    (0 (sym "total"))
+    (1 (list (fix 1) (fix 2))))
   (type "#Module"
     (attrs abstract sealed)
     (method "Init0"
@@ -84,6 +85,8 @@
         (ldfld "_Module$2$g" "c0")
         (castclass "IronScheme.Core.Box")
         (ldfld "IronScheme.Core.Box" "Value")
+        (ldconst 0)
+        (call "IronScheme.Core.Calls" "CheckInitialized" ("System.Object" "System.Object") "System.Object")
         (ret)
         (label L0)
         (ldarg 0)
@@ -185,7 +188,7 @@
         (ldarg 0)
         (newobj "IronScheme.Core.Box" ("System.Object"))
         (starg 0)
-        (ldsfld "IronScheme.Core.Unspecified" "Instance")
+        (call "IronScheme.Core.Calls" "UninitializedValue" () "System.Object")
         (newobj "IronScheme.Core.Box" ("System.Object"))
         (stloc 0)
         (newobj "_Module$1$f" ())
@@ -226,7 +229,7 @@
         (pop)
         (ldloc 1)
         (call "IronScheme.Core.Calls" "Proc" ("System.Object") "IronScheme.Core.Procedure")
-        (ldconst 0)
+        (ldconst 1)
         (tail)
         (callvirt "IronScheme.Core.Procedure" "Invoke1" ("System.Object") "System.Object")
         (ret)))

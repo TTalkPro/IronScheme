@@ -449,6 +449,7 @@
     ($set-runtime-hook!                         iu)
     ($runtime-hooks-missing                     iu)
     ($gensym-scope                              iu)
+    ($gensym-realm                              iu)
     ($car                                       iu)
     ($cdr                                       iu)
     ($vector-ref                                iu)

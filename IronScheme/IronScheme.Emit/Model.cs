@@ -15,6 +15,9 @@ namespace IronScheme.Emit
     public string EntryType, EntryMethod;
     /// <summary>常量表：下标 → 编码（§3），保持原样交给常量编码器。</summary>
     public List<SNode> Constants = new List<SNode>();
+    /// <summary>(live-constants n)：常量由宿主在内存中直接提供（只用于内存模式），个数为 n。</summary>
+    public int LiveConstants = -1;
+    public int ConstantCount => LiveConstants >= 0 ? LiveConstants : Constants.Count;
     public List<LcilType> Types = new List<LcilType>();
     public string File;
   }
@@ -162,6 +165,11 @@ namespace IronScheme.Emit
                 if (Int(cl[0], "constant index") != asm.Constants.Count) throw Err(cl[0], $"constant index must be {asm.Constants.Count}");
                 asm.Constants.Add(cl[1]);
               }
+              break;
+            case "live-constants":
+              Arity(l, 1, 1);
+              if (asm.Constants.Count > 0) throw Err(l, "live-constants and constants are exclusive");
+              asm.LiveConstants = (int)Int(l[1], "constant count");
               break;
             case "type": asm.Types.Add(Type(l)); break;
             default: throw Err(l, "unknown top-level clause: " + l.Head);
@@ -390,7 +398,7 @@ namespace IronScheme.Emit
                 if (!labels.Add((string)ins.Operand)) throw Err(ins.Pos, "duplicate label " + ins.Operand);
                 break;
               case InstrKind.LdConst:
-                if ((int)ins.Operand < 0 || (int)ins.Operand >= asm.Constants.Count) throw Err(ins.Pos, "constant index out of range");
+                if ((int)ins.Operand < 0 || (int)ins.Operand >= asm.ConstantCount) throw Err(ins.Pos, "constant index out of range");
                 break;
               case InstrKind.Tail:
                 if (i + 1 >= list.Count || list[i + 1].Kind != InstrKind.Cil || !(list[i + 1].OpCode == OpCodes.Call || list[i + 1].OpCode == OpCodes.Callvirt))

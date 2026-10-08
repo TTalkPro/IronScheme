@@ -4,13 +4,25 @@ using System.IO;
 namespace IronScheme.Emit
 {
   /// <summary>
-  /// 命令行：iron-emit &lt;in.lcil&gt; -o &lt;out.dll&gt; [--pdb] [-r &lt;目录&gt;]…
+  /// 命令行：iron-emit &lt;in.lcil&gt; -o &lt;out.dll&gt; [--pdb] [-r &lt;目录&gt;]…；iron-emit --references &lt;dll&gt;
   /// -r 增加查找被引用程序集（如 IronScheme.Core.dll）的目录；默认含发射器所在目录。
   /// </summary>
   public static class Program
   {
     public static int Main(string[] args)
     {
+      // iron-emit --references <dll>：列出程序集引用（iron-028 检查产物不引用旧系统程序集）
+      if (args.Length == 2 && args[0] == "--references")
+      {
+        using var pe = new System.Reflection.PortableExecutable.PEReader(File.OpenRead(args[1]));
+        var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        foreach (var h in md.AssemblyReferences)
+        {
+          var r = md.GetAssemblyReference(h);
+          Console.WriteLine(md.GetString(r.Name) + " " + r.Version);
+        }
+        return 0;
+      }
       string input = null, output = null;
       bool pdb = false;
       for (int i = 0; i < args.Length; i++)

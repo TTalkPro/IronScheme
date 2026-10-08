@@ -55,7 +55,7 @@
     (let* ((name (car c)) (lcore (cadr c))
            (l0 (parse-core lcore))
            (an (analyze l0))
-           (l2 (convert-assignments (cp0-lite (simplify-letrec l0 an)) an))
+           (l2 (convert-assignments (cp0-lite (check-forward (simplify-letrec l0 an) an)) an))
            (l3 (uncover-free l2)))
       (check! name "l0" (pp->string (unparse-L0 l0)))
       (check! name "l2" (pp->string (unparse-L2 l2)))

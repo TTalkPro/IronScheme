@@ -12,19 +12,30 @@ namespace IronScheme.Emit
     public const string ConstantsTypeName = "$Constants";
 
     TypeBuilder constantsType;
+    object[] live;
 
     void DefineConstants()
     {
       if (types.ContainsKey(ConstantsTypeName)) throw new LcilException($"{asm.File}: type name {ConstantsTypeName} is reserved");
-      var bytes = FaslEncoder.EncodeTable(asm.Constants, asm.File);
-      var readTable = LoadReference("IronScheme.Core").GetType("IronScheme.Core.Fasl", true).GetMethod("ReadTable", new[] { typeof(string) });
+      var core = LoadReference("IronScheme.Core");
       constantsType = module.DefineType(ConstantsTypeName, TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed | TypeAttributes.Class);
       constantsField = constantsType.DefineField("c", typeof(object[]), FieldAttributes.Public | FieldAttributes.Static | FieldAttributes.InitOnly);
       types[ConstantsTypeName] = constantsType;              // Lcil 中可写 (ldsfld "$Constants" "c")
       fields[(ConstantsTypeName, "c")] = (FieldBuilder)constantsField;
       var il = constantsType.DefineTypeInitializer().GetILGenerator();
-      il.Emit(OpCodes.Ldstr, Convert.ToBase64String(bytes));
-      il.Emit(OpCodes.Call, readTable);
+      if (live != null)
+      {
+        // 内存模式的活常量：登记到 ConstantPool，类型初始化器按编号取回
+        int id = (int)core.GetType("IronScheme.Core.ConstantPool", true).GetMethod("Register").Invoke(null, new object[] { live });
+        il.Emit(OpCodes.Ldc_I4, id);
+        il.Emit(OpCodes.Call, core.GetType("IronScheme.Core.ConstantPool", true).GetMethod("Take"));
+      }
+      else
+      {
+        var bytes = FaslEncoder.EncodeTable(asm.Constants, asm.File);
+        il.Emit(OpCodes.Ldstr, Convert.ToBase64String(bytes));
+        il.Emit(OpCodes.Call, core.GetType("IronScheme.Core.Fasl", true).GetMethod("ReadTable", new[] { typeof(string) }));
+      }
       il.Emit(OpCodes.Stsfld, constantsField);
       il.Emit(OpCodes.Ret);
     }

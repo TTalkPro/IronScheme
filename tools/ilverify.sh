@@ -5,9 +5,10 @@
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 core="$root/IronScheme/IronScheme.Core/bin/Release/net10.0"
+emit="$root/IronScheme/IronScheme.Emit/bin/Release/net10.0"
 ver=$(dotnet --list-runtimes | grep '^Microsoft.NETCore.App 10\.' | tail -1 | awk '{print $2}')
 rtdir=$(dotnet --list-runtimes | grep "^Microsoft.NETCore.App $ver" | sed 's/.*\[\(.*\)\]/\1/')/$ver
 ilverify=${ILVERIFY:-$HOME/.dotnet/tools/ilverify}
 for dll in "$@"; do
-  "$ilverify" "$dll" -r "$rtdir/*.dll" -r "$core/IronScheme.Core.dll" -r "$core/Oyster.IntX.dll"
+  "$ilverify" "$dll" -r "$rtdir/*.dll" -r "$core/IronScheme.Core.dll" -r "$core/Oyster.IntX.dll" -r "$emit/IronScheme.Emit.dll"
 done

@@ -14,7 +14,7 @@ See docs/license.txt. |#
 ;;;   cp0-lite           L1 → L1：if 的常量测试、begin 中无副作用的常量、少量纯原语的常量折叠
 ;;;   convert-assignments L1 → L2：既被赋值又被捕获的词法变量改为 Box
 (library (ironscheme compiler front)
-  (export analyze simplify-letrec cp0-lite convert-assignments
+  (export analyze simplify-letrec check-forward cp0-lite convert-assignments
           analysis-assigned analysis-captured analysis-massigned)
   (import
     (rnrs)
@@ -36,7 +36,8 @@ See docs/license.txt. |#
     (fields assigned      ; eq 哈希表：被 set! 的词法变量
             captured      ; eq 哈希表：出现在某个 lambda 自由变量中的词法变量
             letrec-refs   ; eq 哈希表：letrec 右边（L0 记录）→ 它引用的同组变量
-            massigned))   ; eq 哈希表：被 mset! 的库变量（除初始化外还被赋值，不能当作已知过程直接调用）
+            massigned     ; eq 哈希表：被 mset! 的库变量（除初始化外还被赋值，不能当作已知过程直接调用）
+            forward))     ; eq 哈希表：simplify-letrec 引入的前向变量（读取时要检查是否已初始化）
 
   (define (analyze ir)
     (let ((assigned (make-eq-hashtable))
@@ -89,7 +90,7 @@ See docs/license.txt. |#
           [(clause (,x* ...) ,x ,body)
            (set-minus (Expr body) (if x (cons x x*) x*))]))
       (Expr ir)
-      (make-analysis assigned captured letrec-refs massigned)))
+      (make-analysis assigned captured letrec-refs massigned (make-eq-hashtable))))
 
   (define (lambda-form? e)
     (nanopass-case (L0 Expr) e
@@ -135,7 +136,7 @@ See docs/license.txt. |#
            `(call ,(Expr e) ,e* ...))]
       [(letrec ([,x* ,e*] ...) ,[body])
        (let ((forward (forward-vars x* e*)))
-         (for-each (lambda (v) (hashtable-set! assigned v #t)) forward)
+         (for-each (lambda (v) (hashtable-set! assigned v #t) (hashtable-set! (analysis-forward an) v #t)) forward)
          (let ((inner
                 (let loop ((xs x*) (es e*))
                   (cond
@@ -151,9 +152,17 @@ See docs/license.txt. |#
                      `(let ([,(car xs) ,(Expr (car es))]) ,(loop (cdr xs) (cdr es))))))))
            (if (null? forward)
                inner
-               `(let ([,forward ,(map (lambda (v) `(quote ,(void))) forward)] ...) ,inner))))])
+               `(let ([,forward ,(map (lambda (v) `(primcall $uninitialized)) forward)] ...) ,inner))))])
     (LambdaOf : LambdaExpr (ir) -> LambdaExpr ())
     (Expr ir))
+
+;; —— check-forward：L1 → L1 ——
+  ;; 前向变量在赋值之前可能被读到（R6RS letrec 限制要求此时报错）：对它们的引用包上 $check-initialized
+  (define-pass check-forward : L1 (ir an) -> L1 ()
+    (definitions
+      (define (forward? x) (hashtable-ref (analysis-forward an) x #f)))
+    (Expr : Expr (ir) -> Expr ()
+      [,x (if (forward? x) `(primcall $check-initialized ,x (quote ,x)) x)]))
 
   ;; —— cp0-lite：L1 → L1 ——
   (define (fixnum-value? d) (and (fixnum? d) #t))

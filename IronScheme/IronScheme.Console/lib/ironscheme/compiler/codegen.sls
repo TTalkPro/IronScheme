@@ -731,8 +731,10 @@ See docs/license.txt. |#
 
   ;; ———————————————— 编译单元 ————————————————
 
-  ;; forms：L3 顶层表达式列表。返回 Lcil 的 S 表达式。
-  (define (generate-unit forms assembly-name module-name massigned)
+  ;; forms：L3 顶层表达式列表。返回 (values Lcil 的 S 表达式 常量列表)。
+  ;; live? 为真时（内存模式 eval）常量不编码，Lcil 中写 (live-constants n)，常量对象由调用者交给发射器：
+  ;; 语法对象的 mark、rib 靠 eq? 身份工作，编码再解码的副本会破坏它们。
+  (define (generate-unit forms assembly-name module-name massigned . live?)
     (let ((u (make-unit assembly-name module-name '() '() 0 (make-eq-hashtable) '() '() '() (make-eq-hashtable)
                         (make-eq-hashtable) '() 0 massigned)))
       ;; 1. 已知过程：库变量绑定的、无自由变量且不被再赋值的 lambda
@@ -767,16 +769,20 @@ See docs/license.txt. |#
                  ,@inits
                  ,entry))
              (namespaces (unit-namespaces u)))
-        `(lcil 1
+        (values
+         `(lcil 1
            (assembly ,assembly-name
              (references "IronScheme.Core" ,@(unit-references u))
              (entry ,module-name "Initialize"))
            ,@(let ((cs (reverse (unit-consts u))))
-               (if (null? cs)
-                   '()
-                   `((constants ,@(let loop ((encs (encode-constants cs)) (i 0))
-                                    (if (null? encs) '() (cons (list i (car encs)) (loop (cdr encs) (+ i 1)))))))))
-           ,@(map (lambda (t) (fill-namespaces t namespaces)) (cons module (reverse (unit-classes u))))))))
+               (cond
+                 ((null? cs) '())
+                 ((and (pair? live?) (car live?)) `((live-constants ,(length cs))))
+                 (else
+                  `((constants ,@(let loop ((encs (encode-constants cs)) (i 0))
+                                   (if (null? encs) '() (cons (list i (car encs)) (loop (cdr encs) (+ i 1))))))))))
+           ,@(map (lambda (t) (fill-namespaces t namespaces)) (cons module (reverse (unit-classes u)))))
+          (reverse (unit-consts u))))))
 
   (define (init-name k) (string-append "Init" (number->string k)))
 

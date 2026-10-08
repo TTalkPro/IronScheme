@@ -31,15 +31,36 @@ See docs/license.txt. |#
   (define (overload-allow-tail-call? o) (and (memq 'allow-tail-call (overload-flags o)) #t))
 
   (define table #f)
+  (define table-file-set? #f)
 
+  ;; 原语表的内容在展开本库时读入并作为常量烘进编译器（boot 镜像中的编译器因此不依赖当前目录）；
+  ;; 展开时找不到文件（不在 IronScheme.Console 目录下展开）则为 #f，运行时再读文件。
+  (define-syntax baked-primitive-table
+    (lambda (x)
+      (syntax-case x ()
+        ((k)
+         (datum->syntax #'k
+           (list 'quote
+                 (and (file-exists? "compiler/primitives.ss")
+                      (call-with-input-file "compiler/primitives.ss" read))))))))
+
+  (define baked (baked-primitive-table))
+
+  ;; 设置后改为从该文件读取（转换函数在创建参数时也会被调用一次，那次不算）
+  (define converter-calls 0)
   (define primitive-table-file
     (make-parameter "compiler/primitives.ss"
       (lambda (f)
-        (set! table #f)
+        (set! converter-calls (+ converter-calls 1))
+        (when (> converter-calls 1)
+          (set! table #f)
+          (set! table-file-set? #t))
         f)))
 
   (define (load-table)
-    (let ((form (call-with-input-file (primitive-table-file) read))
+    (let ((form (if (and baked (not table-file-set?))
+                    baked
+                    (call-with-input-file (primitive-table-file) read)))
           (ht (make-eq-hashtable)))
       (unless (and (pair? form) (eq? (car form) 'primitive-table) (eqv? (cadr form) 1))
         (assertion-violation 'primitive-info "bad primitive table" (primitive-table-file)))

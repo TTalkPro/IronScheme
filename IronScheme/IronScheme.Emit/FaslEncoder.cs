@@ -16,7 +16,7 @@ namespace IronScheme.Emit
       Fix = 0x10, Big = 0x11, Rat = 0x12, Flo = 0x13, Cpx = 0x14,
       Chr = 0x20, Str = 0x21, MStr = 0x22, Sym = 0x23,
       Pair = 0x30, List = 0x31, Vec = 0x32, Bv = 0x33,
-      Rtd = 0x40, Rec = 0x41, Ann = 0x42, EqHt = 0x43, Cnd = 0x44,
+      Rtd = 0x40, Rec = 0x41, Ann = 0x42, EqHt = 0x43, Cnd = 0x44, Rcd = 0x45,
       Def = 0x50, Ref = 0x51;
 
     /// <summary>常量表（各项编码）→ fasl：整个表写成一个向量，def / ref 编号在全表内共享。</summary>
@@ -154,6 +154,7 @@ namespace IronScheme.Emit
             for (int i = 2; i < l.Count; i++) Encode(l[i]);
             return;
           case "ann": Arity(l, 3); w.Write(Ann); Encode(l[1]); Encode(l[2]); Encode(l[3]); return;
+          case "rcd": Arity(l, 2); w.Write(Rcd); Encode(l[1]); Encode(l[2]); return;
           case "cnd":
             w.Write(Cnd); w.Write7BitEncodedInt(l.Count - 1);
             for (int i = 1; i < l.Count; i++) Encode(l[i]);

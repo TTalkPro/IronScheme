@@ -23,3 +23,7 @@ IronScheme/Oyster.IntX/Oyster.IntX.xml
 /IronScheme/coverage.xml
 /IronScheme/*.nettrace
 /IronScheme/*.speedscope.json
+
+# Phase A 生成的 stage1 boot 镜像（tools/build-stage1.sh）
+IronScheme/IronScheme.Console/build/ironscheme.boot.dll
+IronScheme/IronScheme.Console/build/ironscheme.boot.lcil

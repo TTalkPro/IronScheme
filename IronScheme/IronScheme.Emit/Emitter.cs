@@ -46,10 +46,17 @@ namespace IronScheme.Emit
     /// <summary>发射到内存并返回程序集。</summary>
     public static Assembly EmitInMemory(string lcil, string file = "lcil") => EmitInMemory(LcilParser.Parse(lcil, file));
 
-    public static Assembly EmitInMemory(LcilAssembly a)
+    /// <summary>发射到内存；Lcil 用 (live-constants n) 时由 constants 直接提供常量对象。</summary>
+    public static Assembly EmitInMemory(string lcil, string file, object[] constants) => EmitInMemory(LcilParser.Parse(lcil, file), constants);
+
+    public static Assembly EmitInMemory(LcilAssembly a) => EmitInMemory(a, null);
+
+    public static Assembly EmitInMemory(LcilAssembly a, object[] liveConstants)
     {
+      if (a.LiveConstants >= 0 && (liveConstants == null || liveConstants.Length != a.LiveConstants))
+        throw new LcilException($"{a.File}: expected {a.LiveConstants} live constants");
       var ab = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(a.Name), AssemblyBuilderAccess.RunAndCollect);
-      var e = new LcilEmitter(a, ab.DefineDynamicModule(a.Name), false);
+      var e = new LcilEmitter(a, ab.DefineDynamicModule(a.Name), false) { live = liveConstants };
       e.Build();
       return ab;
     }
@@ -59,6 +66,7 @@ namespace IronScheme.Emit
 
     public static void Save(LcilAssembly a, string outPath, bool pdb = false)
     {
+      if (a.LiveConstants >= 0) throw new LcilException($"{a.File}: live constants can only be emitted in memory");
       var ab = new PersistedAssemblyBuilder(new AssemblyName(a.Name), typeof(object).Assembly);
       var mb = ab.DefineDynamicModule(a.Name);
       var e = new LcilEmitter(a, mb, pdb);
@@ -134,7 +142,7 @@ namespace IronScheme.Emit
         pending.Remove(ready);
         DefineType(ready);
       }
-      if (asm.Constants.Count > 0) DefineConstants();
+      if (asm.ConstantCount > 0) DefineConstants();
       if (asm.EntryType != null) DefineEntry();
       // 2. 字段与方法签名
       foreach (var t in asm.Types)

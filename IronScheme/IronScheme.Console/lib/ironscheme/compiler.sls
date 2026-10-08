@@ -36,11 +36,16 @@ See docs/license.txt. |#
   (define (front-end x)
     (let* ((l0 (parse-core x))
            (an (analyze l0))
-           (l1 (cp0-lite (simplify-letrec l0 an)))
+           (l1 (cp0-lite (check-forward (simplify-letrec l0 an) an)))
            (l2 (convert-assignments l1 an)))
       (values (uncover-free l2) an)))
 
   (define (compile-forms->lcil forms assembly-name module-name)
+    (let-values (((lcil consts) (compile-forms->lcil* forms assembly-name module-name #f)))
+      lcil))
+
+  ;; 返回 (values Lcil 常量列表)；live? 见 generate-unit
+  (define (compile-forms->lcil* forms assembly-name module-name live?)
     (let ((massigned (make-eq-hashtable)))
       (let ((l3s (map (lambda (f)
                         (let-values (((l3 an) (front-end f)))
@@ -48,7 +53,7 @@ See docs/license.txt. |#
                             (vector-for-each (lambda (k) (hashtable-set! massigned k #t)) ks))
                           l3))
                       forms)))
-        (generate-unit l3s assembly-name module-name massigned))))
+        (generate-unit l3s assembly-name module-name massigned live?))))
 
   (define (compile->lcil-text forms assembly-name module-name)
     (lcil->string (compile-forms->lcil forms assembly-name module-name)))
@@ -59,9 +64,10 @@ See docs/license.txt. |#
 
   (define (compile-core e)
     (set! eval-counter (+ eval-counter 1))
-    (let* ((name (string-append "eval$" (number->string eval-counter)))
-           (text (compile->lcil-text (list e) name "#Module"))
-           (asm (clr-static-call IronScheme.Emit.LcilEmitter (EmitInMemory String String) text name)))
+    (let*-values (((name) (string-append "eval$" (number->string eval-counter)))
+                  ((lcil consts) (compile-forms->lcil* (list e) name "#Module" #t))
+                  ((asm) (clr-static-call IronScheme.Emit.LcilEmitter (EmitInMemory String String Object[])
+                                          (lcil->string lcil) name (list->vector consts))))
       (lambda ()
         (clr-static-call IronScheme.Core.ModuleLoader Run asm))))
 

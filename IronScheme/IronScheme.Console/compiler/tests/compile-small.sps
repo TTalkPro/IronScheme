@@ -45,7 +45,8 @@
     ((if (and (= 1 1) (or #f 2)) 'yes 'no) . yes)
     ((let loop ((i 0)) (cond ((= i 5) 'five) (else (loop (+ i 1))))) . five)
     ((do ((i 0 (+ i 1)) (acc '() (cons i acc))) ((= i 3) acc)) . (2 1 0))
-    ((with-exception-handler (lambda (c) 42) (lambda () (+ 1 (raise-continuable 'c)))) . 43)))
+    ((with-exception-handler (lambda (c) 42) (lambda () (+ 1 (raise-continuable 'c)))) . 43)
+    ((guard (e ((assertion-violation? e) 'caught)) (letrec ((x y) (y x)) 'not-detected)) . caught)))
 
 (define failures 0)
 (for-each
