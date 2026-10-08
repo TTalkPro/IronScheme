@@ -14,6 +14,8 @@
     (overload "IronScheme.Core.Unsafe" "Car" 1 #f (pure unsafe) $car))
   (primitive $cdr
     (overload "IronScheme.Core.Unsafe" "Cdr" 1 #f (pure unsafe) $cdr))
+  (primitive $check-initialized
+    (overload "IronScheme.Core.Calls" "CheckInitialized" 2 #f () #f))
   (primitive $fl*
     (overload "IronScheme.Core.Unsafe" "FlMul" 2 #f (pure unsafe) $fl*))
   (primitive $fl+
@@ -80,6 +82,9 @@
     (overload "IronScheme.Core.Unsafe" "FxXor" 2 #f (pure unsafe) $fxxor))
   (primitive $fxzero?
     (overload "IronScheme.Core.Unsafe" "FxZero" 1 #f (pure unsafe) $fxzero?))
+  (primitive $gensym-realm
+    (overload "IronScheme.Core.SymbolPrimitives" "GensymRealm" 0 #f () #f)
+    (overload "IronScheme.Core.SymbolPrimitives" "GensymRealm" 1 #f () #f))
   (primitive $gensym-scope
     (overload "IronScheme.Core.SymbolPrimitives" "GensymScope" 0 #f () #f)
     (overload "IronScheme.Core.SymbolPrimitives" "GensymScope" 1 #f () #f))
@@ -87,6 +92,8 @@
     (overload "IronScheme.Core.RuntimeHooks" "Missing" 0 #f () #f))
   (primitive $set-runtime-hook!
     (overload "IronScheme.Core.RuntimeHooks" "SetRuntimeHook" 2 #f () #f))
+  (primitive $uninitialized
+    (overload "IronScheme.Core.Calls" "UninitializedValue" 0 #f () #f))
   (primitive $vector-ref
     (overload "IronScheme.Core.Unsafe" "VectorRef" 2 #f (pure unsafe) $vector-ref))
   (primitive $vector-set!

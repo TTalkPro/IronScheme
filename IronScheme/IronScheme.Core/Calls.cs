@@ -50,5 +50,16 @@ namespace IronScheme.Core
     /// <summary>读 letrec 变量时发现尚未初始化（R6RS letrec 限制）。</summary>
     public static object Uninitialized(string name) =>
       Errors.AssertionViolation(name, "attempt to read uninitialized variable");
+
+    /// <summary>($uninitialized)：letrec 中前向变量的初值（编译器 simplify-letrec 使用）。</summary>
+    [Primitive("$uninitialized")]
+    public static object UninitializedValue() => IronScheme.Core.Uninitialized.Instance;
+
+    /// <summary>($check-initialized v 'name)：v 是未初始化标记时报 &amp;assertion（R6RS letrec 限制），否则返回 v。</summary>
+    [Primitive("$check-initialized")]
+    public static object CheckInitialized(object value, object name) =>
+      value is Uninitialized
+        ? Errors.AssertionViolation(name is Symbol s ? s.Ungensym() : name, "attempt to read uninitialized variable")
+        : value;
   }
 }

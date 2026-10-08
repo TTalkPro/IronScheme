@@ -191,7 +191,7 @@ namespace IronScheme.Core.Tests
       var names = typeof(SymbolPrimitives).GetMethods()
         .SelectMany(m => m.GetCustomAttributes(typeof(PrimitiveAttribute), false).Cast<PrimitiveAttribute>())
         .Select(a => a.Name).Distinct().OrderBy(n => n).ToArray();
-      Assert.That(names, Is.EqualTo(new[] { "$gensym-scope", "gensym", "remove-location", "set-symbol-value!", "string->symbol",
+      Assert.That(names, Is.EqualTo(new[] { "$gensym-realm", "$gensym-scope", "gensym", "remove-location", "set-symbol-value!", "string->symbol",
         "symbol->string", "symbol-bound?", "symbol-value", "ungensym" }));
     }
   }

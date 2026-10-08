@@ -57,8 +57,14 @@ namespace IronScheme.Core
     /// <summary>当前作用域；未进入任何作用域时为 null。</summary>
     public static GensymScope CurrentGensymScope => scope;
 
+    /// <summary>
+    /// 作用域名的前缀（"领域"）。同一进程中同一个库可能被展开两次（构建脚本在 bootstrap 库集合中再展开一遍
+    /// 运行中系统已加载的库），用不同领域区分，避免确定性 gensym 同名（iron-028）。
+    /// </summary>
+    public static string GensymRealm = "";
+
     /// <summary>进入新作用域（计数从 0 开始）。名字中的 '$' 换成 '_'，以免干扰 ungensym。</summary>
-    public static void EnterGensymScope(string name) => scope = new GensymScope(name.Replace('$', '_'));
+    public static void EnterGensymScope(string name) => scope = new GensymScope((GensymRealm + name).Replace('$', '_'));
 
     /// <summary>恢复先前保存的作用域（可为 null）。</summary>
     public static void RestoreGensymScope(GensymScope saved) => scope = saved;

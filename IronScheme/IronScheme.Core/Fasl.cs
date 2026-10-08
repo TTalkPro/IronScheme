@@ -22,7 +22,7 @@ namespace IronScheme.Core
       Fix = 0x10, Big = 0x11, Rat = 0x12, Flo = 0x13, Cpx = 0x14,
       Chr = 0x20, Str = 0x21, MStr = 0x22, Sym = 0x23,
       Pair = 0x30, List = 0x31, Vec = 0x32, Bv = 0x33,
-      Rtd = 0x40, Rec = 0x41, Ann = 0x42, EqHt = 0x43, Cnd = 0x44,
+      Rtd = 0x40, Rec = 0x41, Ann = 0x42, EqHt = 0x43, Cnd = 0x44, Rcd = 0x45,
       Def = 0x50, Ref = 0x51;
 
     #region 读
@@ -174,6 +174,13 @@ namespace IronScheme.Core
             }
             return ht;
           }
+          case Rcd:
+          {
+            // 记录构造描述符（没有 protocol 的）：nanopass 把展开时创建的 RCD 作为常量写进生成的代码
+            var rtd = Object();
+            var parent = Object();
+            return Register(def, Records.MakeRecordConstructorDescriptor(rtd, parent, RT.False));
+          }
           case Cnd:
           {
             // 复合条件：由简单条件组成，构造时就要有组成部分，所以读完再登记（组成部分不会指回它）
@@ -234,7 +241,8 @@ namespace IronScheme.Core
 
     /// <summary>可共享的对象：eq? 身份有意义，出现多次时用 def/ref。</summary>
     static bool Shareable(object o) =>
-      o is Cons || o is object[] || o is byte[] || o is Record || o is RecordTypeDescriptor || o is StringBuilder || o is Annotation || IsEqHashtable(o);
+      o is Cons || o is object[] || o is byte[] || o is Record || o is RecordTypeDescriptor || o is RecordConstructorDescriptor
+      || o is StringBuilder || o is Annotation || IsEqHashtable(o);
 
     /// <summary>只支持 eq 哈希表（类型恰为 Hashtable）；带自定义哈希函数的表无法序列化。</summary>
     static bool IsEqHashtable(object o) => o != null && o.GetType() == typeof(System.Collections.Hashtable);
@@ -267,6 +275,7 @@ namespace IronScheme.Core
             case Cons c: Count(c.car); o = c.cdr; continue;   // 沿表尾循环，长表不递归
             case object[] v: foreach (var e in v) Count(e); return;
             case CompoundCondition cc: foreach (var e in cc.conds) Count(e); return;
+            case RecordConstructorDescriptor rcd: Count(rcd.type); Count(rcd.parent); return;
             case Record r: Count(r.Rtd); foreach (var e in r.Fields) Count(e); return;
             case RecordTypeDescriptor t: Count(t.uid); Count(t.Parent); return;
             case Annotation a: Count(a.expression); Count(a.source); Count(a.stripped); return;
@@ -339,6 +348,11 @@ namespace IronScheme.Core
             w.Write((byte)(t.opaque ? 1 : 0));
             w.Write7BitEncodedInt(t.Fields.Length);
             foreach (var f in t.Fields) { w.Write((byte)(f.mutable ? 1 : 0)); String(f.Name); }
+            return;
+          case RecordConstructorDescriptor rcd when rcd.protocol == null:
+            w.Write(Rcd);
+            Object(rcd.type);
+            Object((object)rcd.parent ?? RT.False);
             return;
           case CompoundCondition cc:
             w.Write(Cnd);

@@ -81,6 +81,17 @@ namespace IronScheme.Core
       return Unspecified.Instance;
     }
 
+    /// <summary>($gensym-realm) → 当前领域；($gensym-realm 字符串) 设置领域（见 Symbol.GensymRealm）。</summary>
+    [Primitive("$gensym-realm")]
+    public static object GensymRealm() => Symbol.GensymRealm;
+
+    [Primitive("$gensym-realm")]
+    public static object GensymRealm(object realm)
+    {
+      Symbol.GensymRealm = Errors.RequiresType<string>(realm, "$gensym-realm");
+      return Unspecified.Instance;
+    }
+
     [Primitive("ungensym", Flags = PrimitiveFlags.Pure)]
     public static object Ungensym(object symbol) => Sym(symbol, "ungensym").Ungensym();
   }

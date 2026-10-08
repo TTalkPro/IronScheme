@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
@@ -53,7 +54,8 @@ namespace IronScheme.Core
       {
         MethodBase m = st.GetFrame(i)?.GetMethod();
         if (m == null) continue;
-        var a = m.GetCustomAttribute<PrimitiveAttribute>(false);
+        // 一个方法可能带多个 [Primitive]（别名），取第一个
+        var a = m.GetCustomAttributes<PrimitiveAttribute>(false).FirstOrDefault();
         if (a != null) return Symbol.Intern(a.Name);
       }
       return RT.False;
