@@ -83,6 +83,10 @@ namespace IronScheme.Emit
       this.module = module;
       this.debug = debug;
       foreach (var r in asm.References) references.Add(LoadReference(r));
+      // 互操作类型名在已加载程序集中查找：被引用程序集的依赖（如 Core 引用的 Oyster.IntX）也要加载
+      foreach (var a in references.ToList())
+        foreach (var dep in a.GetReferencedAssemblies())
+          try { Assembly.Load(dep); } catch (FileNotFoundException) { }
     }
 
     Exception Err(SNode pos, string msg) => new LcilException(pos != null ? $"{pos.Where(asm.File)}: {msg}" : $"{asm.File}: {msg}");

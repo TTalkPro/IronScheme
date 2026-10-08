@@ -16,6 +16,8 @@ namespace IronScheme.Emit
     {
       public MethodInfo Resolve, Call, GetField, SetField, New, NewArray, Cast, Is, ConvertGeneric, ConvertFrom;
       public FieldInfo Unspecified;
+      public Func<string, object> Intern;
+      public Func<object[], object> MakeList;
 
       public CoreApi(Assembly core)
       {
@@ -31,6 +33,10 @@ namespace IronScheme.Emit
         ConvertGeneric = interop.GetMethod("Convert", new[] { Type.MakeGenericMethodParameter(0) });
         ConvertFrom = interop.GetMethod("ConvertFrom", new[] { typeof(object), typeof(Type) });
         Unspecified = core.GetType("IronScheme.Core.Unspecified", true).GetField("Instance");
+        var intern = core.GetType("IronScheme.Core.Symbol", true).GetMethod("Intern", new[] { typeof(string) });
+        Intern = s => intern.Invoke(null, new object[] { s });
+        var fromArray = core.GetType("IronScheme.Core.Cons", true).GetMethod("FromArray", new[] { typeof(object[]) });
+        MakeList = xs => fromArray.Invoke(null, new object[] { xs });
       }
     }
 
@@ -42,8 +48,37 @@ namespace IronScheme.Emit
 
     Type ClrType(string name, BodyContext cx, Instr ins)
     {
-      var t = (Type)Core.Resolve.Invoke(null, new object[] { name, cx.Namespaces });
+      var t = (Type)Core.Resolve.Invoke(null, new object[] { GenericSpec(name), cx.Namespaces });
       return t ?? throw Err(ins.Pos, "type not found: " + name);
+    }
+
+    /// <summary>
+    /// 泛型类型名 "Name&lt;A,B&lt;C&gt;&gt;" → TypeResolver 的说明 (Name A (B C))（符号组成的 Cons）；其余原样返回字符串。
+    /// </summary>
+    object GenericSpec(string name)
+    {
+      if (name.IndexOf('<') < 0) return name;
+      int pos = 0;
+      object Parse()
+      {
+        int start = pos;
+        while (pos < name.Length && name[pos] != '<' && name[pos] != ',' && name[pos] != '>') pos++;
+        var head = name.Substring(start, pos - start).Trim();
+        if (pos >= name.Length || name[pos] != '<') return head;
+        pos++;
+        var items = new List<object> { Core.Intern(head) };
+        while (true)
+        {
+          var a = Parse();
+          items.Add(a is string s ? Core.Intern(s) : a);
+          if (pos >= name.Length) throw new LcilException("bad generic type name: " + name);
+          char c = name[pos++];
+          if (c == '>') break;
+          if (c != ',') throw new LcilException("bad generic type name: " + name);
+        }
+        return Core.MakeList(items.ToArray());
+      }
+      return Parse();
     }
 
     LocalBuilder Temp(BodyContext cx, int i)
@@ -170,7 +205,8 @@ namespace IronScheme.Emit
       Type t = ins.ClrType == null ? null : ClrType(ins.ClrType, cx, ins);
       Type[] ptypes = ins.ClrParams?.Select(p => ClrType(p, cx, ins)).ToArray();
       if (ptypes != null && ptypes.Length != n) throw Err(ins.Pos, "explicit parameter types do not match argument count");
-      var target = t == null ? null : StaticMethod(t, ins.ClrMember, ins.ClrStatic, n, ptypes);
+      Type[] gtypes = ins.ClrGenerics?.Select(g => ClrType(g, cx, ins)).ToArray();
+      var target = t == null || gtypes != null ? null : StaticMethod(t, ins.ClrMember, ins.ClrStatic, n, ptypes);   // 泛型方法交给运行时
       if (target != null)
       {
         if (!ins.ClrStatic) { il.Emit(OpCodes.Ldloc, Temp(cx, 0)); ConvertTo(il, t); }
@@ -187,7 +223,7 @@ namespace IronScheme.Emit
       if (ins.ClrStatic) il.Emit(OpCodes.Ldnull); else il.Emit(OpCodes.Ldloc, Temp(cx, 0));
       EmitArgArray(cx, 1, n);
       if (ptypes != null) EmitTypeArray(il, ptypes); else il.Emit(OpCodes.Ldnull);
-      il.Emit(OpCodes.Ldnull);
+      if (gtypes != null) EmitTypeArray(il, gtypes); else il.Emit(OpCodes.Ldnull);
       il.Emit(OpCodes.Call, Core.Call);
     }
 

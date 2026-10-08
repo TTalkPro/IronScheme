@@ -83,6 +83,7 @@ namespace IronScheme.Emit
     public string ClrType;         // null 表示 #f（运行时类型）
     public string ClrMember;
     public List<string> ClrParams; // 成员说明中显式的参数类型；null 表示未指定
+    public List<string> ClrGenerics; // 泛型方法的类型参数；null 表示非泛型
     public bool ClrStatic;
     public int ClrArgc;
   }
@@ -346,9 +347,11 @@ namespace IronScheme.Emit
             ins.ClrType = TypeOperand(l[1]);
             if (l[2] is SList ml)
             {
-              if (ml.Count != 2) throw Err(ml, "member must be (\"name\" (\"P\" ...))");
+              // ("名字" ("P" …)) 或 ("名字" ("P" …)|#f ("G" …))
+              if (ml.Count != 2 && ml.Count != 3) throw Err(ml, "member must be (\"name\" (\"P\" ...) [(\"G\" ...)])");
               ins.ClrMember = Str(ml[0], "member");
-              ins.ClrParams = Strings(List(ml[1], "parameter types"), 0, "parameter type");
+              ins.ClrParams = ml[1] is SBool { Value: false } ? null : Strings(List(ml[1], "parameter types"), 0, "parameter type");
+              if (ml.Count == 3) ins.ClrGenerics = Strings(List(ml[2], "generic arguments"), 0, "generic argument");
             }
             else ins.ClrMember = Str(l[2], "member");
             ins.ClrStatic = l[3] is SBool b ? b.Value : throw Err(l[3], "expected #t or #f");
