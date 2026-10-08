@@ -8,3 +8,6 @@
 	path = IronScheme.BuildTools
 	url = https://github.com/IronScheme/IronScheme.BuildTools.git
 	branch = master
+[submodule "IronScheme/IronScheme.Console/lib/nanopass-framework-scheme"]
+	path = IronScheme/IronScheme.Console/lib/nanopass-framework-scheme
+	url = https://github.com/nanopass/nanopass-framework-scheme.git
