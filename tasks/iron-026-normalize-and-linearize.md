@@ -15,3 +15,11 @@
 
 ## 验收标准
 - 对若干小程序端到端：Lcore → Lcil → iron-emit → 运行，结果正确。
+
+## 从 M3（iron-018～021）转来
+
+- Lcil 第 1 版规格见 `designs/04-lcil-and-emitter.md` §2：普通 CIL 指令按 `OpCodes` 名字书写，短格式由发射器选择；`(tail)` 前缀须紧接 `call`/`callvirt` 且其后为 `ret`；结构化 `try` 各块末尾的 `leave`/`endfinally` 由发射器加入，进入 try 时求值栈须为空；互操作指令与 `clr-namespaces` 见 §2.5。
+- 常量：用 `(ironscheme compiler constants)` 的 `encode-constants` 对整张常量表编码（共享编号全表统一），`write-lcil-datum` 写出；方法中用 `(ldconst k)`。类型名 `$Constants` 保留。
+- 入口：`(assembly … (entry "类型" "方法"))`，入口为 `public static object 方法()`；boot 镜像约定 `#Module::Initialize`，库 dll 的入口返回 13 元素列表。
+- 发射器以库 API 调用：`IronScheme.Emit.LcilEmitter.Save(lcil文本, 文件名, 输出路径)` / `EmitInMemory(lcil文本, 文件名)`；stage0 已引用 Emit。手写样例在 `IronScheme.Emit/samples/`，可作为生成代码的参照。
+- 编译器库位于 `Console/lib/ironscheme/compiler/`，测试脚本放 `Console/compiler/tests/*.sps`（`Stage0ScriptTests` 自动在 stage0 上运行，退出码 0 为通过）。

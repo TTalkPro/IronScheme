@@ -22,10 +22,10 @@
 | [iron-015](tasks/iron-015-generate-text-seed.md) | 生成文本种子 boot-seed.core | M2 | iron-001、iron-013、iron-014 | 完成 |
 | [iron-016](tasks/iron-016-stage0-interpreter.md) | stage0：C# 核心形式解释器 | M2 | iron-008、iron-009、iron-010、iron-011 | 完成 |
 | [iron-017](tasks/iron-017-run-psyntax-and-nanopass-on-stage0.md) | 在 stage0 上跑通 psyntax 与 nanopass | M2 | iron-015、iron-016、iron-002 | 完成 |
-| [iron-018](tasks/iron-018-lcil-spec-and-reader.md) | Lcil 规格与文本读取器 | M3 | iron-003 | 未开始 |
-| [iron-019](tasks/iron-019-emitter-core.md) | 发射器：类型、方法、指令与异常块 | M3 | iron-018 | 未开始 |
-| [iron-020](tasks/iron-020-constants-fasl.md) | 常量编码与 fasl | M3 | iron-018、iron-005、iron-009 | 未开始 |
-| [iron-021](tasks/iron-021-module-loader.md) | 程序集入口约定与加载器 | M3 | iron-019、iron-020、iron-004 | 未开始 |
+| [iron-018](tasks/iron-018-lcil-spec-and-reader.md) | Lcil 规格与文本读取器 | M3 | iron-003 | 完成 |
+| [iron-019](tasks/iron-019-emitter-core.md) | 发射器：类型、方法、指令与异常块 | M3 | iron-018 | 完成 |
+| [iron-020](tasks/iron-020-constants-fasl.md) | 常量编码与 fasl | M3 | iron-018、iron-005、iron-009 | 完成 |
+| [iron-021](tasks/iron-021-module-loader.md) | 程序集入口约定与加载器 | M3 | iron-019、iron-020、iron-004 | 完成 |
 | [iron-022](tasks/iron-022-nanopass-and-parse-core.md) | 引入 nanopass 与 parse-core | M4 | iron-017、iron-012 | 未开始 |
 | [iron-023](tasks/iron-023-frontend-passes.md) | 前中端 pass | M4 | iron-022 | 未开始 |
 | [iron-024](tasks/iron-024-closures-and-loops.md) | 闭包转换、类提升与循环降级 | M4 | iron-023 | 未开始 |

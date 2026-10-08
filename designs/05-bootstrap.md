@@ -14,7 +14,7 @@
 | `boot-seed.core` | boot 源文件（`build/*.sls`、`psyntax/*.sls`，37 个）经 psyntax 展开、`rewrite` 后的核心形式列表，文本 S 表达式 | 首次：旧 IronScheme 展开（它本来就做这一步，只是改为把结果写成文本而不编译）。之后：新系统或 stage0 自己重新生成 |
 | `IronScheme.Stage0` | C# 的 Lcore 解释器 + 启动器，引用 `IronScheme.Core` | 本仓库源码 |
 | nanopass | 第三方依赖，git 子模块 `nanopass-framework-scheme` | 上游仓库 |
-| 新编译器 | `Console/compiler/*.sls` | 本仓库源码 |
+| 新编译器 | `Console/lib/ironscheme/compiler/*.sls` | 本仓库源码 |
 
 ## 3. 流程
 

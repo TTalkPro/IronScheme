@@ -15,3 +15,8 @@
 
 ## 验收标准
 - 用 stage1 boot 运行冒烟测试全部通过。
+
+## 从 iron-021 转来
+
+- boot 镜像经 `ModuleLoader.LoadModule("~/ironscheme.boot.dll")` 加载并执行入口。旧 `Ports.Load` 中"启动时若 `build/ironscheme.boot.dll` 较新则替换 `ironscheme.boot.dll`（旧文件改名为 `.old.dll`，连同 pdb）"的逻辑由宿主实现。
+- `ModuleLoader.ShowImports` 对应旧的 `-show-imports` 类开关。

@@ -18,3 +18,9 @@
 ## 从 iron-008 转来
 
 - 原语 `compile-core`、`compile-library`、`compile-bootfile` 的新实现（旧版在 `IronScheme/Runtime/Builtins.cs:464-743`）。
+
+## 从 M3（iron-018～021）转来
+
+- `compile-core`（eval）：Lcil → `LcilEmitter.EmitInMemory` → `IronScheme.Core.ModuleLoader.Run(asm)`。
+- `compile-library`：生成带 `(entry …)` 的库 dll，入口返回 13 元素列表；加载走原语 `load-library-dll`（`ModuleLoader.LoadModule`）。
+- `serialize-port`/`deserialize-port` 已改为 fasl（iron-020），psyntax 的 fasl 路径可直接使用。
