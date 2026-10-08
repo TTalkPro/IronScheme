@@ -9,6 +9,11 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+  <!-- stage1 boot 镜像（tools/build-stage1.sh 生成）存在时复制到输出目录，作为默认的 ~/ironscheme.boot.dll -->
+  <ItemGroup>
+    <None Include="..\IronScheme.Console\build\ironscheme.boot.dll" Condition="Exists('..\IronScheme.Console\build\ironscheme.boot.dll')"
+          Link="ironscheme.boot.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
     <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
