@@ -8,5 +8,5 @@
     <NoWarn>$(SkipWarn);$(NoWarn);NETSDK1138;NU1702;NU1902;NU1903;NU1701;CS3021;SYSLIB0050</NoWarn>
   </PropertyGroup>
 
-  <Import Label="BuildToolsProps" Project="$(MSBuildThisFileDirectory)/../IronScheme.BuildTools/build/IronScheme.Build.props" />
+  <!-- IronScheme.BuildTools 子模块已删除（2026-10-08）；旧项目因此无法再构建，见 legacy-stage0/README.md -->
 </Project>
