@@ -1,0 +1,76 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading;
+using IronScheme.Core;
+using IronScheme.Stage0;
+
+// stage0 命令行（iron-016）：
+//   stage0 --core <文件.core> …            依次解释执行 Lcore 文件（不加载种子）
+//   stage0 <种子> [<脚本.sps> 参数 …]       执行种子，再以 (load/program 脚本) 运行顶层程序
+// 选项（写在种子与脚本之前）：--time 把各阶段耗时写到标准错误；-I <目录> 增加库搜索路径；
+// --deterministic 开启构建模式的确定性 gensym（iron-014）。
+int exitCode = 0;
+var thread = new Thread(() => exitCode = Main(args), 512 * 1024 * 1024);
+thread.Start();
+thread.Join();
+return exitCode;
+
+static int Main(string[] args)
+{
+  bool time = false;
+  var rest = new System.Collections.Generic.List<string>();
+  for (int i = 0; i < args.Length; i++)
+  {
+    if (rest.Count < 2 && args[i] == "--time") time = true;
+    else if (rest.Count < 2 && args[i] == "--deterministic") RuntimeOptions.DeterministicGensym = true;
+    else if (rest.Count < 2 && args[i] == "-I" && i + 1 < args.Length) Builtins.AddIncludePath(args[++i]);
+    else rest.Add(args[i]);
+  }
+  args = rest.ToArray();
+  if (args.Length == 0)
+  {
+    Console.Error.WriteLine("usage: stage0 [--time] [--deterministic] [-I dir] (--core <file.core> ... | <seed> [<script.sps> args ...])");
+    return 2;
+  }
+
+  var sw = Stopwatch.StartNew();
+  Interpreter.Initialize();
+  try
+  {
+    if (args[0] == "--core")
+    {
+      for (int i = 1; i < args.Length; i++) Interpreter.RunFile(args[i]);
+      return 0;
+    }
+
+    int forms = Interpreter.RunFile(args[0]);
+    if (time) Console.Error.WriteLine($"stage0: seed {forms} forms in {sw.ElapsedMilliseconds} ms");
+    if (args.Length == 1) return 0;
+
+    Builtins.CommandLineArgs = args[1..];
+    sw.Restart();
+    try
+    {
+      Interpreter.EvalTopLevel(Cons.FromArray(Symbol.Intern("load/program"), args[1].Replace('\\', '/')));
+    }
+    catch (ProgramFailedException)
+    {
+      return 1;
+    }
+    finally
+    {
+      if (time) Console.Error.WriteLine($"stage0: program in {sw.ElapsedMilliseconds} ms");
+    }
+    return 0;
+  }
+  catch (Exception e)
+  {
+    Interpreter.Report(e);
+    return 1;
+  }
+  finally
+  {
+    Console.Out.Flush();
+  }
+}

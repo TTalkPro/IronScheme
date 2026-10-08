@@ -17,5 +17,6 @@
     <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
     <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
     <ProjectReference Include="..\IronScheme.PrimGen\IronScheme.PrimGen.csproj" />
+    <ProjectReference Include="..\IronScheme.Stage0\IronScheme.Stage0.csproj" />
   </ItemGroup>
 </Project>
