@@ -8,6 +8,7 @@ using IronScheme.Stage0;
 // stage0 命令行（iron-016）：
 //   stage0 --core <文件.core> …            依次解释执行 Lcore 文件（不加载种子）
 //   stage0 <种子> [<脚本.sps> 参数 …]       执行种子，再以 (load/program 脚本) 运行顶层程序
+//   stage0 --boot <boot.dll> [<脚本.sps> …]  加载新编译器生成的 boot 镜像代替种子
 // 选项（写在种子与脚本之前）：--time 把各阶段耗时写到标准错误；-I <目录> 增加库搜索路径；
 // --deterministic 开启构建模式的确定性 gensym（iron-014）。
 int exitCode = 0;
@@ -44,8 +45,18 @@ static int Main(string[] args)
       return 0;
     }
 
-    int forms = Interpreter.RunFile(args[0]);
-    if (time) Console.Error.WriteLine($"stage0: seed {forms} forms in {sw.ElapsedMilliseconds} ms");
+    if (args[0] == "--boot" && args.Length >= 2)
+    {
+      // 用编译好的 boot 镜像代替文本种子（新编译器的验证；eval 仍由 stage0 解释）
+      ModuleLoader.LoadModule(args[1]);
+      if (time) Console.Error.WriteLine($"stage0: boot image {args[1]} loaded in {sw.ElapsedMilliseconds} ms");
+      args = args[1..];
+    }
+    else
+    {
+      int forms = Interpreter.RunFile(args[0]);
+      if (time) Console.Error.WriteLine($"stage0: seed {forms} forms in {sw.ElapsedMilliseconds} ms");
+    }
     if (args.Length == 1) return 0;
 
     Builtins.CommandLineArgs = args[1..];

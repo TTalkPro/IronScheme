@@ -188,20 +188,37 @@ See docs/license.txt. |#
 
   ;; —— 按 Lcil 词法写出 ——
 
+  ;; 字符串可能按 UTF-16 码元给出代理项：成对的合成一个码点（Lcil 的 \x 转义不接受代理项）
   (define (write-lcil-string s port)
+    (define (hex n)
+      (put-string port "\\x")
+      (put-string port (number->string n 16))
+      (put-char port #\;))
     (put-char port #\")
-    (string-for-each
-      (lambda (c)
-        (cond
-          ((char=? c #\") (put-string port "\\\""))
-          ((char=? c #\\) (put-string port "\\\\"))
-          ((char<=? #\space c #\~) (put-char port c))
-          (else
-           (put-string port "\\x")
-           (put-string port (number->string (char->integer c) 16))
-           (put-char port #\;))))
-      s)
+    (if (plain-string? s)
+        (put-string port s)
+        (escaped-string s port hex))
     (put-char port #\"))
+
+  ;; 只含可打印 ASCII、且没有 " 与 \ 的字符串整段写出（绝大多数情况）
+  (define (plain-string? s)
+    (clr-static-call System.Text.RegularExpressions.Regex (IsMatch String String) s "^[ !#-\\[\\]-~]*\\z"))
+
+  (define (escaped-string s port hex)
+    (let ((n (string-length s)))
+      (let loop ((i 0))
+        (when (< i n)
+          (let* ((c (string-ref s i))
+                 (k (char->integer c)))
+            (cond
+              ((char=? c #\") (put-string port "\\\"") (loop (+ i 1)))
+              ((char=? c #\\) (put-string port "\\\\") (loop (+ i 1)))
+              ((char<=? #\space c #\~) (put-char port c) (loop (+ i 1)))
+              ((and (<= #xD800 k #xDBFF) (< (+ i 1) n) (<= #xDC00 (char->integer (string-ref s (+ i 1))) #xDFFF))
+               (hex (+ #x10000 (* (- k #xD800) #x400) (- (char->integer (string-ref s (+ i 1))) #xDC00)))
+               (loop (+ i 2)))
+              ((<= #xD800 k #xDFFF) (assertion-violation 'write-lcil-datum "unpaired surrogate in string" s))
+              (else (hex k) (loop (+ i 1)))))))))
 
   (define (write-lcil-datum x port)
     (cond
