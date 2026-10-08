@@ -93,7 +93,8 @@ Phase A 中编译器跑在解释器上、宿主就是新运行时，比原先"�
 
 | 来源 | 处理 |
 |---|---|
-| **gensym 名字含时间戳**（`g$name$N$TICKS`） | 构建模式（`deterministic-gensym?`）下 TICKS 换成 gensym 作用域名、计数在作用域内从 1 开始：psyntax 的 `library-expander` 在以库名为名的作用域（`$gensym-scope`）中展开整个库，作用域外为 `%top`，跨库唯一、可复现。文本种子由旧系统生成，写出时把本进程的 `$TICKS` 后缀改为 `$%seed`。后备：比较前对 Lcil 做 gensym α 重命名 |
+| **gensym 名字含时间戳**（`g$name$N$TICKS`） | **自举构建采用规范改名**（iron-030）：构建过程用普通（带进程时间戳的）gensym，编译器写常量表时把本进程生成的 gensym 按首次出现顺序改名为 `g$名字$序号$%b`（`canonical-gensyms`）。确定性 gensym（`deterministic-gensym?`，库名作用域 + 计数，iron-014）用于单独编译库；它不适合自举构建——上一级镜像中固化的名字会与本次构建过程中生成的同名 gensym 冲突。文本种子由旧系统生成，写出时把 `$TICKS` 改为 `$%seed` |
+| 符号的哈希值 | `Symbol.GetHashCode` 为名字的 FNV-1a 哈希：eq 哈希表按符号的遍历顺序（psyntax 合并 import 时用到）与对象分配顺序无关，产物不随宿主（stage0 解释器或编译后的系统）变化 |
 | 哈希表遍历顺序 | 编译器与展开器中需要稳定顺序处一律按插入顺序或排序 |
 | MVID、时间戳 | 发射器按内容哈希生成（04 §4） |
 
@@ -103,7 +104,7 @@ Phase A 中编译器跑在解释器上、宿主就是新运行时，比原先"�
 |---|---|
 | 现在 | 旧系统的可运行快照 `legacy-stage0/`（含原始 DLR 格式种子），只用于第 0 步生成文本种子。BuildTools 已删除，旧系统不能再从源码构建 |
 | M2 完成后 | `boot-seed.core`（文本） |
-| M6 完成后 | stage3 的 boot dll 作为二进制缓存放入工作区；从源码重建的路径是 `boot-seed.core` + stage0 |
+| M6 完成后 | stage3 的 boot dll 作为二进制缓存放入工作区（`IronScheme.Console/build/ironscheme.boot.dll`，不提交）；从源码重建的路径是 `boot-seed.core` + stage0。实测 stage0 编译出的 stage1 与 stage2、stage3 逐字节相同（iron-030） |
 | M7 删除旧系统后 | 旧 DLR 系统不再需要。从零重建只要 .NET SDK、本仓库（含 nanopass 子模块）与文本种子 |
 
 ## 9. 新系统中的构建脚本（Phase B）

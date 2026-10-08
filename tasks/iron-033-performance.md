@@ -22,3 +22,8 @@
 
 - 新系统中每次 `eval` 都经新编译器（nanopass 各 pass + 发射），逐条 eval 很多的程序明显变慢：trigtest 在 stage1 上 52 秒（stage0 解释 eval 17 秒）。可考虑：简单表达式直接解释、缓存、减少 pass 开销、把编译器自身的 nanopass 代码优化。
 - 与 ChezScheme 的对照与建议见 `designs/03-compiler.md` §4.1 末尾（原语签名、表驱动安全内联、pass 拆分）。
+
+## 从 iron-031 转来
+
+- `compile-system-libraries`（232 个库）约 55 秒；`eval`/`environment` 每次都要走完整编译管线，开销明显高于旧解释式求值，可考虑小表达式的快速路径。
+- `(- x)` 现为 `(generic* -1 x)`，比原来的 `(generic- 0 x)` 稍慢，可在 `Numbers` 中加专门的取负原语。

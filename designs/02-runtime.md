@@ -79,6 +79,7 @@ public sealed class Box { public object Value; }   // 被赋值且被捕获的�
 - **没有自由变量的过程**（库顶层过程、大部分原语）：方法体生成为**静态方法**，过程类只做转发，实例是单例。已知调用（库内对未被 `set!` 的顶层过程的调用）直接 `call` 静态方法。R6RS 保证导入的绑定不可变，库内未被赋值的定义也不可变，这一优化是安全的。
 - **`apply`**：`(apply f a … lst)` 展开参数后调用 `InvokeK` 或 `InvokeN`。
 - **参数个数错误**：`ArityError` 通过钩子调用 Scheme 的 `assertion-violation`。
+- **`Arity` 属性**：编译器为每个过程类生成 `get_Arity` 重写：固定 n 个参数为 n，带剩余参数为 n.0，多子句为各子句的表（`procedure-arity` 等使用，iron-031）。
 
 ## 5. 原语
 
@@ -124,6 +125,7 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
   - 参数转换：数值拓宽、`Procedure` 转委托（用 `System.Linq.Expressions` 生成适配委托并缓存；这是 .NET 自带的能力）、符号转枚举、列表转数组。
   - 返回值转换：`void` → 未指定值，枚举 → 符号。
   - `clr-cast` 在整数类型（含 `char`）之间按 IL `conv` 转换：不检查溢出，截断取低位（与旧编译器一致）；params 数组参数可整体传入可转换的向量。
+  - 类型名决议找不到类型时，按惯例加载与类型全名或其命名空间同名的程序集再找（如 `Microsoft.Win32.Registry`；.NET 10 不会预先加载它们，iron-031）。
   - 类型名别名（`fixnum`、`list` 等）之外，另把第三方代码写死的旧类型名 `IronScheme.Runtime.Builtins` 映射到 `IronScheme.Core.Builtins`（nanopass 适配文件）。
 - 取代 DLR 的 `MethodBinder` 一族。规则以现有 `ClrGenerators.cs` 的行为为准，做必要简化。
 

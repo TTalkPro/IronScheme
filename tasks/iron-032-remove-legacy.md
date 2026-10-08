@@ -14,3 +14,8 @@
 
 ## 验收标准
 - 全新克隆（含 srfi、pfds 子模块，不含 BuildTools）只用 .NET SDK 即可构建、自举并通过测试。
+
+## 从 iron-031 转来
+
+- FFI 与 `define-clr-class` 在新系统中未实现（06 §1）。删除旧系统前决定：按 iron-011 的运行时辅助（`Helpers.FFIConvertTo<T>` 等）或静态生成实现，或明确放弃并从 `lib/` 中移除相关库。
+- 仓库仍跟踪旧格式的 `IronScheme.Console/ironscheme.boot.dll` 种子；新 boot 由 `tools/build-stage1.sh` 生成在 `build/`（已忽略）。删除旧系统时一并决定种子与 boot 的存放方式。

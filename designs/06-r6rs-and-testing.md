@@ -14,6 +14,8 @@
 | `guard` 无匹配时的再抛出 | 在 guard 的动态环境中 `raise-continuable` | 相同（psyntax 不改） |
 | try/finally 区域内的尾调用 | 不是真尾调用 | 相同（CIL 限制，03 §5） |
 | 记录作为 CLR 类型 | 支持 | **不支持**（02 §7） |
+| FFI（`ffi-callout`、`ffi-callback`、`pinvoke-call`）与 `define-clr-class` | 支持 | 暂不支持：编译为运行时报"尚不支持"（`Calls.Unsupported`），相关库仍可编译、加载 |
+| 调试器（`(ironscheme debugger)` 的 `step-into`） | 依赖 DLR 调试设施 | 保留导出，调用时报不支持（02 §10） |
 
 ### 必须保持的
 
@@ -45,6 +47,8 @@ iron-001 已用旧系统实测（2026-10-08，.NET 10，`DOTNET_ROLL_FORWARD=Maj
 | `tests/fp-test.sps` | 无输出 | 无输出 |
 | 系统库编译 | 232 个（含 srfi、pfds） | 数量相同 |
 | 自举 | 两遍 + IL 校验 | 不动点 + ILVerify |
+
+iron-031 实测（新宿主 + 新 boot）：R6RS 为 3 of **8973** failed——同样的 3 项；多出的 2 项是 `(unless (eqv? 0.0 -0.0) …)` 保护的用例，`eqv?` 区分 `±0.0` 后开始运行并通过。其余各项与基线相同，232 个系统库全部通过 ILVerify。
 
 ## 4. 运行方式
 
