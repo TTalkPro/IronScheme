@@ -11,5 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
+    <!-- Phase A 同进程调用发射器（designs/05-bootstrap.md §9）；常量往返测试也用到 -->
+    <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
   </ItemGroup>
 </Project>
