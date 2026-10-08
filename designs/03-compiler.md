@@ -1,0 +1,131 @@
+# 03 nanopass 编译器
+
+## 1. 位置与组织
+
+| 项 | 决定 |
+|---|---|
+| nanopass 框架 | **第三方依赖**：git 子模块 `IronScheme/IronScheme.Console/lib/nanopass-framework-scheme`（固定提交 `c14d3924`；iron-002 已在旧系统上验证可直接运行）（上游 https://github.com/nanopass/nanopass-framework-scheme，MIT 许可）。该目录加入库搜索路径，使 `(nanopass)` 解析到其中的 `nanopass.ss`。用其 `implementation-helpers.ironscheme.sls` 适配；需要的修改以补丁或覆盖库的形式放在子模块之外，不改子模块内容 |
+| 编译器源码 | `Console/compiler/`，库名 `(ironscheme compiler …)` |
+| 原语表 | `Console/compiler/primitives.ss`，由 `IronScheme.PrimGen` 生成（02 §5） |
+| 进入 boot 镜像 | 是。新系统运行时 `eval` 需要编译器，所以编译器库与 nanopass 一起编进 boot 镜像 |
+| 纯函数原则 | 编译器**不读运行时状态**：不调 `symbol-value` 查绑定，不执行目标原语，不反射目标程序集。它的全部输入是 Lcore 数据、原语表数据和编译选项 |
+
+## 2. 输入语言 Lcore
+
+即 psyntax `rewrite`（`Console/psyntax/internal.sls:37-113`）的输出。以下是**固定文法**，`parse-core` 只接受这些形式，其余报错。
+
+```
+e ::= x                                  ; 符号（见 §3 分类）
+    | (quote d)                          ; psyntax 对所有字面量都加 quote
+    | (if e e e) | (if e e)
+    | (begin e ...)
+    | (set! x e)
+    | (case-lambda [fmls body] ...)
+    | (annotated-case-lambda ann [fmls body] ...)
+    | (typed-case-lambda [fmls tspec body] ...)
+    | (annotated-typed-case-lambda ann [fmls tspec body] ...)
+    | (lambda fmls body)                 ; 少见，保留
+    | (letrec ((x e) ...) body)
+    | (letrec* ((x e) ...) body)
+    | (library-letrec* name ((x loc e) ...) body)
+    | (annotated-call ann . X)           ; X 为 符号 | (quote d) | (set! …) | (f arg …)
+    | (clr-…-internal …)                 ; 互操作形式，见 §7
+    | (ffi-callout-internal …) | (ffi-callback-internal …) | (pinvoke-call-internal …)
+    | (e e ...)                          ; 应用
+fmls ::= (x ...) | (x x ... . x) | x
+body ::= e ...                           ; psyntax 实际只生成一个
+```
+
+- `$try/finally`、`$throw`、`$break`、`$and?`、`$or?` 等以**原语调用**的形式出现（`($try/finally e1 e2)`），由编译器按原语表中的"特殊原语"处理。
+- `typed-…-lambda` 第一版**按无类型处理**：忽略类型说明，参数和返回值按 `object` 编译；以后再利用类型做拆箱。
+- `annotated-*` 中的注解只取源位置，供调试信息使用。
+
+## 3. 符号分类（parse-core 时决定，不查运行时）
+
+| 类别 | 判定 | 编译结果 |
+|---|---|---|
+| 词法变量 | 被外层 binder 绑定 | 局部变量 / 参数 / 闭包字段 / Box |
+| 原语 | 不是词法变量，且在原语表中 | 原语调用（内联 IL、静态调用、或特殊处理） |
+| 全局位置 | 其余所有符号（loc gensym 或顶层名字） | 读写该符号的 `Value` 值槽 |
+
+`library-letrec*` 中的 `(x loc e)`：`x` 是库内词法名，`loc` 是对外的位置符号。编译为：库体内用局部或静态字段访问 `x`，同时把值写入 `loc` 的值槽。
+
+## 4. pass 链
+
+与研究笔记 `chez-on-clr-feasibility.md` 6.3 的 22 步对应，按 IronScheme 的输入做了合并。语言名为草图，实现时以 `define-language` 为准。
+
+| # | pass | 输入 → 输出 | 做什么 | Chez 对应 |
+|---|---|---|---|---|
+| 1 | `parse-core` | Lcore（S 表达式）→ L0 | 解析固定文法；符号分类；`case-lambda` 规范化；剥离注解保留源位置 | 展开器之后的解析 |
+| 2 | `recognize-let` | L0 → L1 | `((case-lambda [fmls body]) args)` → `let`；单子句 `case-lambda` → `lambda` | `np-recognize-let` |
+| 3 | `simplify-letrec` | L1 → L1 | `letrec`/`letrec*` 按依赖拆成强连通分量；右边不是 lambda 的变成 `let` + `set!` | `cpletrec`、`np-identify-scc` |
+| 4 | `cp0-lite` | L1 → L1 | 常量折叠（只对原语表标为 `Pure` 的 fixnum/flonum/谓词原语）、`if` 常量测试、死代码、单次使用的 `let` 内联 | `cp0`（大幅简化） |
+| 5 | `convert-assignments` | L1 → L2 | 被 `set!` 且被闭包捕获的词法变量改为 `Box`；L2 中没有对这类变量的 `set!` | `np-convert-assignments` |
+| 6 | `uncover-free` | L2 → L3 | 计算每个 lambda 的自由变量 | `np-convert-closures` 前半 |
+| 7 | `convert-closures` | L3 → L4 | lambda → 过程类（自由变量为字段）+ 构造；无自由变量的提升为静态方法 + 单例；已知调用改为直接调用 | `np-convert-closures`、`np-optimize-direct-call` |
+| 8 | `lift-to-classes` | L4 → L5 | 所有代码体变成类上的方法；模块入口 `Initialize`；程序 = 类定义列表 | `np-lift` |
+| 9 | `lower-loops` | L5 → L6 | 自尾调用、命名 let 循环 → 重新赋参数 + 跳回标签；标记其余尾调用 | `np-recognize-loops` |
+| 10 | `lower-calls` | L6 → L7 | 应用 → 直接静态调用 / `InvokeK` / `InvokeN`；原语 → 内联 IL 模板或静态调用（§6）；全局读写 → 值槽访问；`call-with-values` 遇到字面 lambda 消费者时内联 | — |
+| 11 | `lower-interop` | L7 → L7 | `clr-*-internal` → Lcil 互操作指令（符号化成员引用，交给发射器决议，§7） | — |
+| 12 | `normalize-context` | L7 → L8 | 区分值/副作用/谓词上下文；谓词上下文中的比较原语直接生成分支 | `np-simplify-if`、`np-normalize-context` |
+| 13 | `lift-try` | L8 → L9 | `$try/finally`、逃逸续延帧等出现在表达式位置时提升为语句，结果存入临时变量（CIL 要求进入 try 时求值栈为空） | — |
+| 14 | `linearize` | L9 → Lcil | 表达式树 → 带标签的栈式指令；分配局部变量；计算 `.maxstack`；检查分支汇合点栈形状；决定 `tail.` | `np-remove-complex-opera*` + 代码生成 |
+| 15 | `emit-lcil` | Lcil → 文本 | 输出 Lcil 文本（04） | — |
+
+第一版不做的：类型推断与拆箱（fixnum/flonum 局部变量）、跨库直接调用、内联非原语过程。留到 M6。
+
+## 5. 尾调用
+
+- **自尾调用**（含命名 let、`do`）：pass 9 改写成循环，不占栈。
+- **其余尾位置调用**：发射 CIL `tail.` 前缀，作用于 `callvirt Procedure::InvokeK` 与对静态方法的 `call`。
+- **不能加 `tail.` 的位置**：try/catch/finally 区域内（CIL 禁止）。`$try/finally`、逃逸续延帧内部的尾调用因此不是真尾调用，这与 R6RS 对 `dynamic-wind` 的规定一致（thunk 调用本来就不在尾位置）。
+- 依据：iron-003 在 .NET 10（Linux x64）实测：经虚调用的相互尾递归、参数个数变化的尾调用、调用静态方法、被调方需栈传参的尾调用，一千万层全部通过，关闭 JIT 优化（`DOTNET_JITMinOpts=1`）时依然成立；不加前缀的对照在关优化时约一万层栈溢出。栈传参情形走运行时辅助路径，约慢 8 倍，参数多的调用本来就走 `InvokeN`，影响有限。
+
+## 6. 原语的编译
+
+原语表每项形如：
+
+```scheme
+(car  (static "IronScheme.Core.Lists" "Car" 1) (inline car) (flags pure))
+($fx+ (static "IronScheme.Core.Fixnums" "Add" 2) (inline fx+) (flags unsafe))
+($try/finally (special try-finally))
+```
+
+| 种类 | 编译方式 |
+|---|---|
+| 内联 IL 模板 | 编译器内置模板，如 `car`：类型检查后 `ldfld Cons::car`；`$car`：不检查直接取；`$fx+`：拆箱、`add`、装箱；`eq?`：`ceq` 后转布尔对象 |
+| 静态调用 | `call` 对应的 C# 静态方法 |
+| 特殊原语 | `$try/finally`、`$throw`、`$break`、`$and?`、`$or?`、`call/cc`（逃逸帧）、`values`、`call-with-values`、`apply`：编译器专门处理 |
+| 作为值使用 | 原语名出现在非调用位置时，读其名字符号的值槽，得到登记的 `Procedure` |
+
+装箱的 fixnum：第一版沿用现状，`int` 每次装箱。可以加一个小整数装箱缓存（现有 `Int32ToObject` 的做法）。
+
+## 7. CLR 互操作形式
+
+| 形式 | 编译结果（Lcil 指令，详见 04） |
+|---|---|
+| `clr-call-internal 'T 'member inst arg…` | `(clr-call T member static? argc)`，参数按 `object` 压栈 |
+| `clr-field-get/set!-internal` | `(clr-field-get T name static?)` / `(clr-field-set …)` |
+| `clr-new-internal` / `clr-new-array-internal` | `(clr-new T argc)` / `(clr-new-array T)` |
+| `clr-cast-internal` / `clr-is-internal` / `clr-type-of-internal` | `(clr-cast T)` / `(clr-is T)` / `(clr-type T)` |
+| `clr-using-internal` / `clr-reference-internal` | **编译期上下文**：命名空间与程序集列表作为 Lcil 方法的元数据传给发射器，由发射器做类型查找；本身编译为未指定值 |
+| `clr-namespaces-internal` | 当前命名空间列表常量 |
+| `ffi-*`、`pinvoke-call-internal` | 第一版编译为对运行时辅助方法的调用（运行时构造委托 / DllImport 包装）；以后再做静态生成 |
+
+类型名 `'T` 若是符号且不是类型名，现状会在编译期 `symbol-value` 取类型对象。新编译器不这样做：只接受字面类型名，其他情况编译为运行时 `Interop` 调用。
+
+## 8. 编译驱动
+
+| 入口 | 新实现 |
+|---|---|
+| `compile-core`（eval） | Lcore → Lcil → 发射器内存模式 → 调用入口方法 |
+| `compile-library` | 13 元素列表（id、name、ver、imp*、vis*、inv*、subst、env、visit、invoke、guard、guard-req*、visible?）→ 一个 dll，入口 `Initialize` 返回该列表 |
+| `compile-bootfile` | 36 个源文件展开后的核心形式列表 → `ironscheme.boot.dll` |
+
+三个入口都替换 `IS/Runtime/Builtins.cs` 中的同名 C# 内建函数。
+
+## 9. 验证手段
+
+- 每个 pass 后可以 `unparse` 打印中间语言；为典型输入建立快照测试。
+- Lcil 文本可直接 diff，用于比较 stage0 编译与自举各阶段的输出。
+- 不变量由 nanopass 文法检查；注意 nanopass 笔记中记录的陷阱：不带关键字的应用产生式会吞掉同形形式，L1 之后的应用产生式一律带关键字（如 `(call e e …)`）。
