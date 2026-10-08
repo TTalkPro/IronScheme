@@ -17,6 +17,15 @@ namespace IronScheme.Tests
     }
 
     [Test]
+    [Platform(Exclude = "MacOsX")]   // pinvoke 用例按 libc.so.6 / msvcrt 查找 C 运行库
+    public void FFI()
+    {
+      var r = RunIronSchemeTest(@"tests\ffi-test.sps");
+      Assert.That(r.Output, Does.Contain("ffi: all passed"));
+      AssertError(r);
+    }
+
+    [Test]
     public void MiniKanren()
     {
       var r = RunIronSchemeTestWithInput(@"(include ""lib/minikanren/mktests.scm"")");

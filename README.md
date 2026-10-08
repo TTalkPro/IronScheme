@@ -1,176 +1,73 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/ebc9krwxtg59x0am/branch/master)](https://ci.appveyor.com/project/leppie/ironscheme/branch/master)
-[![Build](https://github.com/IronScheme/IronScheme/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/IronScheme/IronScheme/actions/workflows/build.yml)
-
-[![NuGet Version](https://img.shields.io/nuget/v/IronScheme.Core?logo=nuget&label=IronScheme.Core)](https://www.nuget.org/packages/IronScheme.Core)
-[![NuGet Version](https://img.shields.io/nuget/vpre/IronScheme.Core?logo=nuget&label=IronScheme.Core)](https://www.nuget.org/packages/IronScheme.Core)
-
-[![NuGet Version](https://img.shields.io/nuget/v/IronScheme.Tool?logo=nuget&label=IronScheme.Tool)](https://www.nuget.org/packages/IronScheme.Tool)
-[![NuGet Version](https://img.shields.io/nuget/vpre/IronScheme.Tool?logo=nuget&label=IronScheme.Tool)](https://www.nuget.org/packages/IronScheme.Tool)
-
-
 IronScheme
 ==========
 
-IronScheme aims to be a R6RS conforming Scheme-like implementation for all .NET implementations and platforms.
+IronScheme aims to be a R6RS conforming Scheme-like implementation for .NET.
 
 IronScheme implements over 99% of the R6RS specification and specified behavior. 
 
 IronScheme's macro system is based on psyntax, and thus behaves similar to other implementations using psyntax, ie Icarus, Vicare, Chez.
 
-Building (Visual Studio)
-========================
+This branch replaces the DLR-based compiler with a [nanopass](https://github.com/nanopass/nanopass-framework-scheme) compiler written in Scheme that compiles straight to CIL. It bootstraps from a text seed using nothing but the .NET SDK. Full re-entrant `call/cc` is not supported (escape-only continuations). Design notes are in `designs/`.
 
-1. Open the `IronSchemeCore.sln` file in VS2019/2022
-2. Set startup project as `IronScheme.Console`
+Building
+========
 
-Alternatively, using the `build.cmd` batchfile in the IronScheme directory.
-
-Note: the VS solution is for an already bootstrapped configuration. It can behave differently to the `IronScheme.dll` in the release package. This is mostly to just provide debugging and advanced usage of IronScheme.
-
-Building (Windows)
-==================
-
-Make sure you have .NET 9 SDK installed.
+Requires only the .NET 10 SDK, on Windows, Linux and macOS.
 
 ```
 git clone https://github.com/IronScheme/IronScheme.git -b master --recurse-submodules
 
-cd IronScheme/IronScheme
-
-build
-test && test /net9 && test /core
-package
-nuget
-coverage
-```
-
-Building (non-Windows)
-======================
-
-Make sure you have .NET 9 SDK installed.
-
-```
-git clone https://github.com/IronScheme/IronScheme.git -b master --recurse-submodules
-
-cd IronScheme/IronScheme
-
-sh build.sh
-sh test.sh
-#sh test-netbefore9.sh
-sh package.sh
-sh nuget.sh
-```
-
-Running on Windows
-==================
-
-Run the `IronScheme.Console.exe` for the runtime and bitness you want to target. 
-
-V2 requires .NET3.5. V4 requires requires .NET4.0 or higher. Pretty much any running Windows should have one or both of those.
-
-You can also run it with .NET Core, which has no persisted compilation functionality. It may load precompiled libraries, but if it fails to load, it will fallback to runtime compilation. A warning will be display in that case.
-
-By default, it will run on the lowest supported .NET Core runtime installed (.NET Core 2.1 or higher).
-
-To Run it on a specific .NET Core version, use the `--fx-version` option with `dotnet` or `IronScheme.ConsoleCore.exe`.
-
-Example to run on .NET 6.0 when you have multiple framework versions installed:
-
-```
-dotnet --fx-version 6.0.0 IronScheme.ConsoleCore.dll <args...>
-```
-or
-```
-IronScheme.ConsoleCore.exe --fx-version 6.0.0 <args...>
-```
-
-To run on the latest installed .NET Core version:
-
-```
-dotnet --roll-forward LatestMajor IronScheme.ConsoleCore.dll <args...>
-```
-or
-```
-IronScheme.ConsoleCore.exe --roll-forward LatestMajor <args...>
-```
-
-Running on Linux/MacOS
-=======================
-
-The preferred way to run on non-Windows OS is to use .NET Core. You can also run IronScheme on Mono, but your mileage may vary.
-
-```
-# get .NET Core if you dont have it already
-wget https://dot.net/v1/dotnet-install.sh
-chmod +x dotnet-install.sh
-dotnet-install.sh --channel Current --runtime dotnet # v2.1+
-export -p PATH="$HOME/.dotnet:$PATH"
-```
-
-```
-# Download 
-wget https://github.com/IronScheme/IronScheme/releases/download/<latest release>.zip
-unzip <latest release>.zip
-```
-
-```
 cd IronScheme
-alias ironscheme="dotnet IronScheme.ConsoleCore.dll"
-# if you prefer Mono
-# alias ironscheme="mono IronScheme.Console-v4.exe"
 
-ironscheme
+dotnet build    # build everything, including the boot image IronScheme/IronScheme.Console/build/ironscheme.boot.dll
+dotnet test     # build, then run all tests (add e.g. --filter TestCategory=Conformance)
 ```
 
-Library usage
-=============
+The repository root holds `IronScheme.slnx`, and builds there default to Release. The boot image is generated by the `GenerateBootImage` target in `IronScheme.Host.csproj`, which runs stage0. This takes about 45 seconds and is skipped when the seed, the Scheme sources, the compiler and the C# runtime are unchanged. To build only the C# projects, pass `-p:BuildBootImage=false`.
 
-Reference `IronScheme.dll` from your project. 
-
-```
-using IronScheme;
-
-class Program
-{
-    static void Main(string[] args)
-    {
-        "(display 'hello-world)".Eval();
-    }
-} 
-```
-
-Or with C# 9 and later as:
+Maintenance commands outside the normal build live in `tools/build.cs`, a .NET 10 file-based C# program, so no shell is needed:
 
 ```
-using IronScheme;
-
-"(display 'hello-world)".Eval();
+dotnet run tools/build.cs -- stage1 <dir>      # build a boot image into another directory
+dotnet run tools/build.cs -- seed [--stage0]   # regenerate the text seed
+dotnet run tools/build.cs -- ilverify <dll>... # verify emitted assemblies (dotnet tool install -g dotnet-ilverify)
 ```
+
+On Linux and macOS, `./tools/build.cs <command>` also works.
+
+How the bootstrap works:
+
+1. `IronScheme.Stage0` (a small C# interpreter for the core language) runs the text seed `IronScheme.Console/boot-seed.core`: the boot sources, psyntax included, after macro expansion.
+2. On stage0, `ironscheme-buildscript-nano.sps` expands the boot sources, the nanopass framework and the compiler, then compiles them with the new compiler into Lcil (a text form of CIL). `IronScheme.Emit` assembles the Lcil into `ironscheme.boot.dll` (the `GenerateBootImage` build target).
+3. The new system can rebuild itself to a fixpoint, so stage1, stage2 and stage3 are byte-identical (the `Bootstrap` tests). The `seed` command regenerates the text seed on the new system, or on stage0 with `--stage0`; both produce the same seed.
+
+Running
+=======
+
+```
+cd IronScheme/IronScheme.Console
+dotnet ../IronScheme.Host/bin/Release/net10.0/IronScheme.Host.dll -I lib            # REPL
+dotnet ../IronScheme.Host/bin/Release/net10.0/IronScheme.Host.dll -I lib foo.sps    # run an R6RS program
+```
+
+Options: `-I <dir>` adds a library search path, `--boot <dll>` selects the boot image, `--show-imports` prints the libraries as they load. When started from `IronScheme.Console`, the host picks up a newer `build/ironscheme.boot.dll` automatically.
 
 Compiling libraries
 ===================
 
-When running on .NET Framework or .NET 9.0 or higher, you can precompile scheme libraries.
-
-You can do to this by running `(compile-system-libraries)`, or `(compile)` after importing your libraries.
+Run `(compile-system-libraries)` from the REPL in `IronScheme.Console` to precompile all bundled libraries (including SRFI and PFDS) to dlls.
 
 Running tests
 =============
 
-To run the R6RS test suite, call the `(ironscheme-test)` procedure. There are a few known failure cases (currently 3 for .NET desktop). This can be run from the release package as well to confirm IronScheme runs correctly on a new platform or framework.
+`dotnet test` in the repository root runs everything. The test categories are:
 
-After building, you can use NUnit to run `IronScheme.Tests.dll` in the `IronScheme.Console` bin folder.
+- `IronScheme.Core.Tests`: runtime, reader, emitter, stage0, compiler pass snapshots.
+- `Bootstrap`: seed → stage0 → stage1 → stage2 → stage3, comparing Lcil and dlls and running ILVerify (`dotnet tool install -g dotnet-ilverify`).
+- `Conformance`: the R6RS test suite (3 known failures), trig, CLisp number and floating-point tests.
+- `SRFI`, `Other` (PFDS, MiniKanren, FFI), `SystemLibraries` (compiles all libraries, loads them from dlls only, and runs ILVerify on them).
 
-There is also a batch file in the IronScheme directory called `test.cmd`. You can pass the `/verbose` to the batch file to see complete output in case of failures.
-
-**Note**
-
-Make sure that `peverify` is in your PATH. The test fixtures are designed to execute in a specfic order. The tests will not take less than 6 minutes to complete.
-
-Nuget feed
-==========
-
-On Nuget.org and CI-builds on https://ci.appveyor.com/nuget/ironscheme
+From the REPL, `(ironscheme-test)` runs the R6RS test suite.
 
 Issues/PR
 =========

@@ -150,6 +150,10 @@
     (overload "IronScheme.Core.Builtins" "IsEqual" 2 #f (pure) eq?))
   (primitive eqv?
     (overload "IronScheme.Core.Builtins" "IsEqualValue" 2 #f (pure) eqv?))
+  (primitive ffi-callback-internal
+    (overload "IronScheme.Core.Ffi" "Callback" 1 #t () #f))
+  (primitive ffi-callout-internal
+    (overload "IronScheme.Core.Ffi" "Callout" 1 #t () #f))
   (primitive fx*internal
     (overload "IronScheme.Core.Builtins" "FxMultiplyInternal" 2 #f (pure) #f))
   (primitive fx+internal
@@ -166,6 +170,8 @@
     (overload "IronScheme.Core.Builtins" "Subtract" 2 #f (pure) #f))
   (primitive generic-div
     (overload "IronScheme.Core.Builtins" "Div" 2 #f (pure) #f))
+  (primitive generic-negate
+    (overload "IronScheme.Core.Builtins" "Negate" 1 #f (pure) #f))
   (primitive generic/
     (overload "IronScheme.Core.Builtins" "Divide" 2 #f (pure) #f))
   (primitive gensym
@@ -233,6 +239,8 @@
     (overload "IronScheme.Core.Builtins" "OpenTcpInputOutputPort" 3 #f () #f))
   (primitive pair?
     (overload "IronScheme.Core.Builtins" "IsPair" 1 #f (pure) pair?))
+  (primitive pinvoke-call-internal
+    (overload "IronScheme.Core.Ffi" "PInvokeCall" 3 #t () #f))
   (primitive pointer+
     (overload "IronScheme.Core.Builtins" "PointerAdd" 2 #f () #f))
   (primitive read-annotated

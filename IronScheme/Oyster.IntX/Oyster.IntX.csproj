@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>Oyster.Math</RootNamespace>
-    <TargetFrameworks>net20;net10.0</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <AssemblyTitle>Oyster.IntX</AssemblyTitle>
     <Company>Oyster</Company>

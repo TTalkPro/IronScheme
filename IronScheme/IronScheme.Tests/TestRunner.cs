@@ -63,7 +63,7 @@ namespace IronScheme.Tests
     /// </summary>
     protected internal static TestResult RunIronSchemeTest(string args, string input, [CallerMemberName] string method = null, string boot = null)
     {
-      if (!File.Exists(boot ?? Paths.Boot)) Assert.Ignore("boot image not built (run tools/build-stage1.sh or the Bootstrap tests)");
+      if (!File.Exists(boot ?? Paths.Boot)) Assert.Ignore("boot image not built (run dotnet build in the repository root, or the Bootstrap tests)");
       var argv = new[] { Paths.Host, "--boot", boot ?? Paths.Boot, "-I", "lib" }
         .Concat((args ?? "").Replace('\\', '/').Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToArray();
       return RunProcess("dotnet", argv, input, Paths.ConsoleDir);

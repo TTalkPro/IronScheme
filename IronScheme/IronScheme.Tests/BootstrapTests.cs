@@ -73,10 +73,15 @@ namespace IronScheme.Tests
       File.Copy(Lcil(3), Path.ChangeExtension(Paths.Boot, ".lcil"), true);
     }
 
-    /// <summary>ILVerify（dotnet tool install -g dotnet-ilverify）；找不到时忽略。</summary>
+    /// <summary>
+    /// ILVerify（dotnet tool install -g dotnet-ilverify）；找不到时忽略。全局工具目录为用户目录下的 .dotnet/tools，
+    /// Windows 上文件名带 .exe；可用环境变量 ILVERIFY 指定（与 tools/build.cs 一致）。
+    /// </summary>
     internal static TestResult ILVerify(params string[] assemblies)
     {
-      var tool = Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? "", ".dotnet", "tools", "ilverify");
+      var tool = Environment.GetEnvironmentVariable("ILVERIFY")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "tools",
+                        OperatingSystem.IsWindows() ? "ilverify.exe" : "ilverify");
       if (!File.Exists(tool)) Assert.Ignore("ilverify not installed");
       var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
       var core = Path.Combine(Paths.SolutionDir, "IronScheme.Core", "bin", Paths.Configuration, Paths.Framework);

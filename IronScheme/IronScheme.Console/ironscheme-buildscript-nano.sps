@@ -412,6 +412,7 @@
     (&stacktrace                                i)
     (generic+                                   ic)
     (generic-                                   ic)
+    (generic-negate                             ic)
     (generic*                                   ic)
     (generic/                                   ic)    
     (generic-div                                ic)

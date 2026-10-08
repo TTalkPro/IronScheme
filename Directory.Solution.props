@@ -1,0 +1,7 @@
+<Project>
+  <!-- 在仓库根目录 dotnet build / dotnet test（IronScheme.slnx）默认用 Release：
+       构建会运行 stage0 生成 boot 镜像，Debug 下约 2 分钟，Release 下约 45 秒。用 -c Debug 可改回。 -->
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+  </PropertyGroup>
+</Project>

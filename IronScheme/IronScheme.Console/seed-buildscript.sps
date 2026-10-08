@@ -91,8 +91,8 @@
     ))
 
 
-;; 源码根目录（命令行第一个参数，以 / 结尾）。旧系统会从当前目录加载 psyntax/*.sls 源码并优先于
-;; 其 boot 镜像，所以本脚本须在 legacy-stage0/ 下运行，由此参数指向仓库中的 IronScheme.Console/。
+;; 源码根目录（命令行第一个参数，以 / 结尾，通常为 ./），种子也写在这里。在 IronScheme.Console 目录下
+;; 由新系统或 stage0 运行（tools/build.cs seed）；最初的种子由旧系统运行本脚本生成（iron-015）。
 (define source-root
   (let ((args (command-line)))
     (if (and (pair? args) (pair? (cdr args))) (cadr args) "")))
@@ -361,6 +361,7 @@
     (&stacktrace                                i)
     (generic+                                   ic)
     (generic-                                   ic)
+    (generic-negate                             ic)
     (generic*                                   ic)
     (generic/                                   ic)    
     (generic-div                                ic)
@@ -1588,13 +1589,16 @@
                 (hashtable-set! ht k v))              
               '(name* ...) g*)
             (current-primitive-locations
-             (lambda (x) 
-               (let ((op (hashtable-ref ht x #f)))
-                 (unless op
-                  (error #f "undefined prim" x))
-                 op))))))))
+             (lambda (x)
+               ;; clr-*-internal 在 stage0 中是特殊形式（没有值），保持裸符号
+               (if (memq x '(clr-call-internal clr-cast-internal))
+                   #f
+                   (let ((op (hashtable-ref ht x #f)))
+                     (unless op
+                      (error #f "undefined prim" x))
+                     op)))))))))
   (define-prims
-    clr-call-internal clr-cast-internal zero? string-length vector-ref syntax-violation vector-length cons* cadr cddr filter
+    zero? string-length vector-ref syntax-violation vector-length cons* cadr cddr filter
     syntax-dispatch apply cons append map list syntax-error reverse format not make-compile-time-value
     assertion-violation null? car cdr pair? bound-identifier=? list->vector
     generate-temporaries = + datum->syntax string->symbol void
@@ -1606,7 +1610,7 @@
 ;;; 种子写出（iron-015）：把核心形式写成 ASCII 文本，供 stage0（iron-016）用新 reader 读回。
 ;;; 不用宿主的 write：符号、字符串、字符、数值都按新 reader 能读回同一值的写法输出。
 ;;; - 符号：不合 R6RS 标识符语法的字符写成 \xHH; 转义（新 reader 不支持 |...|）。
-;;; - gensym：旧系统的名字为 g$名字$计数$TICKS，TICKS 随进程变化；改写为 g$名字$计数$%seed，
+;;; - gensym：名字为 g$名字$计数$TICKS，TICKS 随进程变化；改写为 g$名字$计数$%seed，
 ;;;   计数在同一输入下确定，因此两次生成的种子相同（iron-014）。
 ;;; - flonum：number->string 后检查能读回同一值；-0.0 单独处理（旧打印器把它写成 0.0）。
 ;;; - 其他对象（记录、语法对象等）报错。
@@ -1665,7 +1669,7 @@
                       (else (hex-escape c)))
                     acc)))))))))
 
-;; 旧系统的字符串按 UTF-16 存储，string-ref 可能得到代理项：成对的代理项合成一个码点再转义。
+;; 字符串按 UTF-16 存储，string-ref 可能得到代理项：成对的代理项合成一个码点再转义。
 (define (high-surrogate? k) (<= #xD800 k #xDBFF))
 (define (low-surrogate? k) (<= #xDC00 k #xDFFF))
 

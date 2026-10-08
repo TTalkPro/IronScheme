@@ -75,7 +75,7 @@ namespace IronScheme.Host
     /// <summary>
     /// 旧 Ports.Load 的约定：当前目录下的 build/ironscheme.boot.dll 比宿主目录中的镜像新时，用它替换
     /// （旧镜像改名为 ironscheme.boot.old.dll）。只对默认镜像路径生效。
-    /// 与旧系统不同，新镜像是复制而不是移动：build/ 中的镜像是构建产物的正本（tools/build-stage1.sh、自举测试）。
+    /// 与旧系统不同，新镜像是复制而不是移动：build/ 中的镜像是构建产物的正本（GenerateBootImage 构建目标、自举测试）。
     /// </summary>
     static void ReplaceBootImage()
     {

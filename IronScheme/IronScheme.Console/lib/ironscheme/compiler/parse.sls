@@ -206,7 +206,8 @@ See docs/license.txt. |#
              (let ((a (quoted (cadr x) "clr-reference assembly" x)))
                `(clr-reference ,(if (symbol? a) (symbol->string a) a))))
             ((clr-namespaces-internal) `(clr-namespaces))
-            ((ffi-callout-internal ffi-callback-internal pinvoke-call-internal define-clr-class-internal)
+            ;; ffi-callout-internal 等是运行时原语（IronScheme.Core.Ffi，iron-032），按普通原语调用
+            ((define-clr-class-internal)
              `(unsupported ,(symbol->string h)))
             (else
              (let ((p (primitive-info h))

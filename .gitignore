@@ -1,20 +1,16 @@
 AUTHORS
 
-IronScheme/IronScheme/Compiler/IronScheme.lex.cs
-IronScheme/IronScheme/Compiler/IronScheme.y.cs
-IronScheme/IronScheme/Compiler/NumberLexer.lex.cs
-IronScheme/IronScheme/Compiler/NumberParser.y.cs
 IronScheme/Oyster.IntX/Oyster.IntX.xml
 **/Backup*/**
 **/UpgradeLog*.htm
 **/bin/**
 **/Bin/**
 **/obj/**
-/legacy-stage0/
 **/Migrated rules for*.ruleset
 /IronScheme/.vs/*
 *.csproj.user
 /.vs
+**/.idea/
  
 *.binlog
 /IronScheme/output.*
@@ -24,6 +20,6 @@ IronScheme/Oyster.IntX/Oyster.IntX.xml
 /IronScheme/*.nettrace
 /IronScheme/*.speedscope.json
 
-# Phase A 生成的 stage1 boot 镜像（tools/build-stage1.sh）
+# Phase A 生成的 stage1 boot 镜像（dotnet build 的 GenerateBootImage 目标）
 IronScheme/IronScheme.Console/build/ironscheme.boot.dll
 IronScheme/IronScheme.Console/build/ironscheme.boot.lcil

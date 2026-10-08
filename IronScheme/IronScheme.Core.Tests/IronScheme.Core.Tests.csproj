@@ -22,4 +22,8 @@
   <ItemGroup>
     <None Include="..\IronScheme.Emit\samples\*.lcil" LinkBase="samples" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- 测试以进程方式运行宿主与 boot 镜像：引用 Host 只为让 dotnet test 先构建它（并经 GenerateBootImage 生成 boot 镜像），不引用其程序集 -->
+  <ItemGroup>
+    <ProjectReference Include="..\IronScheme.Host\IronScheme.Host.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>

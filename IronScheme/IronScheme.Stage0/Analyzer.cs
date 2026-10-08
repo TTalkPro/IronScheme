@@ -34,7 +34,7 @@ namespace IronScheme.Stage0
 
     static readonly HashSet<Symbol> UnsupportedForms = new HashSet<Symbol>
     {
-      S("ffi-callout-internal"), S("ffi-callback-internal"), S("pinvoke-call-internal"), S("define-clr-class-internal"),
+      S("define-clr-class-internal"),   // FFI 形式是运行时原语（IronScheme.Core.Ffi，iron-032）
     };
 
     // clr-using 的效果：按 lambda / letrec 词法范围生效（与旧 ClrGenerator.SaveReferences 一致）

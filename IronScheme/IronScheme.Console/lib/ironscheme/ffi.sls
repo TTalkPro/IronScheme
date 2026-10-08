@@ -125,10 +125,13 @@ See docs/license.txt. |#
   (define/contract (null-pointer? obj:pointer)
     (clr-static-call IntPtr op_Equality (null-pointer) obj))
     
-  (define dlopen (pinvoke-call kernel32 LoadLibrary intptr (string)))
-  (define dlsym (pinvoke-call kernel32 GetProcAddress intptr (intptr string)))  
-  ;dlclose dlerror
-  (define dlclose (pinvoke-call kernel32 FreeLibrary int32 (intptr)))  
+  ;; 用 .NET 的 NativeLibrary（跨平台），不再写死 kernel32（iron-032）
+  (define/contract (dlopen name:string)
+    (clr-static-call NativeLibrary (Load String) name))
+  (define/contract (dlsym handle:pointer name:string)
+    (clr-static-call NativeLibrary (GetExport IntPtr String) handle name))
+  (define/contract (dlclose handle:pointer)
+    (clr-static-call NativeLibrary (Free IntPtr) handle))
   
   (define (dlerror) "not implemented"))    
   

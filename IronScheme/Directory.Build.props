@@ -2,11 +2,7 @@
   <PropertyGroup>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
     <DebugType>portable</DebugType>
+    <!-- 从旧代码移植的类型带 CLSCompliant 标注；Oyster.IntX 的异常类型带序列化构造函数 -->
+    <NoWarn>$(NoWarn);CS3021;SYSLIB0050;SYSLIB0051</NoWarn>
   </PropertyGroup>
-
-  <PropertyGroup Condition="$(Configuration) == 'Release'">
-    <NoWarn>$(SkipWarn);$(NoWarn);NETSDK1138;NU1702;NU1902;NU1903;NU1701;CS3021;SYSLIB0050</NoWarn>
-  </PropertyGroup>
-
-  <!-- IronScheme.BuildTools 子模块已删除（2026-10-08）；旧项目因此无法再构建，见 legacy-stage0/README.md -->
 </Project>

@@ -106,8 +106,10 @@
         (load/unsafe filename))))
     
   (define (ironscheme-test)
-    (let ((path (string-append (application-directory)
-                               "/tests/r6rs/run.sps")))
+    ;; 先找当前目录（新宿主在 IronScheme.Host/bin 下，测试在 IronScheme.Console 中），再找宿主所在目录
+    (let ((path (if (file-exists? "tests/r6rs/run.sps")
+                    "tests/r6rs/run.sps"
+                    (string-append (application-directory) "/tests/r6rs/run.sps"))))
       (time-it "R6RS test suite"
         (lambda () 
           (load path)))))
@@ -115,7 +117,7 @@
   (define (ironscheme-build)
      (time-it "the entire bootstrap process"
         (lambda () 
-          (load "ironscheme-buildscript.sps")))
+          (load "ironscheme-buildscript-nano.sps")))   ; 新编译器构建 build/ironscheme.boot.dll（iron-032）
      (display "IronScheme build completed.\n"))
     
   (define foreground-color

@@ -9,13 +9,49 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-  <!-- stage1 boot 镜像（tools/build-stage1.sh 生成）存在时复制到输出目录，作为默认的 ~/ironscheme.boot.dll -->
-  <ItemGroup>
-    <None Include="..\IronScheme.Console\build\ironscheme.boot.dll" Condition="Exists('..\IronScheme.Console\build\ironscheme.boot.dll')"
-          Link="ironscheme.boot.dll" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
     <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
+    <!-- 只为构建顺序：生成 boot 镜像要先有 stage0（不引用其程序集） -->
+    <ProjectReference Include="..\IronScheme.Stage0\IronScheme.Stage0.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <!--
+    boot 镜像（designs/05-bootstrap.md §3）：stage0 执行文本种子，运行 ironscheme-buildscript-nano.sps，
+    用新编译器编译出 IronScheme.Console/build/ironscheme.boot.{lcil,dll}，再复制到输出目录作为默认的 ~/ironscheme.boot.dll。
+    按输入增量：种子、构建脚本、boot 源码、lib/ironscheme（编译器及构建脚本导入的库）、nanopass、原语表，
+    以及 Core / Emit / Stage0 程序集都没变时跳过（生成一次约 45 秒）。
+    dotnet build -p:BuildBootImage=false 只编译 C#。输出到其他目录（自举比对）用 tools/build.cs stage1 <目录>。
+  -->
+  <PropertyGroup>
+    <BuildBootImage Condition="'$(BuildBootImage)' == ''">true</BuildBootImage>
+    <IronSchemeConsoleDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\IronScheme.Console'))</IronSchemeConsoleDir>
+    <BootImageDir>$(IronSchemeConsoleDir)\build</BootImageDir>
+    <BootImage>$(BootImageDir)\ironscheme.boot.dll</BootImage>
+    <Stage0Dir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\IronScheme.Stage0\bin\$(Configuration)\$(TargetFramework)'))</Stage0Dir>
+    <DotnetHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</DotnetHost>
+    <DotnetHost Condition="'$(DOTNET_HOST_PATH)' == ''">dotnet</DotnetHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BootImageInput Include="$(IronSchemeConsoleDir)\boot-seed.core;$(IronSchemeConsoleDir)\ironscheme-buildscript-nano.sps" />
+    <BootImageInput Include="$(IronSchemeConsoleDir)\compiler\primitives.ss" />
+    <BootImageInput Include="$(IronSchemeConsoleDir)\build\**\*.sls" />
+    <BootImageInput Include="$(IronSchemeConsoleDir)\psyntax\**\*.sls" />
+    <BootImageInput Include="$(IronSchemeConsoleDir)\lib\ironscheme\**\*.sls;$(IronSchemeConsoleDir)\lib\ironscheme\**\*.ss" />
+    <BootImageInput Include="$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass\**\*.ss;$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass\**\*.sls;$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass.ss" />
+    <BootImageInput Include="$(Stage0Dir)\stage0.dll;$(Stage0Dir)\IronScheme.Core.dll;$(Stage0Dir)\IronScheme.Emit.dll;$(Stage0Dir)\Oyster.IntX.dll" />
+  </ItemGroup>
+
+  <Target Name="GenerateBootImage" AfterTargets="Build" Condition="'$(BuildBootImage)' == 'true'"
+          Inputs="@(BootImageInput)" Outputs="$(BootImage)">
+    <Message Importance="high" Text="IronScheme: generating boot image with stage0 (about 45 seconds) -> $(BootImage)" />
+    <Exec Command="&quot;$(DotnetHost)&quot; &quot;$(Stage0Dir)\stage0.dll&quot; -I lib -I lib/nanopass-framework-scheme boot-seed.core ironscheme-buildscript-nano.sps &quot;$(BootImageDir)&quot;"
+          WorkingDirectory="$(IronSchemeConsoleDir)" />
+  </Target>
+
+  <!-- 复制到输出目录（镜像存在时；BuildBootImage=false 时也复制已有的镜像） -->
+  <Target Name="CopyBootImage" AfterTargets="Build;GenerateBootImage" Condition="Exists('$(BootImage)')">
+    <Copy SourceFiles="$(BootImage)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
