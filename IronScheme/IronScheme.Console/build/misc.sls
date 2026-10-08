@@ -32,7 +32,7 @@ See docs/license.txt. |#
     (clr-prop-get Procedure Arity proc))
     
   (define/contract (procedure-name proc:procedure)
-    (string->symbol (clr-call Object ToString proc)))
+    (string->symbol (clr-prop-get Procedure Name proc)))
 
   (define/contract (procedure-form proc:procedure)
     (clr-prop-get Procedure Form proc))

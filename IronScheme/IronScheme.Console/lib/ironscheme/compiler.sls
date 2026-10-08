@@ -96,8 +96,9 @@ See docs/license.txt. |#
     (set! eval-counter (+ eval-counter 1))
     (let*-values (((name) (string-append "eval$" (number->string eval-counter)))
                   ((lcil consts) (compile-forms->lcil* (list e) name "#Module" #t))
-                  ((asm) (clr-static-call IronScheme.Emit.LcilEmitter (EmitInMemory String String Object[])
-                                          (lcil->string lcil) name (list->vector consts))))
+                  ;; 直接交出 Lcil 的 S 表达式，不经文本（iron-033）；IRONSCHEME_DUMP_PASSES 的 .lcil 仍可用 compile->lcil-text 得到
+                  ((asm) (clr-static-call IronScheme.Emit.LcilEmitter (EmitInMemoryData Object String Object[])
+                                          lcil name (list->vector consts))))
       (lambda ()
         (clr-static-call IronScheme.Core.ModuleLoader Run asm))))
 
@@ -106,8 +107,9 @@ See docs/license.txt. |#
       f))
 
   (define (compile-library filename e)
-    (let ((text (compile->lcil-text (list e) (assembly-name-of filename) "#Module")))
-      (clr-static-call IronScheme.Emit.LcilEmitter (Save String String String Boolean) text filename filename #f)
+    ;; Lcil 的 S 表达式直接交给发射器，不经文本（iron-033）
+    (let ((lcil (compile-forms->lcil (list e) (assembly-name-of filename) "#Module")))
+      (clr-static-call IronScheme.Emit.LcilEmitter (SaveData Object String String Boolean) lcil filename filename #f)
       #t))
 
   (define compile-bootfile

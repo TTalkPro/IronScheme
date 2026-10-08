@@ -86,6 +86,7 @@ namespace IronScheme.Emit
     public string ClrType;         // null 表示 #f（运行时类型）
     public string ClrMember;
     public List<string> ClrParams; // 成员说明中显式的参数类型；null 表示未指定
+    public List<string> ClrHints;  // 编译器已知的实参类型（实参都是 clr-cast 时）：有完全匹配的重载就静态调用，否则照常决议（iron-033）
     public List<string> ClrGenerics; // 泛型方法的类型参数；null 表示非泛型
     public bool ClrStatic;
     public int ClrArgc;
@@ -100,6 +101,9 @@ namespace IronScheme.Emit
         .ToDictionary(o => o.Name, o => o);
 
     public static bool TryGetOpCode(string name, out OpCode op) => opcodes.TryGetValue(name, out op);
+
+    /// <summary>已读入的 (lcil …) 树 → 模型（EmitInMemoryData 使用）。</summary>
+    public static LcilAssembly FromTree(SList top, string file) => new Parser(file).Top(top);
 
     public static LcilAssembly Parse(string text, string file = "lcil")
     {
@@ -351,7 +355,7 @@ namespace IronScheme.Emit
         switch (op)
         {
           case "call":
-            Arity(l, 4, 4);
+            Arity(l, 4, 5);
             ins.ClrType = TypeOperand(l[1]);
             if (l[2] is SList ml)
             {
@@ -365,6 +369,7 @@ namespace IronScheme.Emit
             ins.ClrStatic = l[3] is SBool b ? b.Value : throw Err(l[3], "expected #t or #f");
             ins.ClrArgc = (int)Int(l[4], "argument count");
             if (ins.ClrStatic && ins.ClrType == null) throw Err(l, "static call needs a type");
+            if (l.Count == 6) ins.ClrHints = Strings(List(l[5], "argument types"), 0, "argument type");
             break;
           case "field-get": case "field-set":
             Arity(l, 3, 3);
@@ -373,7 +378,12 @@ namespace IronScheme.Emit
             ins.ClrStatic = l[3] is SBool fb ? fb.Value : throw Err(l[3], "expected #t or #f");
             if (ins.ClrStatic && ins.ClrType == null) throw Err(l, "static field needs a type");
             break;
-          case "new": Arity(l, 2, 2); ins.ClrType = Str(l[1], "type"); ins.ClrArgc = (int)Int(l[2], "argument count"); break;
+          case "new":
+            Arity(l, 2, 3);
+            ins.ClrType = Str(l[1], "type");
+            ins.ClrArgc = (int)Int(l[2], "argument count");
+            if (l.Count == 4) ins.ClrHints = Strings(List(l[3], "argument types"), 0, "argument type");
+            break;
           case "new-array": case "cast": case "is": case "type": Arity(l, 1, 1); ins.ClrType = Str(l[1], "type"); break;
           default: throw Err(l, "unknown instruction: clr-" + op);
         }

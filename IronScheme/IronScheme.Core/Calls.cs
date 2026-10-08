@@ -37,7 +37,7 @@ namespace IronScheme.Core
       return r.ToArray();
     }
 
-    /// <summary>编译器尚不支持的形式（ffi-*、define-clr-class-internal 等），执行时报错。</summary>
+    /// <summary>新系统不支持的形式（define-clr-class-internal，06 §1），执行时报错。</summary>
     public static object Unsupported(string what) =>
       Errors.AssertionViolation(what, "not supported by the compiler yet");
 

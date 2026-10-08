@@ -51,18 +51,34 @@ namespace IronScheme.Emit
 
     public static Assembly EmitInMemory(LcilAssembly a) => EmitInMemory(a, null);
 
+    /// <summary>eval 的快速路径：直接发射编译器产出的 Lcil S 表达式（Scheme 数据），不经文本（iron-033）。</summary>
+    public static Assembly EmitInMemoryData(object lcil, string file, object[] constants)
+    {
+      if (!(SchemeData.Convert(lcil, LoadReference("IronScheme.Core")) is SList top) || top.Head != "lcil")
+        throw new LcilException($"{file}: expected a (lcil 1 ...) form");
+      return EmitInMemory(LcilParser.FromTree(top, file), constants);
+    }
+
     public static Assembly EmitInMemory(LcilAssembly a, object[] liveConstants)
     {
       if (a.LiveConstants >= 0 && (liveConstants == null || liveConstants.Length != a.LiveConstants))
         throw new LcilException($"{a.File}: expected {a.LiveConstants} live constants");
       var ab = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(a.Name), AssemblyBuilderAccess.RunAndCollect);
-      var e = new LcilEmitter(a, ab.DefineDynamicModule(a.Name), false) { live = liveConstants };
+      var e = new LcilEmitter(a, ab.DefineDynamicModule(a.Name), false) { live = liveConstants, chunked = true };
       e.Build();
       return ab;
     }
 
     /// <summary>发射并保存为 dll；pdb 为真时同时生成 Portable PDB（同名 .pdb）。</summary>
     public static void Save(string lcil, string file, string outPath, bool pdb = false) => Save(LcilParser.Parse(lcil, file), outPath, pdb);
+
+    /// <summary>直接保存编译器产出的 Lcil S 表达式（不经文本，iron-033）；compile-library 使用。</summary>
+    public static void SaveData(object lcil, string file, string outPath, bool pdb)
+    {
+      if (!(SchemeData.Convert(lcil, LoadReference("IronScheme.Core")) is SList top) || top.Head != "lcil")
+        throw new LcilException($"{file}: expected a (lcil 1 ...) form");
+      Save(LcilParser.FromTree(top, file), outPath, pdb);
+    }
 
     public static void Save(LcilAssembly a, string outPath, bool pdb = false)
     {
@@ -73,6 +89,12 @@ namespace IronScheme.Emit
       e.Build();
       WritePE(ab, a, outPath, pdb);
     }
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<Assembly, bool> depsLoaded =
+      new System.Collections.Concurrent.ConcurrentDictionary<Assembly, bool>();
+
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Type> staticTypes =
+      new System.Collections.Concurrent.ConcurrentDictionary<string, Type>();
 
     readonly LcilAssembly asm;
     readonly ModuleBuilder module;
@@ -85,6 +107,27 @@ namespace IronScheme.Emit
     readonly Dictionary<string, ISymbolDocumentWriter> documents = new Dictionary<string, ISymbolDocumentWriter>();
     FieldInfo constantsField;
 
+    // 内存模式下类型很多时分到多个动态程序集（iron-033）：同一动态模块中 TypeBuilder.CreateType 的开销随类型数线性增长，
+    // 总耗时是平方级（16000 个类型约 8 秒，每 1000 个一个程序集约 0.3 秒）。生成的成员都是 public，跨程序集引用不受影响；
+    // 入口类型与常量表留在主程序集中。dll 模式（PersistedAssemblyBuilder）只能有一个模块，不分块。
+    const int ChunkSize = 1000;
+    bool chunked;
+    ModuleBuilder chunk;
+    int chunkCount, chunkFill;
+
+    ModuleBuilder ModuleFor(LcilType t)
+    {
+      if (!chunked || t.Name == asm.EntryType || asm.Types.Count <= ChunkSize) return module;
+      if (chunk == null || chunkFill == ChunkSize)
+      {
+        string name = asm.Name + "$" + ++chunkCount;
+        chunk = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(name), AssemblyBuilderAccess.RunAndCollect).DefineDynamicModule(name);
+        chunkFill = 0;
+      }
+      chunkFill++;
+      return chunk;
+    }
+
     LcilEmitter(LcilAssembly asm, ModuleBuilder module, bool debug)
     {
       this.asm = asm;
@@ -92,9 +135,11 @@ namespace IronScheme.Emit
       this.debug = debug;
       foreach (var r in asm.References) references.Add(LoadReference(r));
       // 互操作类型名在已加载程序集中查找：被引用程序集的依赖（如 Core 引用的 Oyster.IntX）也要加载
+      // 每个程序集只处理一次：eval 与 compile-library 每次都新建发射器，重复 Assembly.Load 是热点（iron-033）
       foreach (var a in references.ToList())
-        foreach (var dep in a.GetReferencedAssemblies())
-          try { Assembly.Load(dep); } catch (FileNotFoundException) { }
+        if (depsLoaded.TryAdd(a, true))
+          foreach (var dep in a.GetReferencedAssemblies())
+            try { Assembly.Load(dep); } catch (FileNotFoundException) { }
     }
 
     Exception Err(SNode pos, string msg) => new LcilException(pos != null ? $"{pos.Where(asm.File)}: {msg}" : $"{asm.File}: {msg}");
@@ -116,15 +161,19 @@ namespace IronScheme.Emit
       if (name.EndsWith("[]", StringComparison.Ordinal)) return T(name.Substring(0, name.Length - 2), pos).MakeArrayType();
       if (name.EndsWith("&", StringComparison.Ordinal)) return T(name.Substring(0, name.Length - 1), pos).MakeByRefType();
       if (types.TryGetValue(name, out var tb)) return tb;
+      if (staticTypes.TryGetValue(name, out var cached)) return cached;
       var t = Type.GetType(name);
-      if (t != null) return t;
-      foreach (var a in references.Concat(AppDomain.CurrentDomain.GetAssemblies()))
-      {
-        if (a.IsDynamic) continue;
-        t = a.GetType(name);
-        if (t != null && (t.IsPublic || t.IsNestedPublic)) return t;
-      }
-      throw Err(pos, "type not found: " + name);
+      if (t == null)
+        foreach (var a in references.Concat(AppDomain.CurrentDomain.GetAssemblies()))
+        {
+          if (a.IsDynamic) continue;
+          var u = a.GetType(name);
+          if (u != null && (u.IsPublic || u.IsNestedPublic)) { t = u; break; }
+        }
+      if (t == null) throw Err(pos, "type not found: " + name);
+      // 只缓存非动态程序集中的类型：已加载的程序集不会卸载，结果不变；每次 eval 都新增动态程序集，不缓存时查找越来越慢（iron-033）
+      if (!t.Assembly.IsDynamic) staticTypes[name] = t;
+      return t;
     }
 
     Type[] Ts(IEnumerable<string> names, SNode pos) => names.Select(n => T(n, pos)).ToArray();
@@ -133,15 +182,18 @@ namespace IronScheme.Emit
 
     void Build()
     {
-      // 1. 类型：基类在本程序集中的先定义
-      var pending = new List<LcilType>(asm.Types);
-      while (pending.Count > 0)
+      // 1. 类型：基类在本程序集中的先定义（按名字索引，避免类型多时平方级查找）
+      var byName = new Dictionary<string, LcilType>();
+      foreach (var t in asm.Types) byName.TryAdd(t.Name, t);
+      var defining = new HashSet<string>();
+      void Define(LcilType t)
       {
-        var ready = pending.FirstOrDefault(t => !pending.Any(o => o.Name == t.Base));
-        if (ready == null) throw Err(pending[0].Pos, "cyclic base types");
-        pending.Remove(ready);
-        DefineType(ready);
+        if (builders.ContainsKey(t)) return;
+        if (!defining.Add(t.Name)) throw Err(t.Pos, "cyclic base types");
+        if (t.Base != null && byName.TryGetValue(t.Base, out var bt)) Define(bt);
+        DefineType(t);
       }
+      foreach (var t in asm.Types) Define(t);
       if (asm.ConstantCount > 0) DefineConstants();
       if (asm.EntryType != null) DefineEntry();
       // 2. 字段与方法签名
@@ -167,8 +219,7 @@ namespace IronScheme.Emit
       void Create(LcilType t)
       {
         if (!done.Add(t.Name)) return;
-        var bt = asm.Types.FirstOrDefault(o => o.Name == t.Base);
-        if (bt != null) Create(bt);
+        if (t.Base != null && byName.TryGetValue(t.Base, out var bt)) Create(bt);
         builders[t].CreateType();
       }
       constantsType?.CreateType();
@@ -194,7 +245,7 @@ namespace IronScheme.Emit
       if (t.Attrs.Contains("abstract")) ta |= TypeAttributes.Abstract;
       if (t.Attrs.Contains("interface")) ta = TypeAttributes.Public | TypeAttributes.Interface | TypeAttributes.Abstract;
       var parent = t.Attrs.Contains("interface") ? null : T(t.Base, t.Pos);
-      var tb = module.DefineType(t.Name, ta, parent, Ts(t.Interfaces, t.Pos));
+      var tb = ModuleFor(t).DefineType(t.Name, ta, parent, Ts(t.Interfaces, t.Pos));
       types[t.Name] = tb;
       builders[t] = tb;
       methods[t.Name] = new List<(LcilMethod, MethodBase, Type[])>();

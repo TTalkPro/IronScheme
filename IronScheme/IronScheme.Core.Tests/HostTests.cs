@@ -5,7 +5,7 @@ using NUnit.Framework;
 namespace IronScheme.Core.Tests
 {
   /// <summary>
-  /// 新宿主（iron-029）在 stage1 boot 镜像上的冒烟测试。stage1 由 tools/build-stage1.sh 生成到
+  /// 新宿主（iron-029）在 stage1 boot 镜像上的冒烟测试。stage1 由 dotnet build（IronScheme.Host 的 GenerateBootImage 目标）生成到
   /// IronScheme.Console/build/ironscheme.boot.dll；不存在时跳过。
   /// </summary>
   [Category("Stage1")]
@@ -18,7 +18,7 @@ namespace IronScheme.Core.Tests
 
     static (int Exit, string Out, string Err) Host(string input, params string[] args)
     {
-      if (!File.Exists(Boot)) Assert.Ignore("stage1 boot image not built (run tools/build-stage1.sh)");
+      if (!File.Exists(Boot)) Assert.Ignore("stage1 boot image not built (run dotnet build in the repository root)");
       var config = new DirectoryInfo(TestDir);
       string host = Path.Combine(SolutionDir, "IronScheme.Host", "bin", config.Parent.Name, config.Name, "IronScheme.Host.dll");
       var psi = new ProcessStartInfo("dotnet")

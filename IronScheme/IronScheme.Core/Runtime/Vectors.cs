@@ -37,15 +37,12 @@ namespace IronScheme.Core
 
     internal static object[] ListToVector(Cons e)
     {
-      ArrayList v = new ArrayList();
-
-      while (e != null)
-      {
-        v.Add(e.car);
-        e = Requires<Cons>(e.cdr);
-      }
-
-      return v.ToArray();
+      // 先数长度再填充：不经 ArrayList 扩容与复制（iron-033，psyntax 封闭 rib 时对大表频繁调用）
+      int n = 0;
+      for (var p = e; p != null; p = Requires<Cons>(p.cdr)) n++;
+      var v = new object[n];
+      for (int i = 0; e != null; e = (Cons)e.cdr) v[i++] = e.car;
+      return v;
     }
 
     public static object[] ListToVector(object args)

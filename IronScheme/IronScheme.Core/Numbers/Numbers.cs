@@ -317,6 +317,15 @@ namespace IronScheme.Core
       return null;
     }
 
+    /// <summary>(- x)：fixnum 与 flonum 直接取负（(- 0.0) 为 -0.0），其余按 (* -1 x)（iron-033）。</summary>
+    [Primitive("generic-negate", Flags = PrimitiveFlags.Pure)]
+    public static object Negate(object x) => x switch
+    {
+      int i when i != int.MinValue => RT.Box(-i),
+      double d => -d,
+      _ => Multiply(-1, x)
+    };
+
     [Primitive("generic-", Flags = PrimitiveFlags.Pure)]
     public static object Subtract(object first, object second)
     {

@@ -319,6 +319,15 @@ See docs/license.txt. |#
       (hashtable-set! (mctx-vars mc) x (cons 'local i))
       i))
 
+  ;; 实参都是 (clr-cast T e) 时返回类型名列表（Lcil 的实参类型提示，发射器据此静态决议重载，iron-033）；否则 #f
+  (define (cast-types e*)
+    (and (pair? e*)
+         (let loop ((e* e*) (acc '()))
+           (if (null? e*)
+               (reverse acc)
+               (let ((d (nanopass-case (L3 Expr) (car e*) [(clr-cast ,d ,e) d] [else #f])))
+                 (and d (loop (cdr e*) (cons d acc))))))))
+
   ;; ———————————————— 表达式 ————————————————
 
   (define (cg e mc ctx)
@@ -450,7 +459,9 @@ See docs/license.txt. |#
            (finish-value! mc ctx)))]
       [(clr-call ,d0 ,d1 ,st ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
-       (emit! mc `(clr-call ,d0 ,d1 ,st ,(- (length e*) (if st 0 1))))
+       (let ((hints (and (string? d1) (cast-types (if st e* (cdr e*)))))
+             (argc (- (length e*) (if st 0 1))))
+         (emit! mc (if hints `(clr-call ,d0 ,d1 ,st ,argc ,hints) `(clr-call ,d0 ,d1 ,st ,argc))))
        (finish-value! mc ctx)]
       [(clr-field-get ,d0 ,d1 ,st ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
@@ -462,7 +473,8 @@ See docs/license.txt. |#
        (finish-value! mc ctx)]
       [(clr-new ,d ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
-       (emit! mc `(clr-new ,d ,(length e*)))
+       (let ((hints (cast-types e*)))
+         (emit! mc (if hints `(clr-new ,d ,(length e*) ,hints) `(clr-new ,d ,(length e*)))))
        (finish-value! mc ctx)]
       [(clr-new-array ,d ,e) (cg e mc 'value) (emit! mc `(clr-new-array ,d)) (finish-value! mc ctx)]
       [(clr-cast ,d ,e) (cg e mc 'value) (emit! mc `(clr-cast ,d)) (finish-value! mc ctx)]

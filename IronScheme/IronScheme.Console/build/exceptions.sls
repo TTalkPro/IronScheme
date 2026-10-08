@@ -46,7 +46,7 @@ See docs/license.txt. |#
     (if (and (not (null? x))
              (null? (cdr x)))
         (car x)
-        (clr-new MultipleValues (list->vector x))))      
+        (clr-new MultipleValues (clr-cast Object[] (list->vector x)))))   ; clr-cast 给发射器类型提示，静态调用构造函数（iron-033）      
     
   (define (dynamic-wind in proc out)
     (in)

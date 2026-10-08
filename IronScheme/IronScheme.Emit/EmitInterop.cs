@@ -137,6 +137,8 @@ namespace IronScheme.Emit
       }
     }
 
+    static bool NoByRef(ParameterInfo[] ps) => !ps.Any(p => p.ParameterType.IsByRef || p.ParameterType.IsPointer);
+
     static bool Simple(ParameterInfo[] ps) =>
       !ps.Any(p => p.ParameterType.IsByRef || p.ParameterType.IsPointer) &&
       !(ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute), false));
@@ -144,15 +146,30 @@ namespace IronScheme.Emit
     /// <summary>可静态决议的方法：显式参数类型时按类型精确匹配；否则该名字只有一个重载且参数个数相符。</summary>
     static MethodInfo StaticMethod(Type t, string member, bool isStatic, int argc, Type[] ptypes)
     {
-      if (member == "get_Item" || member == "set_Item") return null;   // 索引器映射与数组下标由运行时处理
+      if (member == "get_Item" || member == "set_Item")
+      {
+        // 数组下标由运行时处理；其余按 DefaultMember 映射到实际的索引器名（iron-033：hashtable-ref 等热点）
+        if (t.IsArray) return null;
+        var dm = t.GetCustomAttribute<DefaultMemberAttribute>();
+        if (dm == null) return null;
+        member = member.Substring(0, 4) + dm.MemberName;
+      }
       if (!isStatic && t.IsValueType) return null;
       var flags = BindingFlags.Public | (isStatic ? BindingFlags.Static : BindingFlags.Instance) | BindingFlags.FlattenHierarchy;
       var all = t.GetMember(member, MemberTypes.Method, flags).Cast<MethodInfo>().Where(m => !m.ContainsGenericParameters).ToList();
+      // 显式参数类型时 params 数组参数按数组整体传入（如 (Concat String[])），与运行时一致；原先也交给运行时，string-append 因此是热点（iron-033）
       if (ptypes != null)
-        return all.FirstOrDefault(m => m.GetParameters().Select(p => p.ParameterType).SequenceEqual(ptypes) && Simple(m.GetParameters()));
-      if (all.Count != 1) return null;
-      var ps = all[0].GetParameters();
-      return ps.Length == argc && Simple(ps) ? all[0] : null;
+        return all.FirstOrDefault(m => m.GetParameters().Select(p => p.ParameterType).SequenceEqual(ptypes) && NoByRef(m.GetParameters()));
+      // 按参数个数过滤（04 §5 规则 2）：能接受 argc 个实参的重载（含 params 数组重载）恰好一个、且是普通签名时静态调用。
+      // 原先要求同名只有一个重载，String.Substring(int)/(int,int) 这类按个数即可区分的调用也落到运行时（iron-033）
+      var fit = all.Where(m =>
+      {
+        var p = m.GetParameters();
+        return p.Length == argc || (p.Length > 0 && p.Length - 1 <= argc && p[^1].IsDefined(typeof(ParamArrayAttribute), false));
+      }).ToList();
+      if (fit.Count != 1) return null;
+      var ps = fit[0].GetParameters();
+      return ps.Length == argc && Simple(ps) ? fit[0] : null;
     }
 
     void Clr(BodyContext cx, Instr ins)
@@ -207,6 +224,8 @@ namespace IronScheme.Emit
       if (ptypes != null && ptypes.Length != n) throw Err(ins.Pos, "explicit parameter types do not match argument count");
       Type[] gtypes = ins.ClrGenerics?.Select(g => ClrType(g, cx, ins)).ToArray();
       var target = t == null || gtypes != null ? null : StaticMethod(t, ins.ClrMember, ins.ClrStatic, n, ptypes);   // 泛型方法交给运行时
+      if (target == null && t != null && gtypes == null && ptypes == null && ins.ClrHints != null && ins.ClrHints.Count == n)
+        target = StaticMethod(t, ins.ClrMember, ins.ClrStatic, n, ins.ClrHints.Select(h => ClrType(h, cx, ins)).ToArray());
       if (target != null)
       {
         if (!ins.ClrStatic) { il.Emit(OpCodes.Ldloc, Temp(cx, 0)); ConvertTo(il, t); }
@@ -304,11 +323,20 @@ namespace IronScheme.Emit
       SpillArgs(cx, n, false);
       var t = ClrType(ins.ClrType, cx, ins);
       var ctors = t.GetConstructors();
+      ConstructorInfo ctor = null;
       if (!t.IsValueType && ctors.Length == 1 && ctors[0].GetParameters().Length == n && Simple(ctors[0].GetParameters()))
+        ctor = ctors[0];
+      else if (!t.IsValueType && ins.ClrHints != null && ins.ClrHints.Count == n)
       {
-        var ps = ctors[0].GetParameters();
+        var hs = ins.ClrHints.Select(h => ClrType(h, cx, ins)).ToArray();
+        // 提示类型与参数类型完全相同：params 数组参数收到的就是数组，整体传入（与运行时一致）
+        ctor = ctors.FirstOrDefault(c => c.GetParameters().Select(p => p.ParameterType).SequenceEqual(hs) && NoByRef(c.GetParameters()));
+      }
+      if (ctor != null)
+      {
+        var ps = ctor.GetParameters();
         for (int i = 0; i < n; i++) { il.Emit(OpCodes.Ldloc, Temp(cx, i + 1)); ConvertTo(il, ps[i].ParameterType); }
-        il.Emit(OpCodes.Newobj, ctors[0]);
+        il.Emit(OpCodes.Newobj, ctor);
         return;
       }
       EmitType(il, t);

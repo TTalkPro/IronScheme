@@ -21,6 +21,9 @@ namespace IronScheme.Core
     #region 调用
 
     /// <summary>(clr-call T member instance arg …)：instance 为 null 表示静态调用。</summary>
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, string> defaultMembers =
+      new System.Collections.Concurrent.ConcurrentDictionary<Type, string>();
+
     public static object Call(Type type, string member, object instance, object[] args) =>
       Call(type, member, instance, args, null, null);
 
@@ -42,8 +45,8 @@ namespace IronScheme.Core
           arr.SetValue(ConvertTo(args[1], type.GetElementType(), "clr-call"), idx);
           return Unspecified.Instance;
         }
-        var dm = type.GetCustomAttribute<DefaultMemberAttribute>();
-        if (dm != null) member = member.Substring(0, 4) + dm.MemberName;
+        var dm = defaultMembers.GetOrAdd(type, t => t.GetCustomAttribute<DefaultMemberAttribute>()?.MemberName);
+        if (dm != null) member = member.Substring(0, 4) + dm;
       }
 
       var method = ResolveMethod(type, member, isStatic, args, paramTypes, genericArgs);
@@ -74,7 +77,13 @@ namespace IronScheme.Core
     public static object New(Type type, object[] args)
     {
       if (args.Length == 0 && type.IsValueType) return ConvertFrom(Activator.CreateInstance(type), type);
-      var ctor = SelectOverload(type.GetConstructors(), args, null);
+      // 构造函数的选择同样按（类型、实参类型）缓存；原先每次都重新打分（iron-033）
+      var key = new CacheKey(type, ".ctor", false, args, null, null);
+      if (!resolved.TryGetValue(key, out var ctor))
+      {
+        ctor = SelectOverload(type.GetConstructors(), args, null);
+        if (ctor != null) resolved[key] = ctor;
+      }
       if (ctor == null) return Errors.AssertionViolation("clr-new", $"constructor could not be resolved on type: {type.Name}", Cons.FromArray(args));
       var converted = ConvertArguments(ctor.GetParameters(), args, "clr-new");
       return ConvertFrom(InvokeUnwrapped(() => ((ConstructorInfo)ctor).Invoke(converted)), type);
@@ -127,20 +136,53 @@ namespace IronScheme.Core
 
     #region 重载决议
 
-    static readonly ConcurrentDictionary<string, MethodBase> resolved = new ConcurrentDictionary<string, MethodBase>();
+    static readonly ConcurrentDictionary<CacheKey, MethodBase> resolved = new ConcurrentDictionary<CacheKey, MethodBase>();
 
-    static string CacheKey(Type type, string member, bool isStatic, object[] args, Type[] paramTypes, Type[] genericArgs)
+    /// <summary>
+    /// 决议缓存的键：类型、成员名、静态与否、实参的运行时类型（null 实参记为 null）、显式参数类型与泛型参数。
+    /// 原先拼成字符串（含 AssemblyQualifiedName），每次调用都要分配与格式化；现按引用比较类型（iron-033）。
+    /// </summary>
+    sealed class CacheKey : IEquatable<CacheKey>
     {
-      var sb = new StringBuilder().Append(type.AssemblyQualifiedName).Append('|').Append(member).Append(isStatic ? "|s|" : "|i|");
-      foreach (var a in args) sb.Append(a?.GetType().FullName ?? "null").Append(',');
-      if (paramTypes != null) { sb.Append("|p:"); foreach (var p in paramTypes) sb.Append(p?.FullName).Append(','); }
-      if (genericArgs != null) { sb.Append("|g:"); foreach (var g in genericArgs) sb.Append(g.FullName).Append(','); }
-      return sb.ToString();
+      readonly Type type;
+      readonly string member;
+      readonly bool isStatic;
+      readonly Type[] types;   // 实参类型，其后接显式参数类型与泛型参数（以 typeof(void) 分隔）
+      readonly int hash;
+
+      public CacheKey(Type type, string member, bool isStatic, object[] args, Type[] paramTypes, Type[] genericArgs)
+      {
+        this.type = type;
+        this.member = member;
+        this.isStatic = isStatic;
+        int n = args.Length + 2 + (paramTypes?.Length ?? 0) + (genericArgs?.Length ?? 0);
+        types = new Type[n];
+        int k = 0;
+        foreach (var a in args) types[k++] = a?.GetType();
+        types[k++] = typeof(void);
+        if (paramTypes != null) foreach (var p in paramTypes) types[k++] = p;
+        types[k++] = genericArgs == null ? null : typeof(void);
+        if (genericArgs != null) foreach (var g in genericArgs) types[k++] = g;
+        var h = new HashCode();
+        h.Add(type); h.Add(member); h.Add(isStatic);
+        foreach (var t in types) h.Add(t);
+        hash = h.ToHashCode();
+      }
+
+      public bool Equals(CacheKey o)
+      {
+        if (o == null || hash != o.hash || type != o.type || isStatic != o.isStatic || member != o.member || types.Length != o.types.Length) return false;
+        for (int i = 0; i < types.Length; i++) if (types[i] != o.types[i]) return false;
+        return true;
+      }
+
+      public override bool Equals(object o) => Equals(o as CacheKey);
+      public override int GetHashCode() => hash;
     }
 
     static MethodInfo ResolveMethod(Type type, string member, bool isStatic, object[] args, Type[] paramTypes, Type[] genericArgs)
     {
-      string key = CacheKey(type, member, isStatic, args, paramTypes, genericArgs);
+      var key = new CacheKey(type, member, isStatic, args, paramTypes, genericArgs);
       if (resolved.TryGetValue(key, out var cached)) return (MethodInfo)cached;
 
       var flags = BindingFlags.Public | (isStatic ? BindingFlags.Static : BindingFlags.Instance) | BindingFlags.FlattenHierarchy;

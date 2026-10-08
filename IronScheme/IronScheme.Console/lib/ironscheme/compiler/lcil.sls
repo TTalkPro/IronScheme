@@ -30,7 +30,7 @@ See docs/license.txt. |#
                  (for-each
                    (lambda (c)
                      (put-char port #\newline)
-                     (put-string port (make-string inner #\space))
+                     (do ((i 0 (+ i 1))) ((= i inner)) (put-char port #\space))   ; 不用 make-string：它分配可变字符串，eval 时是热点（iron-033）
                      (loop c inner))
                    xs)
                  (put-char port #\))))))
