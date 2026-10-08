@@ -21,3 +21,9 @@
 - stage0 命令行与选项见 iron-016、iron-017 结论；构建时加 `--deterministic`。种子由 `tools/gen-seed.sh` 生成。
 - stage0 执行 `boot-seed.core` 时对顶层 `library-letrec*` 做了预链接（旧 boot 编译器静态链接造成的跨库前向引用）。新编译器编译 boot 镜像时会遇到同样的前向引用：库级过程须在任何库初始化代码运行之前就可用（例如先创建全部库级过程对象并写入位置，或编译为静态方法直接调用）。
 - 解释执行比旧系统编译执行慢约 2 倍（nanopass 加载约 4.5 s）。
+
+## 从 M4（iron-022～027）转来
+
+- 编译器 `(ironscheme compiler)` 已能在 stage0 上把整个文本种子编译成 boot 镜像（`compiler/tests/slow-compile-seed.sps`，约 10 秒），ILVerify 通过，用它启动（stage0 `--boot`）三个测试套件与基线一致。
+- Phase A 尚缺：把 nanopass 与编译器库本身也编进 boot 镜像（需要先用 psyntax 展开这些库得到核心形式，再与种子形式一起编译）；新系统中 `compile-core`、`compile-library`、`compile-bootfile` 要绑定到编译器（目前 boot 中这些名字没有定义，stage0 的 `compile-core` 是解释器）；构建脚本（seed-buildscript 的展开部分 + 编译器）在 stage0 上运行生成 stage1。
+- 生成的 boot 镜像入口会预链接全部已知过程（对应 stage0 的预链接）。

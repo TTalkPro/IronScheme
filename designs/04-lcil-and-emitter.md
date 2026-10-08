@@ -98,7 +98,7 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 
 | 指令 | 栈 | 说明 |
 |---|---|---|
-| `(clr-call T 成员 static? argc)` | 实例？参数×argc → 结果 | `T` 为类型名字符串，或 `#f` 表示按实例的运行时类型；成员为 `"名字"` 或 `("名字" ("P"…))` 指定参数类型；`static?` 为 `#t` 时无实例 |
+| `(clr-call T 成员 static? argc)` | 实例？参数×argc → 结果 | `T` 为类型名字符串，或 `#f` 表示按实例的运行时类型；成员为 `"名字"`、`("名字" ("P"…))`（指定参数类型）或 `("名字" ("P"…)|#f ("G"…))`（泛型方法，`#f` 表示参数类型按实参推断；泛型方法总由运行时决议）；`static?` 为 `#t` 时无实例 |
 | `(clr-field-get T "f" static?)` | 实例？→ 值 | |
 | `(clr-field-set T "f" static?)` | 实例？值 → unspecified | |
 | `(clr-new T argc)` | 参数×argc → 对象 | |

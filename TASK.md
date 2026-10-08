@@ -26,12 +26,12 @@
 | [iron-019](tasks/iron-019-emitter-core.md) | 发射器：类型、方法、指令与异常块 | M3 | iron-018 | 完成 |
 | [iron-020](tasks/iron-020-constants-fasl.md) | 常量编码与 fasl | M3 | iron-018、iron-005、iron-009 | 完成 |
 | [iron-021](tasks/iron-021-module-loader.md) | 程序集入口约定与加载器 | M3 | iron-019、iron-020、iron-004 | 完成 |
-| [iron-022](tasks/iron-022-nanopass-and-parse-core.md) | 引入 nanopass 与 parse-core | M4 | iron-017、iron-012 | 未开始 |
-| [iron-023](tasks/iron-023-frontend-passes.md) | 前中端 pass | M4 | iron-022 | 未开始 |
-| [iron-024](tasks/iron-024-closures-and-loops.md) | 闭包转换、类提升与循环降级 | M4 | iron-023 | 未开始 |
-| [iron-025](tasks/iron-025-lower-calls-prims-interop.md) | 调用、原语与互操作降级 | M4 | iron-024、iron-012 | 未开始 |
-| [iron-026](tasks/iron-026-normalize-and-linearize.md) | 上下文规范化、try 提升与线性化 | M4 | iron-025 | 未开始 |
-| [iron-027](tasks/iron-027-compiler-driver.md) | 编译驱动 | M4 | iron-026、iron-021 | 未开始 |
+| [iron-022](tasks/iron-022-nanopass-and-parse-core.md) | 引入 nanopass 与 parse-core | M4 | iron-017、iron-012 | 完成 |
+| [iron-023](tasks/iron-023-frontend-passes.md) | 前中端 pass | M4 | iron-022 | 完成 |
+| [iron-024](tasks/iron-024-closures-and-loops.md) | 闭包转换、类提升与循环降级 | M4 | iron-023 | 完成 |
+| [iron-025](tasks/iron-025-lower-calls-prims-interop.md) | 调用、原语与互操作降级 | M4 | iron-024、iron-012 | 完成 |
+| [iron-026](tasks/iron-026-normalize-and-linearize.md) | 上下文规范化、try 提升与线性化 | M4 | iron-025 | 完成 |
+| [iron-027](tasks/iron-027-compiler-driver.md) | 编译驱动 | M4 | iron-026、iron-021 | 完成 |
 | [iron-028](tasks/iron-028-phase-a-stage0-build.md) | Phase A：stage0 编译出新 boot 镜像 | M5 | iron-027、iron-021、iron-017 | 未开始 |
 | [iron-029](tasks/iron-029-host-and-repl.md) | 新宿主 IronScheme.Host 与 REPL | M5 | iron-021、iron-010、iron-008 | 未开始 |
 | [iron-030](tasks/iron-030-phase-b-fixpoint.md) | Phase B：自举不动点 | M6 | iron-028、iron-029 | 未开始 |

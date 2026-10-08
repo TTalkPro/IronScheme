@@ -74,6 +74,30 @@ body ::= e ...                           ; psyntax 实际只生成一个
 
 第一版不做的：类型推断与拆箱（fixnum/flonum 局部变量）、跨库直接调用、内联非原语过程。留到 M6。
 
+### 4.1 第一版的实际实现（M4，iron-022 ~ 027）
+
+库位于 `Console/lib/ironscheme/compiler/`，驱动为 `(ironscheme compiler)`（`lib/ironscheme/compiler.sls`）。中间语言见 `languages.sls`：
+
+| 语言 | 内容 |
+|---|---|
+| L0 | parse-core 输出；词法变量 `x`、全局位置 `(gref s)`、库变量 `(mref x)`、原语 `(prim pr)`/`(primcall pr e …)`；`(lambda 名字 (clause (x …) 剩余 体) …)`；`(library 名字 ([x loc e] …) 体)`；特殊原语为 `and` `or` `throw` `break` `try-finally`；互操作 `clr-…` |
+| L1 | 增加 `let`；`letrec` 只绑定 lambda |
+| L2 | 增加 `box` `unbox` `set-box!` |
+| L3 | lambda 带自由变量表 |
+
+| 步骤 | 实现 |
+|---|---|
+| 1 parse-core | `parse.sls`，L0 |
+| — analyze | `front.sls`：一遍分析得出被赋值、被捕获的词法变量，letrec 右边引用的同组变量，被 `mset!` 的库变量 |
+| 2、3 recognize-let + simplify-letrec | 合为一个 pass（`front.sls`，L0 → L1）：连续的、未被赋值的 lambda 绑定成一组 `letrec`；其余为 `let`；右边引用了此后（不在同一组）才绑定的变量时，该变量先绑定为未指定值再按序 `set!` |
+| 4 cp0-lite | `if` 常量测试、`begin` 中的常量、少量纯原语（`$fx+` 等、`not`、`null?`、`pair?`、`eq?`）的常量折叠 |
+| 5 convert-assignments | 既被赋值又被捕获的变量改为 Box（形参在子句入口装箱） |
+| 6 uncover-free | `closures.sls`，L2 → L3 |
+| 7 ~ 14 | 合在 `codegen.sls` 的一遍按上下文（value / effect / test / tail）生成栈式代码中：lambda → Procedure 子类（无自由变量者静态方法 + 单例）；库变量 → 模块静态字段；库中无自由变量且不被再赋值的 lambda 为"已知过程"，入口先预链接（创建并写入字段与位置，等同旧系统的静态链接，支持跨库前向调用），参数个数相符的调用直接 `call` 静态子句方法；自尾调用 → 重新赋参数并跳回方法开头；其余尾调用加 `tail.`（try 内不加）；尾位置的 `apply` 展开后 `tail. callvirt InvokeN`；谓词原语在 test 上下文直接生成比较；后面的操作数含 try 时先把全部操作数存入临时变量（lift-try）；`.maxstack` 由发射器计算 |
+| 15 emit-lcil | `lcil.sls`，块状结构逐行写出 |
+
+内联模板：`void` `$car` `$cdr` `cons` `eq?` `not` `null?` `pair?`、`$fx` 算术 / 位运算 / 比较 / 零与符号判断、`$fl` 算术与比较（`<=`、`>=` 对 NaN 为假）；其余原语静态调用。`call/cc`、`call-with-values`、`values` 用原语表中的后备实现（静态调用）；`ffi-*`、`pinvoke-call-internal`、`define-clr-class-internal` 编译为运行时报"尚不支持"。第一版不生成序列点（注解在 parse-core 剥离）。
+
 ## 5. 尾调用
 
 - **自尾调用**（含命名 let、`do`）：pass 9 改写成循环，不占栈。

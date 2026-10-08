@@ -19,3 +19,7 @@
 
 - `eqv?` 对 `0.0` 与 `-0.0` 返回 `#t`（旧系统与新运行时均如此：`IsEqualValue` 用 `Equals`，而 .NET 的 `double.Equals(0.0, -0.0)` 为真）。R6RS 要求返回 `#f`。
 - 旧打印器把 `-0.0` 写成 `0.0`，把名为 `|` 的符号写成裸 `|`（无法读回）：打印器在 Scheme 中（`build/generic-writer.sls`），按需修正。
+
+## 从 iron-025 转来
+
+- `ffi-callout-internal`、`ffi-callback-internal`、`pinvoke-call-internal`、`define-clr-class-internal` 目前编译为运行时报"尚不支持"（`Calls.Unsupported`）；lib/ 中用到它们的库（如 `(ironscheme ffi)`）需要实现：运行时辅助调用 `Helpers.FFIConvertTo<T>` 等（iron-011）或静态生成。
