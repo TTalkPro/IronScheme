@@ -130,6 +130,8 @@
     (overload "IronScheme.Core.Builtins" "IsDebugMode" 1 #f () #f))
   (primitive decompose-flonum
     (overload "IronScheme.Core.Builtins" "DecomposeFlonum" 1 #f () #f))
+  (primitive deserialize-port
+    (overload "IronScheme.Core.Fasl" "DeserializePort" 1 #f () #f))
   (primitive deterministic-gensym?
     (overload "IronScheme.Core.Builtins" "DeterministicGensym" 0 #f () #f)
     (overload "IronScheme.Core.Builtins" "DeterministicGensym" 1 #f () #f))
@@ -194,6 +196,8 @@
     (overload "IronScheme.Core.Builtins" "List" 3 #f () #f)
     (overload "IronScheme.Core.Builtins" "List" 4 #f () #f)
     (overload "IronScheme.Core.Builtins" "List" 5 #f () #f))
+  (primitive load-library-dll
+    (overload "IronScheme.Core.ModuleLoader" "LoadLibraryDll" 1 #f () #f))
   (primitive lw-debug-mode?
     (overload "IronScheme.Core.Builtins" "IsLightWeightDebugMode" 0 #f () #f)
     (overload "IronScheme.Core.Builtins" "IsLightWeightDebugMode" 1 #f () #f))
@@ -242,6 +246,8 @@
     (overload "IronScheme.Core.SymbolPrimitives" "RemoveLocation" 1 #f () #f))
   (primitive reverse!
     (overload "IronScheme.Core.Builtins" "NReverse" 1 #f () #f))
+  (primitive serialize-port
+    (overload "IronScheme.Core.Fasl" "SerializePort" 2 #f () #f))
   (primitive set-symbol-value!
     (overload "IronScheme.Core.SymbolPrimitives" "SetSymbolValue" 2 #f () #f))
   (primitive simple-conditions
