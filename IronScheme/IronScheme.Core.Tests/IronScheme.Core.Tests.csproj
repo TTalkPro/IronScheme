@@ -19,4 +19,7 @@
     <ProjectReference Include="..\IronScheme.PrimGen\IronScheme.PrimGen.csproj" />
     <ProjectReference Include="..\IronScheme.Stage0\IronScheme.Stage0.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\IronScheme.Emit\samples\*.lcil" LinkBase="samples" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
