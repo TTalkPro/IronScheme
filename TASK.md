@@ -17,11 +17,11 @@
 | [iron-010](tasks/iron-010-reader.md) | 手写 reader | M1 | iron-005、iron-007 | 完成 |
 | [iron-011](tasks/iron-011-interop-runtime.md) | CLR 互操作运行时 | M1 | iron-006 | 完成 |
 | [iron-012](tasks/iron-012-primgen.md) | 原语表生成工具 PrimGen | M1 | iron-008（以及 iron-009 ~ iron-011 完成后再生成完整版） | 完成 |
-| [iron-013](tasks/iron-013-adapt-scheme-sources.md) | Scheme 源码适配新运行时 | M2 | iron-008、iron-009、iron-010、iron-011、iron-007 | 未开始 |
-| [iron-014](tasks/iron-014-deterministic-gensym.md) | 构建模式下的确定性 gensym | M2 | iron-001 | 未开始 |
-| [iron-015](tasks/iron-015-generate-text-seed.md) | 生成文本种子 boot-seed.core | M2 | iron-001、iron-013、iron-014 | 未开始 |
-| [iron-016](tasks/iron-016-stage0-interpreter.md) | stage0：C# 核心形式解释器 | M2 | iron-008、iron-009、iron-010、iron-011 | 未开始 |
-| [iron-017](tasks/iron-017-run-psyntax-and-nanopass-on-stage0.md) | 在 stage0 上跑通 psyntax 与 nanopass | M2 | iron-015、iron-016、iron-002 | 未开始 |
+| [iron-013](tasks/iron-013-adapt-scheme-sources.md) | Scheme 源码适配新运行时 | M2 | iron-008、iron-009、iron-010、iron-011、iron-007 | 完成 |
+| [iron-014](tasks/iron-014-deterministic-gensym.md) | 构建模式下的确定性 gensym | M2 | iron-001 | 完成 |
+| [iron-015](tasks/iron-015-generate-text-seed.md) | 生成文本种子 boot-seed.core | M2 | iron-001、iron-013、iron-014 | 完成 |
+| [iron-016](tasks/iron-016-stage0-interpreter.md) | stage0：C# 核心形式解释器 | M2 | iron-008、iron-009、iron-010、iron-011 | 完成 |
+| [iron-017](tasks/iron-017-run-psyntax-and-nanopass-on-stage0.md) | 在 stage0 上跑通 psyntax 与 nanopass | M2 | iron-015、iron-016、iron-002 | 完成 |
 | [iron-018](tasks/iron-018-lcil-spec-and-reader.md) | Lcil 规格与文本读取器 | M3 | iron-003 | 未开始 |
 | [iron-019](tasks/iron-019-emitter-core.md) | 发射器：类型、方法、指令与异常块 | M3 | iron-018 | 未开始 |
 | [iron-020](tasks/iron-020-constants-fasl.md) | 常量编码与 fasl | M3 | iron-018、iron-005、iron-009 | 未开始 |

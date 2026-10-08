@@ -123,6 +123,8 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
   - 用反射按实际参数类型选重载，结果按（类型、名字、参数类型序列）缓存。
   - 参数转换：数值拓宽、`Procedure` 转委托（用 `System.Linq.Expressions` 生成适配委托并缓存；这是 .NET 自带的能力）、符号转枚举、列表转数组。
   - 返回值转换：`void` → 未指定值，枚举 → 符号。
+  - `clr-cast` 在整数类型（含 `char`）之间按 IL `conv` 转换：不检查溢出，截断取低位（与旧编译器一致）；params 数组参数可整体传入可转换的向量。
+  - 类型名别名（`fixnum`、`list` 等）之外，另把第三方代码写死的旧类型名 `IronScheme.Runtime.Builtins` 映射到 `IronScheme.Core.Builtins`（nanopass 适配文件）。
 - 取代 DLR 的 `MethodBinder` 一族。规则以现有 `ClrGenerators.cs` 的行为为准，做必要简化。
 
 ## 10. 迁移清单

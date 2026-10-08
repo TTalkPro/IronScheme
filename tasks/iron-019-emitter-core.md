@@ -22,3 +22,8 @@
 ## 从 iron-011 转来
 
 - 互操作指令静态决议时与运行时保持同一套规则（打分方式、索引器映射、转换规则）；参数转换调用 `Interop.Convert<T>`，返回值调用 `Interop.ConvertFrom`；决议不了时生成对 `Interop.Call` 等方法的调用。类型名解析用 `TypeResolver`。
+
+## 从 iron-017 转来
+
+- 解析 Lcil 中的类型名时复用 `IronScheme.Core.TypeResolver` 的规则与别名表，其中包括旧类型名映射 `IronScheme.Runtime.Builtins` → `IronScheme.Core.Builtins`（nanopass 适配文件需要）。
+- 运行时互操作的转换规则以 `Interop` 为准：`clr-cast` 在整数类型（含 `char`）之间不检查溢出；params 数组参数可整体传入可转换的向量；字符与整数之间按数值转换。静态生成调用时要与这些规则一致。

@@ -15,3 +15,9 @@
 
 ## 验收标准
 - stage1 boot dll 生成且 ILVerify 通过；引用检查通过。
+
+## 从 iron-017 转来
+
+- stage0 命令行与选项见 iron-016、iron-017 结论；构建时加 `--deterministic`。种子由 `tools/gen-seed.sh` 生成。
+- stage0 执行 `boot-seed.core` 时对顶层 `library-letrec*` 做了预链接（旧 boot 编译器静态链接造成的跨库前向引用）。新编译器编译 boot 镜像时会遇到同样的前向引用：库级过程须在任何库初始化代码运行之前就可用（例如先创建全部库级过程对象并写入位置，或编译为静态方法直接调用）。
+- 解释执行比旧系统编译执行慢约 2 倍（nanopass 加载约 4.5 s）。
