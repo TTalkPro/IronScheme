@@ -156,7 +156,8 @@
       [()
         (compile-system-libraries #t)] ; make constant compression default (saves about 45% for all the libraries)
       [(constant-compression?)
-        (parameterize ((current-directory (application-directory)))
+        ;; 当前目录有 system-libraries.ss 时在当前目录编译（新宿主的应用目录是其 bin 目录，不含库源码）
+        (parameterize ((current-directory (if (file-exists? "system-libraries.ss") (current-directory) (application-directory))))
           (let ((path "system-libraries.ss"))
             (time-it "total compile time"
               (lambda ()
@@ -300,6 +301,8 @@
   (set-symbol-value! 'expanded2core expanded->core)
   
   (set-symbol-value! 'trace-printer trace-printer)
+  ;; 构建脚本（ironscheme-buildscript-nano.sps）在新系统上运行时经它取运行中系统的原语位置表（iron-030）
+  (set-symbol-value! 'current-primitive-locations current-primitive-locations)
   (set-symbol-value! 'pretty-print pretty-print)
   (set-symbol-value! 'assertion-violation assertion-violation)
   (set-symbol-value! 'raise raise)

@@ -50,6 +50,14 @@
         (tail)
         (call "_Module$1$f" "C0" ("System.Object") "System.Object")
         (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 1)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
     (method "get_Name"
       (attrs override)
       (params)
@@ -107,6 +115,14 @@
         (tail)
         (call "_Module$2$g" "C0" ("System.Object") "System.Object")
         (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 1)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
     (method "get_Name"
       (attrs override)
       (params)
@@ -158,6 +174,14 @@
         (ldarg 0)
         (tail)
         (call "_Module$3$bump" "C0" () "System.Object")
+        (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 0)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
         (ret)))
     (method "get_Name"
       (attrs override)
@@ -241,6 +265,14 @@
         (ldarg 1)
         (tail)
         (call "_Module$0" "C0" ("System.Object") "System.Object")
+        (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 1)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
         (ret)))
     (method ".ctor"
       (attrs ctor)

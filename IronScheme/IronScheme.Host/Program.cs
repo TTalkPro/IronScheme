@@ -74,7 +74,8 @@ namespace IronScheme.Host
 
     /// <summary>
     /// 旧 Ports.Load 的约定：当前目录下的 build/ironscheme.boot.dll 比宿主目录中的镜像新时，用它替换
-    /// （旧镜像改名为 ironscheme.boot.old.dll，pdb 一并移动）。只对默认镜像路径生效。
+    /// （旧镜像改名为 ironscheme.boot.old.dll）。只对默认镜像路径生效。
+    /// 与旧系统不同，新镜像是复制而不是移动：build/ 中的镜像是构建产物的正本（tools/build-stage1.sh、自举测试）。
     /// </summary>
     static void ReplaceBootImage()
     {
@@ -88,13 +89,9 @@ namespace IronScheme.Host
         File.Delete(old);
         File.Move(current, old);
       }
-      File.Move(newBoot, current);
+      File.Copy(newBoot, current, true);
       string newPdb = Path.ChangeExtension(newBoot, ".pdb"), pdb = Path.ChangeExtension(current, ".pdb");
-      if (File.Exists(newPdb))
-      {
-        File.Delete(pdb);
-        File.Move(newPdb, pdb);
-      }
+      if (File.Exists(newPdb)) File.Copy(newPdb, pdb, true);
     }
 
     static int RunScript(string script)

@@ -23,15 +23,58 @@ See docs/license.txt. |#
 ;;; - try 要求进入时求值栈为空：多操作数的形式中，若排在后面的操作数含 try，先把各操作数存入临时变量（lift-try）。
 ;;; - 常量：fixnum、布尔、'()、字符、字符串直接生成；其余进常量表（iron-020 的编码）。
 (library (ironscheme compiler codegen)
-  (export generate-unit)
+  (export generate-unit canonical-gensyms)
   (import
     (rnrs)
-    (only (ironscheme) void unspecified?)
+    (only (ironscheme) void unspecified? make-parameter gensym)
     (nanopass)
     (ironscheme compiler languages)
     (ironscheme compiler primitives)
     (ironscheme compiler constants)
     (only (ironscheme clr) clr-is))
+
+  ;; 规范 gensym 名（iron-030，designs/05-bootstrap.md §7 的后备方案）：设为 #t 时，常量表中本进程生成的 gensym
+  ;; （名字以本进程的 TICKS 后缀结尾）按首次出现的顺序改名为 g$名字$序号$%b。构建过程本身用非确定性 gensym，
+  ;; 名字带进程时间戳，与运行中系统（上一级镜像）里的名字绝不冲突；产物中的名字只取决于输入。
+  (define canonical-gensyms (make-parameter #f))
+
+  (define (process-gensym-suffix)
+    (let* ((s (symbol->string (gensym)))
+           (n (string-length s)))
+      (let loop ((i (- n 1)))
+        (if (char=? (string-ref s i) #\$) (substring s i n) (loop (- i 1))))))
+
+  ;; 对编码后的常量（中立编码 S 表达式）改名
+  (define (canonicalize-encodings encs)
+    (let* ((suffix (process-gensym-suffix))
+           (k (string-length suffix))
+           (renamed (make-hashtable string-hash string=?))
+           (next 0))
+      (define (rename s)
+        (let ((n (string-length s)))
+          (if (and (> n (+ k 2)) (char=? (string-ref s 0) #\g) (char=? (string-ref s 1) #\$)
+                   (string=? (substring s (- n k) n) suffix))
+              (or (hashtable-ref renamed s #f)
+                  (let ((new (string-append (substring s 0 (gensym-name-end s)) "$" (number->string next) "$%b")))
+                    (set! next (+ next 1))
+                    (hashtable-set! renamed s new)
+                    new))
+              s)))
+      (define (walk x)
+        (cond
+          ((and (pair? x) (memq (car x) '(sym gensym)) (pair? (cdr x)) (string? (cadr x)))
+           (list (car x) (rename (cadr x))))
+          ((pair? x) (map walk x))
+          (else x)))
+      (map walk encs)))
+
+  ;; "g$名字$序号$后缀" 中 "g$名字" 的结束位置
+  (define (gensym-name-end s)
+    (let loop ((i 2))
+      (cond
+        ((= i (string-length s)) i)
+        ((char=? (string-ref s i) #\$) i)
+        (else (loop (+ i 1))))))
 
   (define obj "System.Object")
   (define proc-type "IronScheme.Core.Procedure")
@@ -72,10 +115,18 @@ See docs/license.txt. |#
 
   (define (add-class! u c) (unit-classes-set! u (cons c (unit-classes u))))
 
+  ;; eq 哈希表是 .NET Hashtable，按 Equals 比较：0.0 与 -0.0（及含它们的复数）相等，含 -0.0 的常量不去重
+  (define (neg-zero? x) (and (flonum? x) (flzero? x) (fl<? (fl/ 1.0 x) 0.0)))
+
+  (define (signed-zero-constant? d)
+    (and (number? d) (inexact? d)
+         (or (neg-zero? d)
+             (and (not (real? d)) (or (neg-zero? (real-part d)) (neg-zero? (imag-part d)))))))
+
   (define (constant-index! u d)
-    (or (hashtable-ref (unit-const-index u) d #f)
+    (or (and (not (signed-zero-constant? d)) (hashtable-ref (unit-const-index u) d #f))
         (let ((k (unit-nconsts u)))
-          (hashtable-set! (unit-const-index u) d k)
+          (unless (signed-zero-constant? d) (hashtable-set! (unit-const-index u) d k))
           (unit-consts-set! u (cons d (unit-consts u)))
           (unit-nconsts-set! u (+ k 1))
           k)))
@@ -346,7 +397,19 @@ See docs/license.txt. |#
          (for-each (lambda (x i) (hashtable-set! (mctx-vars mc) x (cons 'local i))) x* slots)
          (cg body mc ctx))]
       [(library ,d ([,x* ,s* ,e*] ...) ,body)
-       (error 'codegen "library-letrec* is only allowed at top level")]
+       ;; 非顶层的 library-letrec*（compile-library 把库的 invoke 代码包在 lambda 中）：库变量仍是模块静态字段，
+       ;; 按顺序求值并写入；不做已知过程的预链接
+       (let ((u (mctx-unit mc)))
+         (for-each
+           (lambda (x s e)
+             (let ((field (mfield! u x)))
+               (cg e mc 'value)
+               (emit! mc `(stsfld ,(unit-module u) ,field))
+               (unless (null? d)
+                 (emit! mc `(ldconst ,(constant-index! u s)) `(castclass ,symbol-type)
+                        `(ldsfld ,(unit-module u) ,field) `(stfld ,symbol-type "Value")))))
+           x* s* e*)
+         (cg body mc ctx))]
       [(call ,e0 ,e* ...) (cg-call e0 e* mc ctx)]
       [(and ,e* ...)
        (if (null? e*)
@@ -640,6 +703,16 @@ See docs/license.txt. |#
          ;; InvokeN：有剩余参数或参数多于 4 个的子句时，按子句顺序分派
          (when (exists (lambda (c) (or (cdr c) (> (car c) 4))) clauses)
            (add-method! (invoke-n-method name static? clauses)))
+         ;; procedure-arity（与旧系统一致）：固定参数子句为 n，有剩余参数的为 n.0；多个子句为列表，没有子句为 '()
+         (add-method!
+           (let ((arity (let ((as (map (lambda (c) (if (cdr c) (inexact (car c)) (car c))) clauses)))
+                          (cond ((null? as) '()) ((null? (cdr as)) (car as)) (else as)))))
+             `(method "get_Arity" (attrs override) (params) (ret ,obj)
+                (body ,@(cond
+                          ((null? arity) '((ldnull)))
+                          ((fixnum? arity) `((ldc.i4 ,arity) (call ,rt-type "Box" ("System.Int32") ,obj)))
+                          (else `((ldconst ,(constant-index! u arity)))))
+                      (ret)))))
          (when nm
            (add-method! `(method "get_Name" (attrs override) (params) (ret "System.String")
                            (body (ldstr ,(if (symbol? nm) (symbol->string nm) nm)) (ret)))))
@@ -779,7 +852,9 @@ See docs/license.txt. |#
                  ((null? cs) '())
                  ((and (pair? live?) (car live?)) `((live-constants ,(length cs))))
                  (else
-                  `((constants ,@(let loop ((encs (encode-constants cs)) (i 0))
+                  `((constants ,@(let loop ((encs (let ((e (encode-constants cs)))
+                                                     (if (canonical-gensyms) (canonicalize-encodings e) e)))
+                                            (i 0))
                                    (if (null? encs) '() (cons (list i (car encs)) (loop (cdr encs) (+ i 1))))))))))
            ,@(map (lambda (t) (fill-namespaces t namespaces)) (cons module (reverse (unit-classes u)))))
           (reverse (unit-consts u))))))

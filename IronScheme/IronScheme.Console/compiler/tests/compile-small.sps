@@ -46,7 +46,14 @@
     ((let loop ((i 0)) (cond ((= i 5) 'five) (else (loop (+ i 1))))) . five)
     ((do ((i 0 (+ i 1)) (acc '() (cons i acc))) ((= i 3) acc)) . (2 1 0))
     ((with-exception-handler (lambda (c) 42) (lambda () (+ 1 (raise-continuable 'c)))) . 43)
-    ((guard (e ((assertion-violation? e) 'caught)) (letrec ((x y) (y x)) 'not-detected)) . caught)))
+    ((guard (e ((assertion-violation? e) 'caught)) (letrec ((x y) (y x)) 'not-detected)) . caught)
+    ;; 前向变量拆开连续的 lambda 段后产生的新前向引用（iron-030 修正）
+    ((let ()
+       (define v (list (lambda () (s2))))
+       (define (g) (mc))
+       (define (s2) 's2)
+       (define (mc) 'mc)
+       (list (g) ((car v)))) . (mc s2))))
 
 (define failures 0)
 (for-each

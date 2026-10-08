@@ -1,5 +1,7 @@
 (lcil 1
   (assembly "case-lambda-rest" (references "IronScheme.Core") (entry "#Module" "Initialize"))
+  (constants
+    (0 (list (fix 1) (fix 2) (fix 5) (flo "3FF0000000000000"))))
   (type "#Module"
     (attrs abstract sealed)
     (method "Init0"
@@ -187,6 +189,13 @@
         (ldlen)
         (conv.i4)
         (call "IronScheme.Core.Procedure" "ArityError" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 0)
         (ret)))
     (method ".ctor"
       (attrs ctor)

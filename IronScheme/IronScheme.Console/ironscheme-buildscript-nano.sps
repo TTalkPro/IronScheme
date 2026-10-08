@@ -46,27 +46,33 @@
   (only (ironscheme core) format)
   (only (ironscheme) time-it include import library)
   (only (ironscheme clr) clr-static-call clr-static-prop-get)
-  (only (ironscheme compiler) compile-forms->lcil compile->lcil-text-from-sexpr)
+  (only (ironscheme compiler) compile-forms->lcil compile->lcil-text-from-sexpr canonical-gensyms)
   (only (ironscheme) ungensym symbol-bound?)
   (prefix (only (rnrs eval) eval environment) running:))
 
 ;; 注意：上面导入的 (psyntax …) 库在运行中系统里没有作为库安装，是从源码重新加载的副本，
-;; 它的 current-primitive-locations 不是运行中系统的。运行中系统的原语位置表由种子中 (psyntax internal)
-;; 的 current-primitive-locations 参数持有：从种子文本中找到该绑定的位置符号，取其值。
+;; 它的 current-primitive-locations 不是运行中系统的。运行中系统的原语位置表：
+;; - 新系统（stage1 起）：psyntax main 把该参数登记在符号 current-primitive-locations 上；
+;; - stage0：种子中没有这一登记，从种子文本中找到 (psyntax internal) 的该绑定的位置符号取值。
+;; gensym：构建过程用非确定性 gensym（名字带本进程的时间戳，与运行中系统——上一级镜像——的名字绝不冲突），
+;; 编译时由 canonical-gensyms 把常量表中本进程生成的 gensym 按首次出现顺序规范改名，产物只取决于输入（iron-030）。
+
 (define running-primlocs
-  (let ((form (call-with-input-file "boot-seed.core"
-                (lambda (p)
-                  (let loop ()
-                    (let ((x (read p)))
-                      (cond
-                        ((eof-object? x) (error 'running-primlocs "(psyntax internal) not found in seed"))
-                        ((and (pair? x) (equal? (cadr x) '(psyntax internal))) x)
-                        (else (loop)))))))))
-    (let loop ((bs (caddr form)))
-      (cond
-        ((null? bs) (error 'running-primlocs "current-primitive-locations not found in seed"))
-        ((eq? (ungensym (caar bs)) 'current-primitive-locations) ((symbol-value (cadar bs))))
-        (else (loop (cdr bs)))))))
+  (if (symbol-bound? 'current-primitive-locations)
+      ((symbol-value 'current-primitive-locations))
+      (let ((form (call-with-input-file "boot-seed.core"
+                    (lambda (p)
+                      (let loop ()
+                        (let ((x (read p)))
+                          (cond
+                            ((eof-object? x) (error 'running-primlocs "(psyntax internal) not found in seed"))
+                            ((and (pair? x) (equal? (cadr x) '(psyntax internal))) x)
+                            (else (loop)))))))))
+        (let loop ((bs (caddr form)))
+          (cond
+            ((null? bs) (error 'running-primlocs "current-primitive-locations not found in seed"))
+            ((eq? (ungensym (caar bs)) 'current-primitive-locations) ((symbol-value (cadar bs))))
+            (else (loop (cdr bs))))))))
 
 ;; 名字 → 构建进程中应使用的值：
 ;; - psyntax 各库导出的名字（syntax-dispatch 等）：取本脚本导入的源码副本（bootstrap 展开用的就是它），
@@ -1697,10 +1703,6 @@
 
 (define t-start (ticks))
 
-;; bootstrap 展开期间的 gensym 领域（确定性模式下区分本脚本与运行中系统对同一库的两次展开，见 Symbol.GensymRealm）
-(define set-gensym-realm! (symbol-value '$gensym-realm))
-(set-gensym-realm! "boot:")
-
 (let-values (((boot-code* subst env)
               (parameterize ((current-library-collection bootstrap-collection))
                 (expand-boot scheme-library-files))))
@@ -1735,7 +1737,7 @@
               (set! contents (cons (cons name content) contents))))
           compile-core-expr))
       (set! contents (reverse contents))   ; 按装入顺序：依赖在前
-      (set-gensym-realm! "")
+
       (report "expand compiler and nanopass" t0)
       (display "libraries added to the boot image: ")
       (write (map car contents))
@@ -1756,7 +1758,8 @@
                                 (list (compile-core-expr primlocs-code))
                                 (list (compile-core-expr (list-ref boot-code* (- n 1))))))
                  (t1 (ticks))
-                 (lcil (compile-forms->lcil forms "ironscheme.boot" "#Module")))
+                 (lcil (parameterize ((canonical-gensyms #t))
+                         (compile-forms->lcil forms "ironscheme.boot" "#Module"))))
             (report "compile" t1)
             (let* ((t2 (ticks))
                    (text (compile->lcil-text-from-sexpr lcil))

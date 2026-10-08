@@ -67,6 +67,14 @@
         (tail)
         (call "_Module$0$loop" "C0" ("System.Object" "System.Object") "System.Object")
         (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 2)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
     (method "get_Name"
       (attrs override)
       (params)

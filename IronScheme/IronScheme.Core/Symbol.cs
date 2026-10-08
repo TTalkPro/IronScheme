@@ -16,7 +16,24 @@ namespace IronScheme.Core
     /// <summary>值槽。未绑定时为 <see cref="Unbound.Instance"/>。</summary>
     public object Value = Unbound.Instance;
 
-    Symbol(string name) { Name = name; }
+    readonly int hash;
+
+    Symbol(string name)
+    {
+      Name = name;
+      // 稳定的 FNV-1a 哈希：符号按名字驻留，Equals 仍是引用相等；哈希值只取决于名字，
+      // eq 哈希表按符号的遍历顺序因此与对象分配顺序无关（iron-030：自举产物不随宿主变化）
+      unchecked
+      {
+        uint h = 2166136261;
+        foreach (char c in name) { h ^= c; h *= 16777619; }
+        hash = (int)h;
+      }
+    }
+
+    public override int GetHashCode() => hash;
+
+    public override bool Equals(object obj) => ReferenceEquals(this, obj);
 
     public override string ToString() => Name;
 
@@ -51,7 +68,8 @@ namespace IronScheme.Core
       public override string ToString() => "#<gensym-scope " + Name + " " + Count + ">";
     }
 
-    static GensymScope topScope = new GensymScope("%top");
+    // 作用域外的 gensym 用的"顶层"作用域，按领域区分（见 GensymRealm）
+    static readonly System.Collections.Generic.Dictionary<string, GensymScope> topScopes = new System.Collections.Generic.Dictionary<string, GensymScope>();
     static GensymScope scope;
 
     /// <summary>当前作用域；未进入任何作用域时为 null。</summary>
@@ -71,7 +89,10 @@ namespace IronScheme.Core
 
     static string NextDeterministic(out int n)
     {
-      var s = scope ?? topScope;
+      var s = scope;
+      if (s == null)
+        lock (topScopes)
+          if (!topScopes.TryGetValue(GensymRealm, out s)) topScopes[GensymRealm] = s = new GensymScope((GensymRealm + "%top").Replace('$', '_'));
       n = ++s.Count;
       return s.Name;
     }

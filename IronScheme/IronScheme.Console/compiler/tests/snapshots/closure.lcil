@@ -48,6 +48,14 @@
         (tail)
         (call "_Module$1" "C0" ("System.Object") "System.Object")
         (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 1)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
     (method ".ctor"
       (attrs ctor)
       (params)
@@ -80,6 +88,14 @@
         (ldarg 1)
         (tail)
         (call "_Module$0" "C0" ("System.Object") "System.Object")
+        (ret)))
+    (method "get_Arity"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldc.i4 1)
+        (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
         (ret)))
     (method ".ctor"
       (attrs ctor)

@@ -18,13 +18,15 @@ See docs/license.txt. |#
     compile-forms->lcil compile->lcil-text compile->lcil-text-from-sexpr
     compile-core compile-library compile-bootfile
     front-end
-    primitive-table-file)
+    primitive-table-file
+    canonical-gensyms)
   (import
     (rnrs)
     (only (ironscheme) make-parameter)
     (ironscheme clr)
     (ironscheme compiler primitives)
     (ironscheme compiler parse)
+    (ironscheme compiler languages)
     (ironscheme compiler front)
     (ironscheme compiler closures)
     (ironscheme compiler codegen)
@@ -32,13 +34,26 @@ See docs/license.txt. |#
 
   (clr-reference IronScheme.Emit)
 
+  ;; 调试：设置环境变量 IRONSCHEME_DUMP_PASSES=前缀 时，把各阶段的中间语言写到 <前缀>.l0 / .l1 / .l2 / .l3
+  (define (dump-pass tag unparse x)
+    (let ((prefix (clr-static-call System.Environment GetEnvironmentVariable "IRONSCHEME_DUMP_PASSES")))
+      (when (string? prefix)
+        (let ((f (string-append prefix "." tag)))
+          (when (file-exists? f) (delete-file f))
+          (call-with-output-file f (lambda (p) (write (unparse x) p)))))))
+
   ;; Lcore → L3；返回 (values L3 analysis)
   (define (front-end x)
     (let* ((l0 (parse-core x))
+           (_ (dump-pass "l0" unparse-L0 l0))
            (an (analyze l0))
            (l1 (cp0-lite (check-forward (simplify-letrec l0 an) an)))
-           (l2 (convert-assignments l1 an)))
-      (values (uncover-free l2) an)))
+           (_ (dump-pass "l1" unparse-L1 l1))
+           (l2 (convert-assignments l1 an))
+           (_ (dump-pass "l2" unparse-L2 l2))
+           (l3 (uncover-free l2)))
+      (dump-pass "l3" unparse-L3 l3)
+      (values l3 an)))
 
   (define (compile-forms->lcil forms assembly-name module-name)
     (let-values (((lcil consts) (compile-forms->lcil* forms assembly-name module-name #f)))
@@ -62,7 +77,22 @@ See docs/license.txt. |#
 
   (define eval-counter 0)
 
+  ;; 调试：设置环境变量 IRONSCHEME_DUMP_FAILED_CORE=文件 时，编译失败的输入写到该文件
+  (define (dump-failed-core e)
+    (let ((f (clr-static-call System.Environment GetEnvironmentVariable "IRONSCHEME_DUMP_FAILED_CORE")))
+      (when (string? f)
+        (when (file-exists? f) (delete-file f))
+        ;; 用 fasl 写出：输入中可能有语法对象等常量
+        (let ((p (open-file-output-port f)))
+          (clr-static-call IronScheme.Core.Fasl SerializePort e p)
+          (close-port p)))))
+
   (define (compile-core e)
+    (with-exception-handler
+      (lambda (c) (dump-failed-core e) (raise-continuable c))
+      (lambda () (compile-core* e))))
+
+  (define (compile-core* e)
     (set! eval-counter (+ eval-counter 1))
     (let*-values (((name) (string-append "eval$" (number->string eval-counter)))
                   ((lcil consts) (compile-forms->lcil* (list e) name "#Module" #t))

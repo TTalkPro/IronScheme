@@ -1,30 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- 新系统的集成测试（iron-030、iron-031）：以进程方式运行 IronScheme.Host（及自举时的 stage0）。
+       工作目录为 IronScheme.Console；boot 镜像默认 IronScheme.Console/build/ironscheme.boot.dll。 -->
   <PropertyGroup>
-    <TargetFramework>net462</TargetFramework>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <AssemblyTitle>IronScheme.Tests</AssemblyTitle>
-    <Product>IronScheme.Tests</Product>
-    <Copyright>Copyright ©  2016</Copyright>
-    <OutDir>bin/$(Configuration)</OutDir>
-    <LangVersion>8.0</LangVersion>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugType Condition="'$(DebugType)' == ''">full</DebugType>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType Condition="'$(DebugType)' == ''">pdbonly</DebugType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="nunit" Version="4.2.2" />
-    <PackageReference Include="NUnit.Analyzers" Version="4.3.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-   </ItemGroup>
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
 </Project>

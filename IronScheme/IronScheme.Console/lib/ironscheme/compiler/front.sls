@@ -135,7 +135,15 @@ See docs/license.txt. |#
              [else #f])
            `(call ,(Expr e) ,e* ...))]
       [(letrec ([,x* ,e*] ...) ,[body])
-       (let ((forward (forward-vars x* e*)))
+       ;; 前向变量会被标为已赋值而不能并组，可能把原本连续的 lambda 段拆开、产生新的前向引用：反复计算到不再变化
+       (let ((forward
+              (let loop ((acc '()))
+                (let ((new (filter (lambda (v) (not (memq v acc))) (forward-vars x* e*))))
+                  (if (null? new)
+                      acc
+                      (begin
+                        (for-each (lambda (v) (hashtable-set! assigned v #t)) new)
+                        (loop (append acc new))))))))
          (for-each (lambda (v) (hashtable-set! assigned v #t) (hashtable-set! (analysis-forward an) v #t)) forward)
          (let ((inner
                 (let loop ((xs x*) (es e*))

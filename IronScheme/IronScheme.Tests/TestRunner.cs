@@ -1,66 +1,33 @@
-﻿using System;
-using System.Text;
-using NUnit.Framework;
+using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
+using NUnit.Framework;
 
 namespace IronScheme.Tests
 {
-  [SetUpFixture]
-  public class Setup
+  /// <summary>路径：测试程序集在 IronScheme/IronScheme.Tests/bin/&lt;配置&gt;/&lt;框架&gt;/。</summary>
+  static class Paths
   {
-    [OneTimeSetUp]
-    public void RunBeforeAnyTests()
-    {
-      var iswd = Environment.GetEnvironmentVariable("ISWD");
-      if (iswd != null)
-      {
-        Environment.CurrentDirectory = iswd;
-      }
-
-      Cleanup();
-
-      var TestCore = Environment.GetEnvironmentVariable("TESTCORE") == "1";
-
-      var r = TestRunner.RunIronSchemeTest(TestCore, null, "(ironscheme-runtime)");
-      TestContext.Error.WriteLine($"ironscheme-runtime: {r.Output}");
-    }
-    
-    internal static void Cleanup()
-    {
-      if (File.Exists("compiled.lst"))
-      {
-        var libs = File.ReadAllLines("compiled.lst");
-
-        foreach (var lib in libs)
-        {
-          File.Delete(lib);
-          File.Delete(Path.ChangeExtension(lib, "pdb"));
-        }
-
-        File.Delete("compiled.lst");
-      }
-    }
+    static string TestDir => TestContext.CurrentContext.TestDirectory;
+    public static string Configuration => new DirectoryInfo(TestDir).Parent.Name;
+    public static string Framework => new DirectoryInfo(TestDir).Name;
+    public static string SolutionDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", ".."));
+    public static string RepoDir => Path.GetFullPath(Path.Combine(SolutionDir, ".."));
+    /// <summary>运行 Scheme 程序的工作目录（tests/、lib/ 所在处）；可用环境变量 ISWD 覆盖。</summary>
+    public static string ConsoleDir => Environment.GetEnvironmentVariable("ISWD") ?? Path.Combine(SolutionDir, "IronScheme.Console");
+    public static string Host => Path.Combine(SolutionDir, "IronScheme.Host", "bin", Configuration, Framework, "IronScheme.Host.dll");
+    public static string Stage0 => Path.Combine(SolutionDir, "IronScheme.Stage0", "bin", Configuration, Framework, "stage0.dll");
+    public static string Emit => Path.Combine(SolutionDir, "IronScheme.Emit", "bin", Configuration, Framework, "IronScheme.Emit.dll");
+    /// <summary>测试使用的 boot 镜像；可用环境变量 IRONSCHEME_BOOT 覆盖。</summary>
+    public static string Boot => Environment.GetEnvironmentVariable("IRONSCHEME_BOOT") ?? Path.Combine(ConsoleDir, "build", "ironscheme.boot.dll");
   }
 
   [TestFixture]
   public abstract class TestRunner
   {
-    [OneTimeSetUp]
-    public void SetupPerFixture()
-    {
-      var iswd = Environment.GetEnvironmentVariable("ISWD");
-      if (iswd != null)
-      {
-        Environment.CurrentDirectory = iswd;
-      }
-      Quiet = true;// Environment.GetEnvironmentVariable("QUIET") == "1";
-      TestCore = Environment.GetEnvironmentVariable("TESTCORE") == "1";
-    }
-
-    public bool TestCore { get; private set; }
-
     protected void AssertError(TestResult tr)
     {
       Warn.If(tr.Error, Is.Not.Empty, "stderr is not empty");
@@ -70,175 +37,79 @@ namespace IronScheme.Tests
     {
       using var sr = new StringReader(input);
       using var sw = new StringWriter();
-
-      string line = null;
-
-      while ((line = sr.ReadLine()) != null)
-      {
-        sw.WriteLine(line.Trim('\r','\n'));
-      }
-
+      string line;
+      while ((line = sr.ReadLine()) != null) sw.WriteLine(line.Trim('\r', '\n'));
       return sw.ToString().TrimEnd('\r', '\n');
     }
-     
-
-    protected bool Quiet { get; private set; }
 
     protected internal class TestResult
     {
       public string Output;
       public string Error;
+      public int ExitCode;
 
-      public override string ToString()
+      public override string ToString() => $"Output:\n{Output}\nError:\n{Error}";
+    }
+
+    protected TestResult RunIronSchemeTestWithInput(string input, [CallerMemberName] string method = null) =>
+      RunIronSchemeTest(null, input, method);
+
+    protected TestResult RunIronSchemeTest(string args, [CallerMemberName] string method = null) =>
+      RunIronSchemeTest(args, null, method);
+
+    /// <summary>
+    /// 用新宿主运行：IronScheme.Host --boot &lt;镜像&gt; -I lib 参数 …；有 input 时作为 REPL 的标准输入（末尾加 (exit)）。
+    /// 参数中的 \ 换成 /（测试中沿用旧写法的路径）。
+    /// </summary>
+    protected internal static TestResult RunIronSchemeTest(string args, string input, [CallerMemberName] string method = null, string boot = null)
+    {
+      if (!File.Exists(boot ?? Paths.Boot)) Assert.Ignore("boot image not built (run tools/build-stage1.sh or the Bootstrap tests)");
+      var argv = new[] { Paths.Host, "--boot", boot ?? Paths.Boot, "-I", "lib" }
+        .Concat((args ?? "").Replace('\\', '/').Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToArray();
+      return RunProcess("dotnet", argv, input, Paths.ConsoleDir);
+    }
+
+    protected internal static TestResult RunProcess(string exe, string[] args, string input, string workingDirectory, int timeoutMs = 1800000, bool checkExitCode = true)
+    {
+      var error = new StringBuilder();
+      var output = new StringBuilder();
+      var psi = new ProcessStartInfo(exe)
       {
-        return $@"Output:
-{Output}
-Error:
-{Error}";
-      }
-    }
-
-    protected TestResult RunIronSchemeTestWithInput(string input, [CallerMemberName] string method = null)
-    {
-      return RunIronSchemeTest(null, input, method);
-    }
-
-    protected TestResult RunIronSchemeTest(string args, [CallerMemberName] string method = null)
-    {
-      return RunIronSchemeTest(args, null, method);
-    }
-
-    protected TestResult RunIronSchemeTest(string args, string input, [CallerMemberName] string method = null)
-    {
-      return RunIronSchemeTest(TestCore, args, input, method);
-    }
-
-    internal static TestResult RunIronSchemeTest(bool testCore, string args, string input, [CallerMemberName] string method = null)
-    {
-      if (testCore)
-      {
-        return RunTest("dotnet", "--roll-forward Major IronScheme.ConsoleCore.dll " + args, input, method);
-      }
-      return RunTest("IronScheme.Console32.exe", args, input, method);
-    }
-
-    protected static TestResult RunTest(string exe, string args)
-    {
-      return RunTest(exe, args, null);
-    }
-
-    protected static TestResult RunTest(string exe, string args, string input, string method = null)
-    {
-      var error = new StringWriter();
-      var output = new StringWriter();
-
-      using var p = new Process
-      {
-        StartInfo = new ProcessStartInfo
-        {
-          FileName = exe,
-          RedirectStandardOutput = true,
-          StandardOutputEncoding = Encoding.UTF8,
-          RedirectStandardError = true,
-          RedirectStandardInput = true,
-          UseShellExecute = false,
-          CreateNoWindow = true,
-          Arguments = args
-        }
+        RedirectStandardOutput = true,
+        StandardOutputEncoding = Encoding.UTF8,
+        RedirectStandardError = true,
+        RedirectStandardInput = true,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        WorkingDirectory = workingDirectory,
       };
-
-      p.ErrorDataReceived += (s, e) =>
+      foreach (var a in args) psi.ArgumentList.Add(a);
+      using var p = new Process { StartInfo = psi };
+      p.ErrorDataReceived += (s, e) => { if (e.Data != null) lock (error) error.AppendLine(e.Data); };
+      p.OutputDataReceived += (s, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
+      Assert.That(p.Start(), Is.True, $"could not start {exe}");
+      p.BeginErrorReadLine();
+      p.BeginOutputReadLine();
+      if (input != null)
       {
-        //Console.Error.WriteLine(e.Data);
-        error.WriteLine(e.Data);
-      };
-
-      p.OutputDataReceived += (s, e) =>
-      {
-        //Console.Error.WriteLine(e.Data);
-        output.WriteLine(e.Data);
-      };
-
-      try
-      {
-        if (!p.Start())
-        {
-          Assert.Fail($"could not start {exe}");
-        }
-
-        if (input != null)
-        {
-          p.StandardInput.WriteLine(input);
-          p.StandardInput.WriteLine("(exit)");
-          p.StandardInput.Flush();
-          p.StandardInput.Close();
-          p.StandardInput.Dispose();
-        }
-
-        p.BeginErrorReadLine();
-        p.BeginOutputReadLine();
-
-        var exited = p.WaitForExit(300000); // https://github.com/dotnet/runtime/issues/108395
-
-        if (exited)
-        {
-          p.WaitForExit();
-        }
-
-        //output.WriteLine(p.StandardOutput.ReadToEnd());
-        //error.WriteLine(p.StandardError.ReadToEnd());
-
-        Assert.That(exited, Is.True);
-        Assert.That(p.HasExited, Is.True);
-
-        error.Flush();
-        output.Flush();
-
-        var r = new TestResult
-        {
-          Output = output.ToString().TrimEnd(Environment.NewLine.ToCharArray()),
-          Error = error.ToString().TrimEnd(Environment.NewLine.ToCharArray())
-        };
-
-        if (method != null)
-        {
-          //File.WriteAllText($"{method}.output", r.ToString());
-        }
-
-        if (!exited)
-        {
-          p.Kill();
-        }
-
-        //if (p.ExitCode != 0 && !echo)
-        //{
-        //  if (r.Output.Length > 0)
-        //  {
-        //    Console.WriteLine(r.Output);
-        //  }
-        //  if (r.Error.Length > 0)
-        //  {
-        //    Console.Error.WriteLine(r.Error);
-        //  }
-        //}
-
-        Assert.That(p.ExitCode, Is.EqualTo(0), $"{r}");
-
-        return r;
+        p.StandardInput.WriteLine(input);
+        p.StandardInput.WriteLine("(exit)");
       }
-      catch (Exception ex)
+      p.StandardInput.Close();
+      if (!p.WaitForExit(timeoutMs))
       {
-        try
-        {
-          if (!p.HasExited)
-          {
-            p.Kill();
-          }
-        }
-        catch { }
-        Assert.Fail($"runner failed: {ex}");
-        throw;
+        try { p.Kill(true); } catch (Exception) { }
+        Assert.Fail($"{exe} timed out");
       }
+      p.WaitForExit();
+      var r = new TestResult
+      {
+        Output = output.ToString().TrimEnd('\r', '\n'),
+        Error = error.ToString().TrimEnd('\r', '\n'),
+        ExitCode = p.ExitCode,
+      };
+      if (checkExitCode) Assert.That(p.ExitCode, Is.EqualTo(0), r.ToString());
+      return r;
     }
   }
 }
