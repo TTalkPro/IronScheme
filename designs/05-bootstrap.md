@@ -19,7 +19,7 @@
 ## 3. 流程
 
 ```
- 第 0 步（一次性）：生成种子
+ 第 0 步（一次性，已完成）：生成种子；之后由新系统或 stage0 再生成（§5）
    旧 IronScheme（DLR）运行 seed 构建脚本
      → psyntax 展开 37 个 boot 源文件 → 核心形式 → 写成 boot-seed.core
    （只展开，不执行；旧系统不需要认识新运行时，也不需要运行 nanopass）
@@ -44,7 +44,7 @@
 
 ### 3.1 Phase A 的实际做法（iron-028）
 
-`tools/build-stage1.sh` → stage0 执行种子后运行 `ironscheme-buildscript-nano.sps`：
+`dotnet build`（`IronScheme.Host` 的 `GenerateBootImage` 目标；输出到其他目录用 `tools/build.cs stage1 <目录>`）→ stage0 执行种子后运行 `ironscheme-buildscript-nano.sps`：
 
 1. 在 bootstrap 库集合中展开 37 个 boot 源文件；
 2. 求出新 boot 的导出位置，并在构建进程中把它们绑定到同名值（psyntax 导出取脚本所用的源码副本，其余取运行中系统），使 nanopass 宏能在构建进程中执行；
@@ -73,10 +73,12 @@ stage0 不实现展开器：展开器（psyntax）本身就在种子里，以核
 
 ## 5. 种子的生成与再生成
 
-1. **首次**：旧系统（`legacy-stage0/` 中的快照）运行 `seed-buildscript.sps`（由现有 `ironscheme-buildscript.sps` 改写：保留展开部分，最后一步把 `(map compile-core-expr core*)` 写成文本，而不是调用 `compile-bootfile`）。命令为 `tools/gen-seed.sh`：旧系统会优先加载当前目录与脚本目录下的 `psyntax/*.sls` 源码，所以脚本复制到临时目录、在快照目录下运行，源码根目录作为参数。
+1. **首次**：旧系统（`legacy-stage0/` 中的快照）运行 `seed-buildscript.sps`（由现有 `ironscheme-buildscript.sps` 改写：保留展开部分，最后一步把 `(map compile-core-expr core*)` 写成文本，而不是调用 `compile-bootfile`）。当时的命令（旧版 `tools/gen-seed.sh`）：旧系统会优先加载当前目录与脚本目录下的 `psyntax/*.sls` 源码，所以脚本复制到临时目录、在快照目录下运行，源码根目录作为参数。
    - 文本格式：核心形式与其中的常量都是标准 S 表达式，写出器自己实现（不用宿主 `write`），按新 reader 能逐值读回的写法输出 ASCII：符号中的非法字符用 `\xHH;`，字符串中的代理项对合成码点，flonum 检查往返，`-0.0` 单独处理。非调试模式下种子中没有注解、记录或语法对象。
 2. 生成前，boot 源码已经改为面向新运行时（iron-013）。展开是纯数据处理，旧系统不执行这些代码。
-3. **之后**：stage0 或新系统运行同一脚本即可重新生成种子。种子本身也有不动点：用种子在 stage0 上重新展开得到的种子应与原种子一致（确定性 gensym 前提下，见 §7）。
+3. **之后**（iron-032 实测）：新系统或 stage0 运行同一脚本重新生成种子，命令为 `dotnet run tools/build.cs -- seed`（默认用新宿主与 `build/ironscheme.boot.dll`，约 16 秒；`--stage0` 由 stage0 执行现有种子来运行，约 40 秒，不需要 boot 镜像）。脚本在 `IronScheme.Console` 目录下运行，源码根目录参数为 `./`，种子写回原处。与旧系统生成时相比，脚本只改了一处：`clr-call-internal`、`clr-cast-internal` 在 stage0 中是特殊形式，不作为原语取值（与 `ironscheme-buildscript-nano.sps` 相同）。
+   - 种子不动点成立：新宿主与 stage0 生成的种子逐字节相同，两次生成结果相同；用重新生成的种子经 stage0 构建的 stage1 与原先的 stage1 逐字节相同。
+   - 与旧系统生成的种子相比，gensym 计数的起点不同（新系统展开前已生成的 gensym 数不同），其余由 boot 源码的改动决定。boot 源码改动后可以随时再生成；不再生成也不影响构建——种子只用来在 stage0 上运行编译器，stage1 总是从当前源码编译。
 4. 种子文件放在 `IronScheme/IronScheme.Console/boot-seed.core`。
 
 ## 6. 交叉编译纪律
@@ -93,7 +95,7 @@ Phase A 中编译器跑在解释器上、宿主就是新运行时，比原先"�
 
 | 来源 | 处理 |
 |---|---|
-| **gensym 名字含时间戳**（`g$name$N$TICKS`） | **自举构建采用规范改名**（iron-030）：构建过程用普通（带进程时间戳的）gensym，编译器写常量表时把本进程生成的 gensym 按首次出现顺序改名为 `g$名字$序号$%b`（`canonical-gensyms`）。确定性 gensym（`deterministic-gensym?`，库名作用域 + 计数，iron-014）用于单独编译库；它不适合自举构建——上一级镜像中固化的名字会与本次构建过程中生成的同名 gensym 冲突。文本种子由旧系统生成，写出时把 `$TICKS` 改为 `$%seed` |
+| **gensym 名字含时间戳**（`g$name$N$TICKS`） | **自举构建采用规范改名**（iron-030）：构建过程用普通（带进程时间戳的）gensym，编译器写常量表时把本进程生成的 gensym 按首次出现顺序改名为 `g$名字$序号$%b`（`canonical-gensyms`）。确定性 gensym（`deterministic-gensym?`，库名作用域 + 计数，iron-014）用于单独编译库；它不适合自举构建——上一级镜像中固化的名字会与本次构建过程中生成的同名 gensym 冲突。文本种子写出时把 `$TICKS` 改为 `$%seed` |
 | 符号的哈希值 | `Symbol.GetHashCode` 为名字的 FNV-1a 哈希：eq 哈希表按符号的遍历顺序（psyntax 合并 import 时用到）与对象分配顺序无关，产物不随宿主（stage0 解释器或编译后的系统）变化 |
 | 哈希表遍历顺序 | 编译器与展开器中需要稳定顺序处一律按插入顺序或排序 |
 | MVID、时间戳 | 发射器按内容哈希生成（04 §4） |
@@ -102,10 +104,10 @@ Phase A 中编译器跑在解释器上、宿主就是新运行时，比原先"�
 
 | 阶段 | 种子 |
 |---|---|
-| 现在 | 旧系统的可运行快照 `legacy-stage0/`（含原始 DLR 格式种子），只用于第 0 步生成文本种子。BuildTools 已删除，旧系统不能再从源码构建 |
+| M2 之前 | 旧系统的可运行快照 `legacy-stage0/`（含原始 DLR 格式种子），只用于第 0 步生成文本种子。iron-032 确认新系统能自行再生成种子后已删除 |
 | M2 完成后 | `boot-seed.core`（文本） |
 | M6 完成后 | stage3 的 boot dll 作为二进制缓存放入工作区（`IronScheme.Console/build/ironscheme.boot.dll`，不提交）；从源码重建的路径是 `boot-seed.core` + stage0。实测 stage0 编译出的 stage1 与 stage2、stage3 逐字节相同（iron-030） |
-| M7 删除旧系统后 | 旧 DLR 系统不再需要。从零重建只要 .NET SDK、本仓库（含 nanopass 子模块）与文本种子 |
+| M7 删除旧系统后（iron-032） | 旧 DLR 系统不再需要。从零重建只要 .NET SDK、本仓库（含 nanopass 子模块）与文本种子：仓库根目录 `dotnet build`（C# 项目 + boot 镜像）。仓库不再跟踪旧格式的 `IronScheme.Console/ironscheme.boot.dll`；新 boot 生成在 `build/`（忽略），宿主从 `IronScheme.Console` 启动时自动复制到宿主目录 |
 
 ## 9. 新系统中的构建脚本（Phase B）
 

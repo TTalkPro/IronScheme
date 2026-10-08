@@ -36,8 +36,9 @@
 | [iron-029](tasks/iron-029-host-and-repl.md) | 新宿主 IronScheme.Host 与 REPL | M5 | iron-021、iron-010、iron-008 | 完成 |
 | [iron-030](tasks/iron-030-phase-b-fixpoint.md) | Phase B：自举不动点 | M6 | iron-028、iron-029 | 完成 |
 | [iron-031](tasks/iron-031-r6rs-and-system-libraries.md) | R6RS 测试与系统库编译达标 | M6 | iron-030 | 完成 |
-| [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 未开始 |
-| [iron-033](tasks/iron-033-performance.md) | 性能优化（后续） | M7 | iron-031 | 未开始 |
+| [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 完成 |
+| [iron-033](tasks/iron-033-performance.md) | 性能优化（后续） | M7 | iron-031 | 完成 |
+| [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化 | 后续 | iron-033 | 未开始 |
 
 ## 里程碑
 
@@ -51,3 +52,4 @@
 | M5 首次自举 | iron-028 ~ iron-029 |
 | M6 自举闭合 | iron-030 ~ iron-031 |
 | M7 清理与优化 | iron-032 ~ iron-033 |
+| 后续 | iron-034 |

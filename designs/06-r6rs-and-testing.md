@@ -14,7 +14,8 @@
 | `guard` 无匹配时的再抛出 | 在 guard 的动态环境中 `raise-continuable` | 相同（psyntax 不改） |
 | try/finally 区域内的尾调用 | 不是真尾调用 | 相同（CIL 限制，03 §5） |
 | 记录作为 CLR 类型 | 支持 | **不支持**（02 §7） |
-| FFI（`ffi-callout`、`ffi-callback`、`pinvoke-call`）与 `define-clr-class` | 支持 | 暂不支持：编译为运行时报"尚不支持"（`Calls.Unsupported`），相关库仍可编译、加载 |
+| FFI（`ffi-callout`、`ffi-callback`、`pinvoke-call`） | 编译器静态生成调用代码 | 支持，改为运行时原语（02 §9，iron-032）；`dlopen`/`dlsym`/`dlclose` 改用 `NativeLibrary`，不再限于 Windows |
+| `define-clr-class` | 运行时生成 CLR 类型 | **不支持**：编译为运行时报错（`Calls.Unsupported`）；与记录不生成 CLR 类型（D11）一致，`lib/` 中无使用者 |
 | 调试器（`(ironscheme debugger)` 的 `step-into`） | 依赖 DLR 调试设施 | 保留导出，调用时报不支持（02 §10） |
 
 ### 必须保持的
@@ -34,6 +35,7 @@
 | 自举 | Phase A（stage0）产出 stage1；Phase B stage2 == stage3 | M5、M6 |
 | R6RS 符合性 | `tests/r6rs/run.sps`、`trigtest.sps`、`clisp-number-tests.sps`、`fp-test.sps` | M6 |
 | 系统库 | `compile-system-libraries` 全部成功，dll 可独立加载 | M6 |
+| FFI | `tests/ffi-test.sps`：callback→callout 往返（int32、int64、double、void）、pinvoke C 运行库、`dlsym`、找不到库时报错 | M7 |
 
 ## 3. 验收基线
 

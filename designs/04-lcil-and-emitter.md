@@ -98,10 +98,10 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 
 | 指令 | 栈 | 说明 |
 |---|---|---|
-| `(clr-call T 成员 static? argc)` | 实例？参数×argc → 结果 | `T` 为类型名字符串，或 `#f` 表示按实例的运行时类型；成员为 `"名字"`、`("名字" ("P"…))`（指定参数类型）或 `("名字" ("P"…)|#f ("G"…))`（泛型方法，`#f` 表示参数类型按实参推断；泛型方法总由运行时决议）；`static?` 为 `#t` 时无实例 |
+| `(clr-call T 成员 static? argc [("A"…)])` | 实例？参数×argc → 结果 | `T` 为类型名字符串，或 `#f` 表示按实例的运行时类型；成员为 `"名字"`、`("名字" ("P"…))`（指定参数类型）或 `("名字" ("P"…)|#f ("G"…))`（泛型方法，`#f` 表示参数类型按实参推断；泛型方法总由运行时决议）；`static?` 为 `#t` 时无实例。可选的 `("A"…)` 是编译器已知的实参类型（§5 规则 2a） |
 | `(clr-field-get T "f" static?)` | 实例？→ 值 | |
 | `(clr-field-set T "f" static?)` | 实例？值 → unspecified | |
-| `(clr-new T argc)` | 参数×argc → 对象 | |
+| `(clr-new T argc [("A"…)])` | 参数×argc → 对象 | 可选的实参类型同 `clr-call` |
 | `(clr-new-array T)` | 长度 → 数组 | |
 | `(clr-cast T)` `(clr-is T)` | 值 → 值 / 布尔 | |
 | `(clr-type T)` | → `System.Type` | |
@@ -144,6 +144,8 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 | 输入 | Lcil 文本（自带一个极简 S 表达式读取器，不依赖 Scheme reader） |
 | 输出模式 | **持久化**：`PersistedAssemblyBuilder`（.NET 9+）→ `GenerateMetadata` + `ManagedPEBuilder`（可加托管资源与 Portable PDB；iron-003 已验证）；**内存**：`AssemblyBuilder.DefineDynamicAssembly(…, RunAndCollect)`，用于 `eval` |
 | 两种形态 | 库 API `LcilEmitter.Emit(string lcil, EmitMode)`；命令行 `iron-emit in.lcil -o out.dll`（交叉自举阶段使用） |
+| eval 快速路径 | `EmitInMemoryData(object lcil, …)`：直接接收编译器产出的 Lcil S 表达式（Core 的 `Cons`、`Symbol` 等，按类型全名识别，不引用 Core），转成与文本解析相同的树，跳过"写成文本再读回"（iron-033）。`compile-core` 使用它；dll 输出仍走文本 |
+| 内存模式分块 | 同一动态模块中 `TypeBuilder.CreateType` 的开销随已有类型数增长，总耗时为平方级（实测 16000 个类型约 8 秒）。内存模式下类型超过 1000 个时，每 1000 个类型放一个新的动态程序集（入口类型与常量表留在主程序集），16000 个约 0.3 秒（iron-033）。生成的成员都是 public，跨程序集引用不受影响 |
 | 校验 | 发射后可选跑 `ILVerify`（.NET 自带的 IL 校验器，dotnet 工具形式） |
 | 调试信息 | `(line …)` → 序列点；持久化模式生成 Portable PDB。第一版可选 |
 | 确定性 | 类型、方法、常量顺序完全按 Lcil。PersistedAssemblyBuilder 每次生成随机 MVID，COFF 时间戳也随之变化（iron-003 实测）。**保存后回填**：把 MVID 与时间戳清零、算 SHA256、用哈希回填；实测处理后逐字节一致且可正常加载。同时生成 PDB 时 PDB ID 需一并处理，或自举构建不生成 PDB |
@@ -154,6 +156,8 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 
 1. 类型名：先按全名查，再按方法级 `clr-namespaces` 列表逐个前缀查，在 `clr-references` 及已加载程序集中找。
 2. 成员：按名字和参数个数过滤；**唯一**时直接生成 `call`/`callvirt`，参数从 `object` 做必要转换（`unbox.any`、`castclass`，或调用 `Interop.Convert<T>`），返回值装箱或转换（`void` → 未指定值）。
+   - 索引器 `get_Item`/`set_Item`：数组交给运行时；其他类型按 `DefaultMember` 映射到实际名字后同样决议（iron-033）。
+2a. 有实参类型提示（实参都是 `clr-cast` 时编译器给出，iron-033）且按规则 2 决议不了时，取参数类型与提示完全相同的重载静态调用；没有完全相同的则照规则 3 处理，提示不影响运行时决议。
 3. 不唯一或找不到：生成对 `Interop.Call` 等运行时方法的调用（02 §9），运行时按实际参数类型决议并缓存。
 4. 字面常量字段（`const`）直接内联值。
 

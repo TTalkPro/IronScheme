@@ -156,11 +156,13 @@ body ::= e ...                           ; psyntax 实际只生成一个
 
 | 入口 | 新实现 |
 |---|---|
-| `compile-core`（eval） | Lcore → Lcil → 发射器内存模式 → 调用入口方法 |
+| `compile-core`（eval） | Lcore → Lcil（S 表达式直接交给发射器，不经文本，iron-033）→ 发射器内存模式 → 调用入口方法 |
 | `compile-library` | 13 元素列表（id、name、ver、imp*、vis*、inv*、subst、env、visit、invoke、guard、guard-req*、visible?）→ 一个 dll，入口 `Initialize` 返回该列表 |
 | `compile-bootfile` | 36 个源文件展开后的核心形式列表 → `ironscheme.boot.dll` |
 
-三个入口都替换 `IS/Runtime/Builtins.cs` 中的同名 C# 内建函数。
+三个入口都替换 `IS/Runtime/Builtins.cs` 中的同名 C# 内建函数。`compile-library` 也直接把 S 表达式交给发射器（`SaveData`）；只有自举构建脚本写 Lcil 文本，用于比较各阶段产物。
+
+codegen 在 `clr-new`/`clr-call` 的实参都是 `(clr-cast T e)` 时，把这些 `T` 作为实参类型提示写进 Lcil（04 §2），发射器据此静态选择重载（iron-033）。
 
 ## 9. 验证手段
 

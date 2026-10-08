@@ -12,6 +12,7 @@
 | 项 | 说明 |
 |---|---|
 | 工作约定 | 本仓库只开发、不提交（不做 git commit / push） |
+| 构建命令 | 仓库根目录 `dotnet build` / `dotnet test`（`IronScheme.slnx`，`Directory.Solution.props` 默认 Release）。boot 镜像由 `IronScheme.Host.csproj` 的 `GenerateBootImage` 目标运行 stage0 增量生成（`-p:BuildBootImage=false` 跳过）。常规构建之外的命令在 `tools/build.cs`（.NET 10 单文件 C# 程序：`stage1 <目录>`、`seed`、`ilverify`）。Windows、Linux、macOS 通用，不依赖 shell |
 | 目标框架 | 只保留一个现代目标：**net10.0**（本机 SDK 10.0.401、运行时 10.0.x）。放弃 net20、netcoreapp2.1、.NET Framework |
 | 外部依赖 | 运行时只用 .NET BCL。nanopass 框架作为**第三方依赖**以 git 子模块引入（`nanopass-framework-scheme`，MIT 许可），属于编译器的构建依赖 |
 | 非目标 | 完整 call/cc（可重入、多次进入）；`fmt-columns` 这类依赖重入的第三方代码；旧的嵌入 API（`RuntimeExtensions`）与 SuperConsole 的完整兼容；NativeAOT 下的 `eval` |
@@ -82,7 +83,7 @@
 |---|---|---|
 | nanopass 在 stage0 上跑不通（iron-002 已验证其在旧 IronScheme 上无需修改即可运行，风险较低；剩余风险是适配文件按名字引用了旧运行时类型 `IronScheme.Runtime.Builtins`） | 编译器无法运行 | 在 stage0 与运行时中补齐 nanopass 所需的原语和语法；修补其 IronScheme 适配文件（以补丁形式维护，不改子模块内容） |
 | stage0 解释执行 psyntax 太慢 | 自举耗时过长 | 解释器先把核心形式分析成闭包树；种子与编译器只在自举时跑一次，可以接受分钟级 |
-| 旧系统已无法重新构建（BuildTools 子模块已于 2026-10-08 删除） | 若 `legacy-stage0/` 丢失或损坏，无法生成首个文本种子 | iron-001 构建出的产物已保存在 `legacy-stage0/`（工作区内，不提交）；备选：用已发布的 IronScheme 二进制做第 0 步展开 |
+| 旧系统已无法重新构建（BuildTools 子模块已于 2026-10-08 删除） | 若 `legacy-stage0/` 丢失或损坏，无法生成首个文本种子 | 已解除：首个种子生成后，新系统与 stage0 都能再生成种子且达到不动点（05 §5）；M7 已删除 `legacy-stage0/` |
 | .NET 上 `tail.` 前缀在某些签名下不被保证 | 深递归栈溢出 | iron-003 实测；必要时对未知尾调用退回蹦床 |
 | psyntax 语法对象等记录常量的 RTD 身份在重新加载后对不上 | 编译出的库加载后宏失效 | 常量编码按 RTD 名称与 uid 重建（04）；首次自举时专项验证 |
 | 运行时与编译器同时重写，问题难定位 | 进度失控 | 分层验收：运行时单测 → 发射器单测 → 单个库 → boot 镜像；Lcil 文本可 diff |

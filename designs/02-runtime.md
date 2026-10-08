@@ -128,6 +128,8 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
   - 类型名决议找不到类型时，按惯例加载与类型全名或其命名空间同名的程序集再找（如 `Microsoft.Win32.Registry`；.NET 10 不会预先加载它们，iron-031）。
   - 类型名别名（`fixnum`、`list` 等）之外，另把第三方代码写死的旧类型名 `IronScheme.Runtime.Builtins` 映射到 `IronScheme.Core.Builtins`（nanopass 适配文件）。
 - 取代 DLR 的 `MethodBinder` 一族。规则以现有 `ClrGenerators.cs` 的行为为准，做必要简化。
+- 索引器（`get_Item`/`set_Item`）：运行时按类型的 `DefaultMember` 映射到实际名字，映射结果按类型缓存（iron-033；`hashtable-ref` 等热点原先每次都查特性）。发射器对非数组类型也做同样映射后静态决议（04 §5）。
+- **FFI**（iron-032）：`ffi-callout-internal`、`ffi-callback-internal`、`pinvoke-call-internal` 是运行时原语（`IronScheme.Core.Ffi`），参数为类型名（符号或字符串：`int8`…`uint64`、`intptr`/`void*`、`float`/`double`、`string`/`char*`、`void`）。每种签名在一个动态程序集中生成一个委托类型（带 `UnmanagedFunctionPointer`，callout/callback 为 cdecl，pinvoke 为 Winapi），原生调用经 `Marshal.GetDelegateForFunctionPointer`，字符串按委托封送规则转换；实参与返回值的转换用 `Helpers.FFIConvertTo/FFIConvertFrom`，适配代码用表达式树生成并按签名缓存。callback 的委托保持存活（`Helpers.FFIFunctionPointer`）。`pinvoke-call` 在首次调用时才经 `NativeLibrary.TryLoad`（带平台命名探测）加载库、查找入口。编译器与 stage0 把它们当普通原语调用，不再是特殊形式。
 
 ## 10. 迁移清单
 
