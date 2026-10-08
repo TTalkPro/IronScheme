@@ -24,6 +24,9 @@ namespace IronScheme.Core
       ["string[]"] = "String[]", ["bool[]"] = "Boolean[]", ["vector[]"] = "Object[]", ["bytevector[]"] = "Byte[][]",
       ["cons[]"] = "IronScheme.Core.Cons[]", ["list[]"] = "IronScheme.Core.Cons[]", ["char[]"] = "Char[]",
       ["procedure[]"] = "IronScheme.Core.Procedure[]", ["hashtable[]"] = "System.Collections.Hashtable[]",
+      // 第三方代码中写死的旧运行时类型名：nanopass 子模块的 implementation-helpers.ironscheme.sls 调用
+      // (clr-static-call IronScheme.Runtime.Builtins SourceLocation …)，不改子模块，在此映射（iron-017）
+      ["IronScheme.Runtime.Builtins"] = "IronScheme.Core.Builtins",
     };
 
     static readonly ConcurrentDictionary<string, Type> compileTimeTypes = new ConcurrentDictionary<string, Type>();
