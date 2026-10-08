@@ -45,7 +45,7 @@ See docs/license.txt. |#
   (define/contract -
     (case-lambda
       [(num:number)
-        (generic- 0 num)]
+        (generic* -1 num)]   ; 不用 (- 0 num)：(- 0.0) 应为 -0.0
       [(num1:number num2:number)
         (generic- num1 num2)]
       [(num1 num2 num3 . rest)

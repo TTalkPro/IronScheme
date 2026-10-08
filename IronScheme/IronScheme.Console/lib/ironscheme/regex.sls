@@ -47,7 +47,7 @@ See docs/license.txt. |#
         (assertion-violation 'regex-match "not a string or regex" pattern/re)]))
 
   (define/contract (regex-matches input:string pattern/re)
-    (clr-static-call IronScheme.Runtime.Cons FromList
+    (clr-static-call IronScheme.Core.Cons FromList
       (cond 
         [(regex? pattern/re)
           (clr-call Regex Matches pattern/re input)]

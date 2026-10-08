@@ -36,7 +36,7 @@ See docs/license.txt. |#
         (or 
           ca
           (parameterize ((library-path (cons (map-path "~") (library-path))))
-            (guard (e (#t (begin (error-add! (clr-new IronScheme.Runtime.SchemeException e)) (printf "~s\n" e) #f)))
+            (guard (e (#t (begin (error-add! (clr-new IronScheme.Core.SchemeException e)) (printf "~s\n" e) #f)))
               (let ((ac (eval (string->symbol a) (environment (list 'controllers (string->symbol c))))))
                 (printf "controller/action ~a/~a\n" c a)
                 (hashtable-set! r (string-append c ":" a) ac)

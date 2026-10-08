@@ -335,6 +335,16 @@ namespace IronScheme.Stage0
 
     public override string Name => info.Name ?? "lambda";
 
+    /// <summary>procedure-arity（与旧系统一致）：固定参数子句为 n，有剩余参数的为 n.0；多个子句为列表，没有子句为 '()。</summary>
+    public override object Arity
+    {
+      get
+      {
+        var a = Array.ConvertAll(info.Clauses, c => c.Rest ? (object)(double)c.Required : RT.Box(c.Required));
+        return a.Length == 0 ? null : a.Length == 1 ? a[0] : Cons.FromArray(a);
+      }
+    }
+
     public override object Invoke0() => Execute(Array.Empty<object>());
     public override object Invoke1(object a1) => Execute(new[] { a1 });
     public override object Invoke2(object a1, object a2) => Execute(new[] { a1, a2 });

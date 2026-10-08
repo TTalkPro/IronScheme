@@ -20,7 +20,7 @@ See docs/license.txt. |#
       [(a ... -> r) ; typed procedure type
         (with-syntax (((a ...) (map parse-type #'(a ...)))
                       (r (parse-type #'r)))
-          #'(IronScheme.Runtime.Typed.TypedClosure a ... r))]
+          #'IronScheme.Core.Procedure)]
       [(t a ...) ; generic type
         (identifier? #'t) 
         (with-syntax (((a ...) (map parse-type #'(a ...))))

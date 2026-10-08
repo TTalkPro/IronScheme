@@ -236,11 +236,7 @@ namespace IronScheme.Core
         return f == 0 ? re : ComplexFraction.Make(GetFraction(re), f);
       }
       double i2 = ConvertToReal(im);
-      if (i2 == 0.0)
-      {
-        i2 = 0;
-        if (!(im is double)) return re;
-      }
+      if (i2 == 0.0 && !(im is double)) return re;   // 保留 -0.0 虚部（R6RS：(angle -1.0-0.0i) 为 -π）
       return Complex64.Make(ConvertToReal(re), i2);
     }
 

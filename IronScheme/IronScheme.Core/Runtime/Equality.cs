@@ -30,6 +30,12 @@ namespace IronScheme.Core
         return GetBool(((Encoding) first).WebName == ((Encoding) second).WebName);
       }
 
+      // double.Equals 认为 0.0 与 -0.0 相等；R6RS eqv? 要求区分（NaN 与自身相等则与 Equals 一致）
+      if (first is double a && second is double b)
+      {
+        return GetBool(BitConverter.DoubleToInt64Bits(a) == BitConverter.DoubleToInt64Bits(b) || (double.IsNaN(a) && double.IsNaN(b)));
+      }
+
       return GetBool(Equals(first, second));
     }
   }

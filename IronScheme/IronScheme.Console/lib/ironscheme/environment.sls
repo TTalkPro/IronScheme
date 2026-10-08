@@ -23,7 +23,7 @@ See docs/license.txt. |#
     (ironscheme clr))
   
   (define (application-directory)
-    (clr-static-prop-get IronScheme.Runtime.Builtins ApplicationDirectory))
+    (clr-static-prop-get IronScheme.Core.Builtins ApplicationDirectory))
   
   (define/contract current-directory
     (case-lambda

@@ -172,7 +172,8 @@ See docs/license.txt. |#
                               (or (eq? cat 'Nd)
                                   (char=? chr #\@)
                                   (and (char=? chr #\.) (not (string=? str "...")))))
-                         (memq cat '(Cn Zs)))
+                         (memq cat '(Cn Zs Zl Zp Cc))
+                         (memv chr '(#\| #\( #\) #\[ #\] #\" #\; #\' #\` #\,)))
                       (put-string port "\\x")
                       (put-string port (number->string (char->integer chr) 16))
                       (put-string port ";")]

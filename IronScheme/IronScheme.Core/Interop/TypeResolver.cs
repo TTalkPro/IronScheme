@@ -53,8 +53,31 @@ namespace IronScheme.Core
           break;
         }
       }
+      if (found == null) found = LoadByConvention(name);
       if (found != null) cache[name] = found;
       return found;
+    }
+
+    static readonly ConcurrentDictionary<string, bool> triedAssemblies = new ConcurrentDictionary<string, bool>();
+
+    /// <summary>
+    /// 已加载程序集中找不到时，按 .NET 的惯例尝试加载与类型全名或其命名空间同名的程序集
+    /// （如 Microsoft.Win32.Registry 在程序集 Microsoft.Win32.Registry 中）。旧系统靠这些程序集碰巧已被加载。
+    /// </summary>
+    static Type LoadByConvention(string name)
+    {
+      string n = name.TrimEnd(']', '[');
+      for (int dot = n.Length; dot > 0; dot = n.LastIndexOf('.', dot - 1))
+      {
+        string candidate = n.Substring(0, dot);
+        if (!triedAssemblies.TryAdd(candidate, true)) continue;
+        Assembly asm;
+        try { asm = Assembly.Load(new AssemblyName(candidate)); } catch (Exception) { continue; }
+        Type t;
+        try { t = asm.GetType(name); } catch (Exception) { continue; }
+        if (t != null && (t.IsPublic || t.IsNestedPublic || (t.IsArray && IsPublicElement(t)))) return t;
+      }
+      return null;
     }
 
     static bool IsPublicElement(Type t)

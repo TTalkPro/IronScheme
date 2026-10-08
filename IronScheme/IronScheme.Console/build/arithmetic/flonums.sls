@@ -213,7 +213,7 @@ See docs/license.txt. |#
         (real->flonum (denominator fl))))
       
   (define-fl (flnumerator fl)
-    (if (or (flnan?* fl) (flinfinite?* fl))
+    (if (or (flnan?* fl) (flinfinite?* fl) (flzero? fl))   ; (flnumerator -0.0) 为 -0.0
         fl
         (real->flonum (numerator fl))))
   

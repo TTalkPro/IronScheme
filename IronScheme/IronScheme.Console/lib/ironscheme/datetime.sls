@@ -56,7 +56,7 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme clr))
     
-  (clr-using IronScheme.Runtime)    
+  (clr-using IronScheme.Core)
   
   (define-syntax-rule (long->bignum n)
     (clr-static-call Helpers LongToBignum n))

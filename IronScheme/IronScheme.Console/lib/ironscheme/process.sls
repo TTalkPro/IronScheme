@@ -53,7 +53,7 @@ See docs/license.txt. |#
     (clr-is Process obj))
     
   (define/contract (process-start p:process)
-    (clr-static-call IronScheme.Runtime.Helpers StartProcess p))
+    (clr-static-call IronScheme.Core.Helpers StartProcess p))
     
   (define/contract wait-for-exit
     (case-lambda
@@ -174,12 +174,12 @@ See docs/license.txt. |#
   (define/contract make-process
     (case-lambda 
       [(filename:string args:string)              
-        (clr-static-call IronScheme.Runtime.Helpers MakeProcess filename args #t #f #f #f)]
+        (clr-static-call IronScheme.Core.Helpers MakeProcess filename args #t #f #f #f)]
       [(filename:string args:string show?:boolean)        
-        (clr-static-call IronScheme.Runtime.Helpers MakeProcess filename args show? #f #f #f)]
+        (clr-static-call IronScheme.Core.Helpers MakeProcess filename args show? #f #f #f)]
       [(filename:string args:string show?:boolean exit:procedure)   
-        (clr-static-call IronScheme.Runtime.Helpers MakeProcess filename args show? exit #f #f)]
+        (clr-static-call IronScheme.Core.Helpers MakeProcess filename args show? exit #f #f)]
       [(filename:string args:string show?:boolean exit:procedure out err)   
-        (clr-static-call IronScheme.Runtime.Helpers MakeProcess filename args show? exit out err)]))
+        (clr-static-call IronScheme.Core.Helpers MakeProcess filename args show? exit out err)]))
      
 )

@@ -15,8 +15,12 @@ namespace IronScheme.Core
       throw new SchemeRuntimeError(kind, who, message, irritants);
 
     /// <summary>who 可以是符号、字符串或 null（传给 Scheme 时为 #f）。</summary>
+    /// <summary>诊断：设置环境变量 IRONSCHEME_TRACE_ERRORS 时，C# 侧报出的断言违例同时把 CLR 调用栈写到标准错误。</summary>
+    static readonly bool traceErrors = Environment.GetEnvironmentVariable("IRONSCHEME_TRACE_ERRORS") != null;
+
     public static object AssertionViolation(object who, string message, params object[] irritants)
     {
+      if (traceErrors) Console.Error.WriteLine($"[assertion-violation {who}: {message}]\n{Environment.StackTrace}");
       var h = RuntimeHooks.AssertionViolation;
       if (h == null) return Fallback("assertion-violation", who?.ToString(), message, irritants);
       var args = new object[irritants.Length + 2];

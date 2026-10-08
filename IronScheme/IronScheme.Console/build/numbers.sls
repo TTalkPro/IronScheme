@@ -560,7 +560,8 @@ See docs/license.txt. |#
                            (if (let ((i (imag-part num)))
                                  (or (negative? i)
                                      (nan? i)
-                                     (infinite? i)))
+                                     (infinite? i)
+                                     (eqv? i -0.0)))
                                "" 
                                "+")
                            (number->string (imag-part num) radix)
@@ -1195,7 +1196,7 @@ See docs/license.txt. |#
 
   (define (flonum->string flo)
     (cond
-      [(flzero? flo) "0.0"]
+      [(flzero? flo) (if (fl<? (fl/ 1.0 flo) 0.0) "-0.0" "0.0")]
       [(flnan? flo) "+nan.0"]
       [(flinfinite? flo) 
         (if (flpositive? flo)

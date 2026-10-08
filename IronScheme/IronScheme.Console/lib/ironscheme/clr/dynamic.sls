@@ -119,7 +119,7 @@ See docs/license.txt. |#
       [(name ns)
         (or (exists
               (lambda (ns)
-                (let ((t (clr-static-call IronScheme.Runtime.Helpers GetTypeFast (type-and-namespace name ns))))
+                (let ((t (clr-static-call IronScheme.Core.Helpers GetTypeFast (type-and-namespace name ns))))
                   (if (null? t) #f t)))
               (cons "" ns))
             (assertion-violation 'get-type "type not found" name ns))]
@@ -160,9 +160,9 @@ See docs/license.txt. |#
   (define (generate-clause p)
     (cond
       [(type-enum? p)
-        'Microsoft.Scripting.SymbolId]
+        'IronScheme.Core.Symbol]
       [(type-assignable-from? (get-type "System.Delegate") p)
-        'IronScheme.Runtime.Callable]
+        'IronScheme.Core.Procedure]
       [(type-array? p)
         'System.Array]
       [else
