@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text;
 
 namespace IronScheme.Core
@@ -54,6 +56,30 @@ namespace IronScheme.Core
       Symbol sym => Symbol.Gensym(sym.Ungensym().Name),
       _ => Errors.AssertionViolation("gensym", "not a string or symbol", name),
     };
+
+    /// <summary>
+    /// <c>($gensym-scope)</c> 返回当前 gensym 作用域（无则 #f），供之后恢复；
+    /// <c>($gensym-scope 库名或字符串)</c> 进入新作用域（库名 <c>(rnrs base)</c> 记为 <c>rnrs.base</c>）；
+    /// <c>($gensym-scope 先前的返回值)</c> 恢复。只在构建模式下影响 gensym 的名字（iron-014）。
+    /// </summary>
+    [Primitive("$gensym-scope")]
+    public static object GensymScope() => (object)Symbol.CurrentGensymScope ?? RT.False;
+
+    [Primitive("$gensym-scope")]
+    public static object GensymScope(object scope)
+    {
+      switch (scope)
+      {
+        case Symbol.GensymScope s: Symbol.RestoreGensymScope(s); break;
+        case string s: Symbol.EnterGensymScope(s); break;
+        case Cons c: Symbol.EnterGensymScope(string.Join(".", c.Select(x => x is Symbol y ? y.Name : Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture)))); break;
+        default:
+          if (RT.IsTrue(scope)) return Errors.AssertionViolation("$gensym-scope", "expected a library name, a string, a saved scope or #f", scope);
+          Symbol.RestoreGensymScope(null);
+          break;
+      }
+      return Unspecified.Instance;
+    }
 
     [Primitive("ungensym", Flags = PrimitiveFlags.Pure)]
     public static object Ungensym(object symbol) => Sym(symbol, "ungensym").Ungensym();

@@ -33,6 +33,40 @@ namespace IronScheme.Core.Tests
     }
 
     [Test]
+    public void DeterministicGensymUsesScopeAndCounter()
+    {
+      var saved = SymbolPrimitives.GensymScope();
+      RuntimeOptions.DeterministicGensym = true;
+      try
+      {
+        string[] Run()
+        {
+          SymbolPrimitives.GensymScope(Cons.FromArray(Symbol.Intern("rnrs"), Symbol.Intern("base")));
+          var outer = SymbolPrimitives.GensymScope();
+          var a = Symbol.Gensym("x").Name;
+          // 嵌套的库展开：进入另一个作用域再恢复，外层计数接着走
+          SymbolPrimitives.GensymScope(Cons.FromArray(Symbol.Intern("psyntax"), Symbol.Intern("system"), Symbol.Intern("$all")));
+          var inner = Symbol.Gensym().Name;
+          SymbolPrimitives.GensymScope(outer);
+          var b = Symbol.Gensym().Name;
+          return new[] { a, inner, b };
+        }
+        var first = Run();
+        Assert.That(first, Is.EqualTo(new[] { "g$x$1$rnrs.base", "g$gen1$psyntax.system._all", "g$gen2$rnrs.base" }));
+        Assert.That(Run(), Is.EqualTo(first));
+        SymbolPrimitives.GensymScope(RT.False);
+        Assert.That(Symbol.Gensym("y").Name, Does.Match(@"^g\$y\$\d+\$%top$"));
+        Assert.That(Symbol.Intern("g$x$1$rnrs.base").Ungensym(), Is.SameAs(Symbol.Intern("x")));
+      }
+      finally
+      {
+        RuntimeOptions.DeterministicGensym = false;
+        SymbolPrimitives.GensymScope(saved);
+      }
+      Assert.That(Symbol.Gensym("z").Name, Does.EndWith("$" + Symbol.TickString));
+    }
+
+    [Test]
     public void AnonymousGensymFormat()
     {
       Assert.That(Symbol.Gensym().Name, Does.Match(@"^g\$gen\d+\$"));
@@ -157,7 +191,7 @@ namespace IronScheme.Core.Tests
       var names = typeof(SymbolPrimitives).GetMethods()
         .SelectMany(m => m.GetCustomAttributes(typeof(PrimitiveAttribute), false).Cast<PrimitiveAttribute>())
         .Select(a => a.Name).Distinct().OrderBy(n => n).ToArray();
-      Assert.That(names, Is.EqualTo(new[] { "gensym", "remove-location", "set-symbol-value!", "string->symbol",
+      Assert.That(names, Is.EqualTo(new[] { "$gensym-scope", "gensym", "remove-location", "set-symbol-value!", "string->symbol",
         "symbol->string", "symbol-bound?", "symbol-value", "ungensym" }));
     }
   }

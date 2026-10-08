@@ -80,6 +80,9 @@
     (overload "IronScheme.Core.Unsafe" "FxXor" 2 #f (pure unsafe) $fxxor))
   (primitive $fxzero?
     (overload "IronScheme.Core.Unsafe" "FxZero" 1 #f (pure unsafe) $fxzero?))
+  (primitive $gensym-scope
+    (overload "IronScheme.Core.SymbolPrimitives" "GensymScope" 0 #f () #f)
+    (overload "IronScheme.Core.SymbolPrimitives" "GensymScope" 1 #f () #f))
   (primitive $runtime-hooks-missing
     (overload "IronScheme.Core.RuntimeHooks" "Missing" 0 #f () #f))
   (primitive $set-runtime-hook!
@@ -127,6 +130,9 @@
     (overload "IronScheme.Core.Builtins" "IsDebugMode" 1 #f () #f))
   (primitive decompose-flonum
     (overload "IronScheme.Core.Builtins" "DecomposeFlonum" 1 #f () #f))
+  (primitive deterministic-gensym?
+    (overload "IronScheme.Core.Builtins" "DeterministicGensym" 0 #f () #f)
+    (overload "IronScheme.Core.Builtins" "DeterministicGensym" 1 #f () #f))
   (primitive eof-object
     (overload "IronScheme.Core.Builtins" "EofObject" 0 #f () #f))
   (primitive eof-object?

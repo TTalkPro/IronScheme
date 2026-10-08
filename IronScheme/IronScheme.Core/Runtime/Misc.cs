@@ -19,6 +19,8 @@ namespace IronScheme.Core
     public static bool CompileToCurrentDirectory = true;
     /// <summary>旧系统的轻量调试模式。新运行时不提供调试器（02 §10），开关仅保留以兼容 Scheme 代码。</summary>
     public static bool LightweightDebugging;
+    /// <summary>构建模式：gensym 按"作用域 + 计数"确定性命名（Symbol.cs，iron-014）。</summary>
+    public static bool DeterministicGensym;
   }
 
   /// <summary>从旧 Builtins.cs 移植的杂项原语（iron-008 步骤 G）。</summary>
@@ -72,6 +74,8 @@ namespace IronScheme.Core
     [Primitive("compile-to-current-directory?")] public static object CompileToCurrentDirectory(object value) => SetFlag(ref RuntimeOptions.CompileToCurrentDirectory, value);
     [Primitive("lw-debug-mode?")] public static object IsLightWeightDebugMode() => Flag(ref RuntimeOptions.LightweightDebugging);
     [Primitive("lw-debug-mode?")] public static object IsLightWeightDebugMode(object value) => SetFlag(ref RuntimeOptions.LightweightDebugging, value);
+    [Primitive("deterministic-gensym?")] public static object DeterministicGensym() => Flag(ref RuntimeOptions.DeterministicGensym);
+    [Primitive("deterministic-gensym?")] public static object DeterministicGensym(object value) => SetFlag(ref RuntimeOptions.DeterministicGensym, value);
 
     #endregion
 

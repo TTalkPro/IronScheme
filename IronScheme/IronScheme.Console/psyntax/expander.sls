@@ -48,6 +48,7 @@
       syntax-violation syntax->datum make-variable-transformer
       null-environment scheme-report-environment)
     (only (ironscheme) valuetype-vector?)  
+    (only (ironscheme unsafe) $gensym-scope)
     (rnrs mutable-pairs)
     (psyntax library-manager)
     (psyntax builders)
@@ -3964,6 +3965,21 @@
         (expanded->core x))))        
 
 
+  ;;; 构建模式（deterministic-gensym?）下 gensym 按"库名 + 计数器"命名（iron-014）：展开一个库期间
+  ;;; 进入以库名为名的 gensym 作用域，结束后恢复外层作用域（展开中可能嵌套加载其他库）。
+  ;;; 非构建模式下作用域不影响 gensym 的名字。
+  (define (with-gensym-scope name thunk)
+    (let ((saved ($gensym-scope)))
+      (dynamic-wind
+        (lambda () ($gensym-scope name))
+        thunk
+        (lambda () ($gensym-scope saved)))))
+
+  (define (library-form-name x)
+    (let-values (((name* exp* imp* b*) (parse-library x)))
+      (let-values (((name ver) (parse-library-name name*)))
+        name)))
+
   ;;; Given a (library . _) s-expression, library-expander expands
   ;;; it to core-form, registers it with the library manager, and
   ;;; returns its invoke-code, visit-code, subst and env.
@@ -3985,6 +4001,7 @@
                       (let ((loc (car x)) (src (cddr x)))
                         (build-global-assignment no-source loc src)))
                     macro*))))
+       (with-gensym-scope (library-form-name x) (lambda ()
        (let-values (((name ver imp* inv* vis* 
                       invoke-code macro* export-subst export-env
                       guard-code guard-req*)
@@ -4010,7 +4027,7 @@
            (values id name ver imp* vis* inv* 
                    invoke-code visit-code
                    export-subst export-env 
-                   guard-code guard-req*))))
+                   guard-code guard-req*))))))
       ((x filename)
        (library-expander x filename (lambda (x) (values))))
       ((x)

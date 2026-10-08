@@ -35,9 +35,40 @@ namespace IronScheme.Core
 
     // 名字格式沿用旧运行时：g$<名字>$<计数>$<TICKS>，匿名为 g$gen<计数>$<TICKS>。
     // TICKS 由进程启动时间派生，保证不同进程生成的 gensym 不冲突。
-    // 构建模式下的确定性命名见 iron-014。
+    //
+    // 构建模式（RuntimeOptions.DeterministicGensym，iron-014）：TICKS 换成当前 gensym 作用域名，
+    // 计数在作用域内从 1 开始，同一输入两次展开得到相同名字。psyntax 展开库时进入以库名为名的作用域
+    // （如 rnrs.base），作用域外为 %top；文本种子中的 gensym 后缀为 %seed（iron-015）。
 
     static int anonCount, namedCount;
+
+    /// <summary>构建模式下的 gensym 作用域：名字与计数。</summary>
+    public sealed class GensymScope
+    {
+      public readonly string Name;
+      internal int Count;
+      internal GensymScope(string name) { Name = name; }
+      public override string ToString() => "#<gensym-scope " + Name + " " + Count + ">";
+    }
+
+    static GensymScope topScope = new GensymScope("%top");
+    static GensymScope scope;
+
+    /// <summary>当前作用域；未进入任何作用域时为 null。</summary>
+    public static GensymScope CurrentGensymScope => scope;
+
+    /// <summary>进入新作用域（计数从 0 开始）。名字中的 '$' 换成 '_'，以免干扰 ungensym。</summary>
+    public static void EnterGensymScope(string name) => scope = new GensymScope(name.Replace('$', '_'));
+
+    /// <summary>恢复先前保存的作用域（可为 null）。</summary>
+    public static void RestoreGensymScope(GensymScope saved) => scope = saved;
+
+    static string NextDeterministic(out int n)
+    {
+      var s = scope ?? topScope;
+      n = ++s.Count;
+      return s.Name;
+    }
 
     static readonly char[] packChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ@=".ToCharArray();
 
@@ -51,11 +82,25 @@ namespace IronScheme.Core
     /// <summary>gensym 名字的进程唯一后缀。</summary>
     public static readonly string TickString = PackInt((int)((DateTime.Now.Ticks >> 16) & 0x7FFFFFFF));
 
-    public static Symbol Gensym() =>
-      Intern("g$gen" + Interlocked.Increment(ref anonCount) + "$" + TickString);
+    public static Symbol Gensym()
+    {
+      if (RuntimeOptions.DeterministicGensym)
+      {
+        string sc = NextDeterministic(out int n);
+        return Intern("g$gen" + n + "$" + sc);
+      }
+      return Intern("g$gen" + Interlocked.Increment(ref anonCount) + "$" + TickString);
+    }
 
-    public static Symbol Gensym(string name) =>
-      Intern("g$" + name + "$" + Interlocked.Increment(ref namedCount) + "$" + TickString);
+    public static Symbol Gensym(string name)
+    {
+      if (RuntimeOptions.DeterministicGensym)
+      {
+        string sc = NextDeterministic(out int n);
+        return Intern("g$" + name + "$" + n + "$" + sc);
+      }
+      return Intern("g$" + name + "$" + Interlocked.Increment(ref namedCount) + "$" + TickString);
+    }
 
     /// <summary>gensym 去掉装饰后的名字：第一个与第二个 '$' 之间的部分；不是 gensym 时返回原名。</summary>
     public static string UngensymName(string name)
