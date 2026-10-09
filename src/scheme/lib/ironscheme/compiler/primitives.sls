@@ -34,7 +34,7 @@ See docs/license.txt. |#
   (define table-file-set? #f)
 
   ;; 原语表的内容在展开本库时读入并作为常量烘进编译器（boot 镜像中的编译器因此不依赖当前目录）；
-  ;; 展开时找不到文件（不在 IronScheme.Console 目录下展开）则为 #f，运行时再读文件。
+  ;; 展开时找不到文件（不在 src/scheme 目录下展开）则为 #f，运行时再读文件。
   (define-syntax baked-primitive-table
     (lambda (x)
       (syntax-case x ()

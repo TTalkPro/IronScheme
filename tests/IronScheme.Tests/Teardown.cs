@@ -18,16 +18,16 @@ namespace IronScheme.Tests
       }
     }
 
-    /// <summary>删除系统库编译测试生成的 dll（compiled.lst 中列出，相对 IronScheme.Console）。</summary>
+    /// <summary>删除系统库编译测试生成的 dll（compiled.lst 中列出，相对 src/scheme）。</summary>
     internal static void Cleanup()
     {
       // R6RS 测试中 I/O 用例写出的临时文件
-      File.Delete(Path.Combine(Paths.ConsoleDir, "tmp1"));
-      var list = Path.Combine(Paths.ConsoleDir, "compiled.lst");
+      File.Delete(Path.Combine(Paths.SchemeDir, "tmp1"));
+      var list = Path.Combine(Paths.SchemeDir, "compiled.lst");
       if (!File.Exists(list)) return;
       foreach (var lib in File.ReadAllLines(list))
       {
-        var path = Path.Combine(Paths.ConsoleDir, lib);
+        var path = Path.Combine(Paths.SchemeDir, lib);
         File.Delete(path);
         File.Delete(Path.ChangeExtension(path, "pdb"));
       }

@@ -6,24 +6,24 @@ namespace IronScheme.Core.Tests
 {
   /// <summary>
   /// 新宿主（iron-029）在 stage1 boot 镜像上的冒烟测试。stage1 由 dotnet build（IronScheme.Host 的 GenerateBootImage 目标）生成到
-  /// IronScheme.Console/build/ironscheme.boot.dll；不存在时跳过。
+  /// src/scheme/build/ironscheme.boot.dll；不存在时跳过。
   /// </summary>
   [Category("Stage1")]
   public class HostTests
   {
     static string TestDir => TestContext.CurrentContext.TestDirectory;
-    static string SolutionDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", ".."));
-    static string ConsoleDir => Path.Combine(SolutionDir, "IronScheme.Console");
-    static string Boot => Path.Combine(ConsoleDir, "build", "ironscheme.boot.dll");
+    static string SrcDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", "..", "..", "src"));
+    static string SchemeDir => Path.Combine(SrcDir, "scheme");
+    static string Boot => Path.Combine(SchemeDir, "build", "ironscheme.boot.dll");
 
     static (int Exit, string Out, string Err) Host(string input, params string[] args)
     {
       if (!File.Exists(Boot)) Assert.Ignore("stage1 boot image not built (run dotnet build in the repository root)");
       var config = new DirectoryInfo(TestDir);
-      string host = Path.Combine(SolutionDir, "IronScheme.Host", "bin", config.Parent.Name, config.Name, "IronScheme.Host.dll");
+      string host = Path.Combine(SrcDir, "IronScheme.Host", "bin", config.Parent.Name, config.Name, "IronScheme.Host.dll");
       var psi = new ProcessStartInfo("dotnet")
       {
-        WorkingDirectory = ConsoleDir,
+        WorkingDirectory = SchemeDir,
         RedirectStandardInput = true,
         RedirectStandardOutput = true,
         RedirectStandardError = true,

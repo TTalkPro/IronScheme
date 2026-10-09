@@ -1,6 +1,6 @@
 ;;; 常量往返（iron-020）：在 stage0 上用 (ironscheme compiler constants) 编码各类常量，写成 Lcil 常量表，
 ;;; 经发射器（内存模式）生成程序集，再从 $Constants.c 读回，逐项核对。
-;;; 运行（在 IronScheme.Console 目录下）：
+;;; 运行（在 src/scheme 目录下）：
 ;;;   dotnet ../IronScheme.Stage0/bin/Release/net10.0/stage0.dll -I lib boot-seed.core compiler/tests/constants-roundtrip.sps
 (import (rnrs) (rnrs eval) (rnrs mutable-pairs) (rnrs mutable-strings) (ironscheme) (ironscheme clr)
         (ironscheme compiler constants))

@@ -28,7 +28,7 @@ namespace IronScheme.Tests
     public void Stage1_FromStage0()
     {
       Directory.CreateDirectory(StageDir(1));
-      RunProcess("dotnet", new[] { Paths.Stage0 }.Concat(BuildArgs).Concat(new[] { "boot-seed.core", Script, StageDir(1) }).ToArray(), null, Paths.ConsoleDir);
+      RunProcess("dotnet", new[] { Paths.Stage0 }.Concat(BuildArgs).Concat(new[] { "boot-seed.core", Script, StageDir(1) }).ToArray(), null, Paths.SchemeDir);
       Assert.That(File.Exists(Dll(1)), Is.True);
     }
 
@@ -42,7 +42,7 @@ namespace IronScheme.Tests
     {
       if (!File.Exists(Dll(from))) Assert.Ignore($"stage{from} not built");
       Directory.CreateDirectory(StageDir(to));
-      RunProcess("dotnet", new[] { Paths.Host, "--boot", Dll(from) }.Concat(BuildArgs).Concat(new[] { Script, StageDir(to) }).ToArray(), null, Paths.ConsoleDir);
+      RunProcess("dotnet", new[] { Paths.Host, "--boot", Dll(from) }.Concat(BuildArgs).Concat(new[] { Script, StageDir(to) }).ToArray(), null, Paths.SchemeDir);
       Assert.That(File.Exists(Dll(to)), Is.True);
     }
 
@@ -84,7 +84,7 @@ namespace IronScheme.Tests
                         OperatingSystem.IsWindows() ? "ilverify.exe" : "ilverify");
       if (!File.Exists(tool)) Assert.Ignore("ilverify not installed");
       var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
-      var core = Path.Combine(Paths.SolutionDir, "IronScheme.Core", "bin", Paths.Configuration, Paths.Framework);
+      var core = Path.Combine(Paths.SrcDir, "IronScheme.Core", "bin", Paths.Configuration, Paths.Framework);
       var args = assemblies.Concat(new[]
       {
         "-r", Path.Combine(runtimeDir, "*.dll"),
@@ -92,7 +92,7 @@ namespace IronScheme.Tests
         "-r", Path.Combine(core, "Oyster.IntX.dll"),
         "-r", Paths.Emit,
       }).ToArray();
-      return RunProcess(tool, args, null, Paths.ConsoleDir, checkExitCode: false);
+      return RunProcess(tool, args, null, Paths.SchemeDir, checkExitCode: false);
     }
   }
 }

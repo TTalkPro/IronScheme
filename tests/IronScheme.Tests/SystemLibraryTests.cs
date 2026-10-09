@@ -8,7 +8,7 @@ namespace IronScheme.Tests
   /// <summary>
   /// 系统库编译（iron-031，对应旧 Bootstrap 中的 Compile / Verify）：compile-system-libraries 把全部系统库
   /// （含 srfi、pfds）编译成 dll；把 lib 藏起来再运行一次，全部库须能只从 dll 加载；ILVerify 全部通过。
-  /// 生成的 dll 列在 IronScheme.Console/compiled.lst，Teardown 时删除。
+  /// 生成的 dll 列在 src/scheme/compiled.lst，Teardown 时删除。
   /// </summary>
   [Order(5)]
   [Category(nameof(SystemLibraries))]
@@ -16,7 +16,7 @@ namespace IronScheme.Tests
   public class SystemLibraries : TestRunner
   {
     const int LIBSCOUNT = 232;
-    static string ListFile => Path.Combine(Paths.ConsoleDir, "compiled.lst");
+    static string ListFile => Path.Combine(Paths.SchemeDir, "compiled.lst");
 
     [Test, Order(1)]
     public void Compile()
@@ -29,8 +29,8 @@ namespace IronScheme.Tests
       Assert.That(list, Has.Length.EqualTo(LIBSCOUNT));
 
       // 没有源码时全部从 dll 加载，不再编译
-      var lib = Path.Combine(Paths.ConsoleDir, "lib");
-      var hidden = Path.Combine(Paths.ConsoleDir, "lib.hide");
+      var lib = Path.Combine(Paths.SchemeDir, "lib");
+      var hidden = Path.Combine(Paths.SchemeDir, "lib.hide");
       Directory.Move(lib, hidden);
       try
       {
@@ -47,9 +47,9 @@ namespace IronScheme.Tests
     public void Verify()
     {
       if (!File.Exists(ListFile)) Assert.Ignore("system libraries not compiled");
-      var libs = File.ReadAllLines(ListFile).Select(l => Path.Combine(Paths.ConsoleDir, l)).ToArray();
+      var libs = File.ReadAllLines(ListFile).Select(l => Path.Combine(Paths.SchemeDir, l)).ToArray();
       Assert.That(libs, Has.Length.EqualTo(LIBSCOUNT));
-      var r = Bootstrap.ILVerify(libs.Concat(new[] { "-r", Path.Combine(Paths.ConsoleDir, "*.dll") }).ToArray());
+      var r = Bootstrap.ILVerify(libs.Concat(new[] { "-r", Path.Combine(Paths.SchemeDir, "*.dll") }).ToArray());
       foreach (var l in libs) Assert.That(r.Output, Does.Contain($"All Classes and Methods in {l} Verified."), r.ToString());
     }
   }

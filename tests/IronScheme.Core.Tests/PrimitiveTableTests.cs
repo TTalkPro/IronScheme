@@ -10,7 +10,7 @@ namespace IronScheme.Core.Tests
     {
       for (var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); dir != null; dir = dir.Parent)
       {
-        var p = Path.Combine(dir.FullName, "IronScheme.Console", "compiler", "primitives.ss");
+        var p = Path.Combine(dir.FullName, "src", "scheme", "compiler", "primitives.ss");
         if (File.Exists(p)) return p;
       }
       return null;
@@ -22,7 +22,7 @@ namespace IronScheme.Core.Tests
       var path = FindTable();
       Assert.That(path, Is.Not.Null, "primitives.ss not found");
       Assert.That(File.ReadAllText(path), Is.EqualTo(IronScheme.PrimGen.Program.Generate()),
-        "IronScheme.Console/compiler/primitives.ss 已过期：运行 IronScheme.PrimGen 重新生成");
+        "src/scheme/compiler/primitives.ss 已过期：运行 IronScheme.PrimGen 重新生成");
     }
   }
 

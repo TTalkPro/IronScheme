@@ -14,15 +14,20 @@ namespace IronScheme.Tests
     static string TestDir => TestContext.CurrentContext.TestDirectory;
     public static string Configuration => new DirectoryInfo(TestDir).Parent.Name;
     public static string Framework => new DirectoryInfo(TestDir).Name;
-    public static string SolutionDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", ".."));
-    public static string RepoDir => Path.GetFullPath(Path.Combine(SolutionDir, ".."));
-    /// <summary>运行 Scheme 程序的工作目录（tests/、lib/ 所在处）；可用环境变量 ISWD 覆盖。</summary>
-    public static string ConsoleDir => Environment.GetEnvironmentVariable("ISWD") ?? Path.Combine(SolutionDir, "IronScheme.Console");
-    public static string Host => Path.Combine(SolutionDir, "IronScheme.Host", "bin", Configuration, Framework, "IronScheme.Host.dll");
-    public static string Stage0 => Path.Combine(SolutionDir, "IronScheme.Stage0", "bin", Configuration, Framework, "stage0.dll");
-    public static string Emit => Path.Combine(SolutionDir, "IronScheme.Emit", "bin", Configuration, Framework, "IronScheme.Emit.dll");
+    /// <summary>仓库根目录（测试目录为 tests/项目/bin/配置/框架）。</summary>
+    public static string RepoDir => Path.GetFullPath(Path.Combine(TestDir, "..", "..", "..", "..", ".."));
+    public static string SrcDir => Path.Combine(RepoDir, "src");
+    /// <summary>运行 Scheme 程序的工作目录 src/scheme（tests/、lib/ 所在处）；可用环境变量 ISWD 覆盖。</summary>
+    public static string SchemeDir => Environment.GetEnvironmentVariable("ISWD") ?? Path.Combine(SrcDir, "scheme");
+    /// <summary>发现测试用例时（还没有 TestContext）按测试程序集所在目录定位 src/scheme。</summary>
+    public static string SchemeDirForDiscovery =>
+      Environment.GetEnvironmentVariable("ISWD") ??
+      Path.Combine(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(typeof(Paths).Assembly.Location), "..", "..", "..", "..", "..")), "src", "scheme");
+    public static string Host => Path.Combine(SrcDir, "IronScheme.Host", "bin", Configuration, Framework, "IronScheme.Host.dll");
+    public static string Stage0 => Path.Combine(SrcDir, "IronScheme.Stage0", "bin", Configuration, Framework, "stage0.dll");
+    public static string Emit => Path.Combine(SrcDir, "IronScheme.Emit", "bin", Configuration, Framework, "IronScheme.Emit.dll");
     /// <summary>测试使用的 boot 镜像；可用环境变量 IRONSCHEME_BOOT 覆盖。</summary>
-    public static string Boot => Environment.GetEnvironmentVariable("IRONSCHEME_BOOT") ?? Path.Combine(ConsoleDir, "build", "ironscheme.boot.dll");
+    public static string Boot => Environment.GetEnvironmentVariable("IRONSCHEME_BOOT") ?? Path.Combine(SchemeDir, "build", "ironscheme.boot.dll");
   }
 
   [TestFixture]
@@ -66,7 +71,7 @@ namespace IronScheme.Tests
       if (!File.Exists(boot ?? Paths.Boot)) Assert.Ignore("boot image not built (run dotnet build in the repository root, or the Bootstrap tests)");
       var argv = new[] { Paths.Host, "--boot", boot ?? Paths.Boot, "-I", "lib" }
         .Concat((args ?? "").Replace('\\', '/').Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToArray();
-      return RunProcess("dotnet", argv, input, Paths.ConsoleDir);
+      return RunProcess("dotnet", argv, input, Paths.SchemeDir);
     }
 
     protected internal static TestResult RunProcess(string exe, string[] args, string input, string workingDirectory, int timeoutMs = 1800000, bool checkExitCode = true)

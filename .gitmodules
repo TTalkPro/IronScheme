@@ -1,9 +1,3 @@
-[submodule "IronScheme/IronScheme.Console/lib/pfds"]
-	path = IronScheme/IronScheme.Console/lib/pfds
-	url = https://github.com/IronScheme/pfds.git
-[submodule "IronScheme/IronScheme.Console/lib/srfi"]
-	path = IronScheme/IronScheme.Console/lib/srfi
-	url = https://github.com/IronScheme/chez-srfi.git
 [submodule "IronScheme/IronScheme.Console/lib/nanopass-framework-scheme"]
-	path = IronScheme/IronScheme.Console/lib/nanopass-framework-scheme
+	path = src/scheme/lib/nanopass-framework-scheme
 	url = https://github.com/nanopass/nanopass-framework-scheme.git

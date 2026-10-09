@@ -1,25 +1,27 @@
 AUTHORS
 
-IronScheme/Oyster.IntX/Oyster.IntX.xml
+src/Oyster.IntX/Oyster.IntX.xml
 **/Backup*/**
 **/UpgradeLog*.htm
 **/bin/**
 **/Bin/**
 **/obj/**
 **/Migrated rules for*.ruleset
-/IronScheme/.vs/*
-*.csproj.user
 /.vs
+*.csproj.user
 **/.idea/
  
 *.binlog
-/IronScheme/output.*
-/IronScheme/cov/**
-/IronScheme/*.coverage
-/IronScheme/coverage.xml
-/IronScheme/*.nettrace
-/IronScheme/*.speedscope.json
+/output.*
+/cov/**
+/*.coverage
+/coverage.xml
+/*.nettrace
+/*.speedscope.json
 
 # Phase A 生成的 stage1 boot 镜像（dotnet build 的 GenerateBootImage 目标）
-IronScheme/IronScheme.Console/build/ironscheme.boot.dll
-IronScheme/IronScheme.Console/build/ironscheme.boot.lcil
+src/scheme/build/ironscheme.boot.dll
+src/scheme/build/ironscheme.boot.lcil
+
+# tools/build.cs publish 的输出
+/artifacts/
