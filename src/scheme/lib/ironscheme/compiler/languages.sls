@@ -6,8 +6,9 @@ See docs/license.txt. |#
 
 ;;; 编译器的中间语言（designs/03-compiler.md §4）。
 ;;;
-;;;   L0  parse-core 的输出：固定文法，符号已分为词法变量 x、全局位置 (gref s)、库变量 (mref x)、原语 pr
-;;;   L1  recognize-let、simplify-letrec 之后：有 let；letrec 只绑定 lambda
+;;;   L0  parse-core 的输出：固定文法，符号已分为词法变量 x、全局位置 (gref s)、库变量 (mref x)、原语 pr。
+;;;       let 与 label / jump / escape-frame 由 lower-async 产生（designs/10-async.md §3），parse-core 不产生
+;;;   L1  recognize-let、simplify-letrec 之后：letrec 只绑定 lambda
 ;;;   L2  convert-assignments 之后：被捕获且被赋值的词法变量改为 Box（box / unbox / set-box!）
 ;;;   L3  uncover-free 之后：lambda 带自由变量表
 ;;;
@@ -48,6 +49,7 @@ See docs/license.txt. |#
       (primcall pr e* ...)
       le
       (letrec ([x* e*] ...) body)
+      (let ([x* e*] ...) body)
       (library d ([x* s* e*] ...) body)
       (call e e* ...)
       (and e* ...)
@@ -55,6 +57,12 @@ See docs/license.txt. |#
       (throw e)
       (break)
       (try-finally e0 e1)
+      ;; 异步（designs/10-async.md §3）：await 只在 async-lambda 体内；label / jump 是局部循环（D9）；
+      ;; escape-frame 是内联的 call/cc（D10）：x 绑定为逃逸续延，body 在捕获帧里求值
+      (await e)
+      (label x (x* ...) body0 body1)
+      (jump x e* ...)
+      (escape-frame x body)
       ;; 互操作（03 §7）：d 为类型说明（字符串或 #f）、成员说明（字符串或 ("名字" ("P" …))）
       (clr-call d0 d1 st e* ...)       ; st 为真表示静态；否则 e* 的第一个是实例
       (clr-field-get d0 d1 st e* ...)
@@ -69,15 +77,15 @@ See docs/license.txt. |#
       (clr-namespaces)
       (unsupported d e* ...))
     (LambdaExpr (le)
-      (lambda nm cl* ...))
+      (lambda nm cl* ...)
+      (async-lambda nm cl))              ; 单子句；体编译成状态机（10 §3.3）
     (Clause (cl)
       (clause (x* ...) (maybe x) body)))
 
   (define-language L1 (extends L0)
     (Expr (e body)
       (- (letrec ([x* e*] ...) body))
-      (+ (letrec ([x* le*] ...) body)
-         (let ([x* e*] ...) body))))
+      (+ (letrec ([x* le*] ...) body))))
 
   (define-language L2 (extends L1)
     (Expr (e body)
@@ -87,5 +95,7 @@ See docs/license.txt. |#
 
   (define-language L3 (extends L2)
     (LambdaExpr (le)
-      (- (lambda nm cl* ...))
-      (+ (lambda nm (x* ...) cl* ...)))))
+      (- (lambda nm cl* ...)
+         (async-lambda nm cl))
+      (+ (lambda nm (x* ...) cl* ...)
+         (async-lambda nm (x* ...) cl)))))

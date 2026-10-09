@@ -304,7 +304,8 @@ public sealed partial class LcilEmitter
             var t = T(r.Type, pos);
             if (t is TypeBuilder) t = t.BaseType;   // 继承来的成员：在基类中找
             const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
-            if (r.Name == ".ctor") found = t.GetConstructor(All, null, ps, null);
+            // 实例构造函数：不含 Static，否则类型有 .cctor 时与无参 .ctor 二义（AsyncFrame）
+            if (r.Name == ".ctor") found = t.GetConstructor(All & ~BindingFlags.Static, null, ps, null);
             else
             {
                 for (var s = t; s != null && found == null; s = s.BaseType)

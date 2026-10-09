@@ -1,0 +1,12 @@
+(async-lambda
+  #f
+  ()
+  (clause
+    (h t)
+    #f
+    (let ((handlers%1 (primcall $current-handlers)))
+      (begin
+        (primcall $set-current-handlers! (primcall cons h handlers%1))
+        (try-finally
+          (await t)
+          (primcall $set-current-handlers! handlers%1))))))

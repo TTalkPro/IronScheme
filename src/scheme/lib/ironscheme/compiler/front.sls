@@ -62,10 +62,20 @@ See docs/license.txt. |#
            (let ((fv (union* (map Clause cl*))))
              (for-each (lambda (x) (hashtable-set! captured x #t)) fv)
              fv)]
+          [(async-lambda ,nm ,cl)
+           (let ((fv (Clause cl)))
+             (for-each (lambda (x) (hashtable-set! captured x #t)) fv)
+             fv)]
           [(letrec ([,x* ,e*] ...) ,body)
            (let ((fvs (map Expr e*)))
              (for-each (lambda (rhs fv) (hashtable-set! letrec-refs rhs (filter (lambda (x) (memq x x*)) fv))) e* fvs)
              (set-minus (union* (cons (Expr body) fvs)) x*))]
+          [(let ([,x* ,e*] ...) ,body) (set-union (union* (map Expr e*)) (set-minus (Expr body) x*))]
+          ;; 异步节点（lower-async 的输出，10 §3）：label 绑定 x 与 x*；escape-frame 绑定 x
+          [(await ,e) (Expr e)]
+          [(label ,x (,x* ...) ,body0 ,body1) (set-minus (set-union (Expr body0) (Expr body1)) (cons x x*))]
+          [(jump ,x ,e* ...) (set-add x (union* (map Expr e*)))]
+          [(escape-frame ,x ,body) (set-minus (Expr body) (list x))]
           [(library ,d ([,x* ,s* ,e*] ...) ,body) (union* (cons (Expr body) (map Expr e*)))]
           [(call ,e ,e* ...) (union* (map Expr (cons e e*)))]
           [(and ,e* ...) (union* (map Expr e*))]
@@ -95,6 +105,7 @@ See docs/license.txt. |#
   (define (lambda-form? e)
     (nanopass-case (L0 Expr) e
       [(lambda ,nm ,cl* ...) #t]
+      [(async-lambda ,nm ,cl) #t]
       [else #f]))
 
 ;; —— simplify-letrec（含 recognize-let）：L0 → L1 ——
@@ -218,12 +229,25 @@ See docs/license.txt. |#
     (definitions
       (define (boxed? x)
         (and (hashtable-ref (analysis-assigned an) x #f)
-             (hashtable-ref (analysis-captured an) x #f))))
+             (hashtable-ref (analysis-captured an) x #f)))
+      ;; label 的形参表：jump 给被装箱的形参传新 Box
+      (define label-params (make-eq-hashtable)))
     (Expr : Expr (ir) -> Expr ()
       [,x (if (boxed? x) `(unbox ,x) x)]
       [(set! ,x ,[e]) (if (boxed? x) `(set-box! ,x ,e) `(set! ,x ,e))]
       [(let ([,x* ,[e*]] ...) ,[body])
-       `(let ([,x* ,(map (lambda (x e) (if (boxed? x) `(box ,e) e)) x* e*)] ...) ,body)])
+       `(let ([,x* ,(map (lambda (x e) (if (boxed? x) `(box ,e) e)) x* e*)] ...) ,body)]
+      [(label ,x (,x* ...) ,body0 ,body1)
+       (hashtable-set! label-params x x*)
+       (let* ((b0 (Expr body0)) (b1 (Expr body1)))
+         `(label ,x (,x* ...) ,b0 ,b1))]
+      [(jump ,x ,[e*] ...)
+       (let ((p* (hashtable-ref label-params x '())))
+         `(jump ,x ,(map (lambda (p e) (if (boxed? p) `(box ,e) e)) p* e*) ...))]
+      [(escape-frame ,x ,[body])
+       (if (boxed? x)
+           `(escape-frame ,x (begin (set! ,x (box ,x)) ,body))
+           `(escape-frame ,x ,body))])
     (Clause : Clause (ir) -> Clause ()
       [(clause (,x* ...) ,x ,[body])
        ;; 被装箱的形参：进入时把形参换成 Box

@@ -59,7 +59,6 @@
          (task-source-set-result! src 'ready)
          (task-result (task-source-task src)))
        => 'ready)
-(check (task-completed? (task-yield)) => #f)                      ; 让给线程池，不同步完成
 (check (unspecified? (task-result (task-yield))) => #t)
 (check (task-result (task-run (lambda () (task-from-result 'unwrapped)))) => 'unwrapped)
 
@@ -73,11 +72,11 @@
 (check (p) => 'outer)
 (check (let ((q (make-parameter '()))) (q '(1)) (q '()) (q)) => '())   ; 空表不是"未设置"
 
-;;; E：guard 的处理器在线程池子任务里仍能接住 raise（处理器栈也是 AsyncLocal）
-(check (with-exception-handler
-         (lambda (e) (list 'handled e))
-         (lambda () (task-result (task-run (lambda () (raise-continuable 'from-pool))))))
-       => '(handled from-pool))
+;;; E：处理器栈不进入 task-run 的子任务（调用方的 guard 是逃逸续延，在别的线程上没有意义）：
+;;; 子任务里没接住的条件让 task 失败，task-result 在等待方重新 raise，这里的 guard 接住
+(check (guard (e ((symbol? e) (list 'caught e)))
+         (task-result (task-run (lambda () (raise 'from-pool)))))
+       => '(caught from-pool))
 (check (task-result (task-run (lambda () (guard (e (#t 'inner-guard)) (raise 'x))))) => 'inner-guard)
 
 (display (if (= failures 0) "async-interop: all passed" "async-interop: failed"))

@@ -9,6 +9,7 @@ See docs/license.txt. |#
 ;;; - 符号三分类（§3）：被外层绑定的是词法变量（library-letrec* 绑定的是库变量）；
 ;;;   否则在原语表中的是原语；其余是全局位置（符号值槽）。不查运行时；
 ;;; - case-lambda 各变体统一为 (lambda 名字 (clause (形参 …) 剩余形参 体) …)，类型说明忽略；
+;;;   (async-lambda fmls body) → (async-lambda 名字 (clause …))；特殊原语 await → (await e)（10 §3.1）；
 ;;; - 注解（annotated-*）剥离。第一版不保留源位置。
 (library (ironscheme compiler parse)
   (export parse-core)
@@ -143,6 +144,7 @@ See docs/license.txt. |#
             ((lambda)
              (unless (and (pair? (cdr x)) (list? (cddr x))) (bad-form "lambda" x))
              (Lambda (list (cdr x)) #f #f x))
+            ((async-lambda) (AsyncLambda x #f))
             ((letrec letrec*)
              (unless (and (list? x) (>= (length x) 2) (list? (cadr x))) (bad-form "letrec" x))
              (let ((bs (cadr x)))
@@ -225,6 +227,9 @@ See docs/license.txt. |#
                          ((try-finally)
                           (unless (= (length args) 2) (bad-form "$try/finally" x))
                           `(try-finally ,(car args) ,(cadr args)))
+                         ((await)
+                          (unless (= (length args) 1) (bad-form "await" x))
+                          `(await ,(car args)))
                          (else
                           (if (pair? (primitive-overloads p))
                               `(primcall ,h ,args ...)
@@ -234,15 +239,22 @@ See docs/license.txt. |#
 
       ;; 绑定右边是 lambda 时用绑定名作过程名
       (define (Named x name)
-        (if (and (pair? x) (memq (car x) '(case-lambda annotated-case-lambda typed-case-lambda annotated-typed-case-lambda lambda))
+        (if (and (pair? x) (memq (car x) '(case-lambda annotated-case-lambda typed-case-lambda annotated-typed-case-lambda lambda async-lambda))
                  (not (bound? (car x))))
             (case (car x)
               ((case-lambda) (Lambda (cdr x) #f (pretty-name name) x))
+              ((async-lambda) (AsyncLambda x (pretty-name name)))
               ((annotated-case-lambda) (Lambda (cddr x) #f (pretty-name name) x))
               ((typed-case-lambda) (Lambda (cdr x) #t (pretty-name name) x))
               ((annotated-typed-case-lambda) (Lambda (cddr x) #t (pretty-name name) x))
               (else (Lambda (list (cdr x)) #f (pretty-name name) x)))
             (Expr x)))
+
+      ;; (async-lambda 形参 体 …)：单子句
+      (define (AsyncLambda x name)
+        (unless (and (pair? (cdr x)) (list? (cddr x))) (bad-form "async-lambda" x))
+        (with-output-language (L0 Expr)
+          `(async-lambda ,name ,(Clause (cdr x) #f x))))
 
       ;; clauses：((形参 体 …) …)；typed 时为 ((形参 类型说明 体 …) …)
       (define (Lambda clauses typed? name form)

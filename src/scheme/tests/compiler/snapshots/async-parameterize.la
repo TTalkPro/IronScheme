@@ -1,0 +1,12 @@
+(async-lambda
+  #f
+  (clause
+    (p t)
+    #f
+    (let ((p1 p) (v1 '1))
+      (begin
+        (let ((tmp (call p1))) (begin (call p1 v1) (set! v1 tmp)))
+        (try-finally
+          (await t)
+          (let ((tmp (call p1)))
+            (begin (call p1 v1) (set! v1 tmp))))))))

@@ -16,7 +16,7 @@ namespace IronScheme.Tests;
 public class SystemLibraries : TestRunner
 {
     // iron-046：删除 srfi、pfds（原 232 个），加入 (ironscheme std …) 46 个与内部库 6 个
-    private const int LIBSCOUNT = 125;
+    private const int LIBSCOUNT = 126;   // iron-053：加了 (ironscheme async)
     private static string ListFile => Path.Combine(Paths.SchemeDir, "compiled.lst");
 
     [Test, Order(1)]

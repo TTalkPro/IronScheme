@@ -21,7 +21,7 @@
 (library (boot expander builders)
   (export build-lexical-assignment build-global-reference
     build-application build-conditional build-lexical-reference
-    build-global-assignment build-global-definition build-lambda
+    build-global-assignment build-global-definition build-lambda build-async-lambda
     build-typed-case-lambda build-typed-lambda
     build-case-lambda build-let build-primref build-foreign-call
     build-data build-sequence build-void build-letrec build-letrec*
@@ -66,6 +66,10 @@
   (define build-lambda
     (lambda (ae vars exp) 
       (build-case-lambda ae (list vars) (list exp))))
+  ;; async-lambda（designs/10-async.md §1 D1）：单子句，Lcore 形式 (async-lambda fmls body)；暂无注解变体
+  (define build-async-lambda
+    (lambda (ae vars exp)
+      `(async-lambda ,vars ,exp)))
   (define build-typed-lambda
     (lambda (ae vars type-spec exp) 
       (if (and (or (debug-mode?) (lw-debug-mode?)) ae)

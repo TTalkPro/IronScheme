@@ -1,6 +1,6 @@
 # iron-052 异步：codegen 生成状态机
 
-- 里程碑：后续　依赖：iron-051　状态：未开始
+- 里程碑：后续　依赖：iron-051　状态：完成
 - 设计依据：[10 §3.3](../designs/10-async.md) D12 ~ D14；形状见 [iron-049](iron-049-spike-async-frame.md) 的 spike
 
 ## 目标
@@ -26,3 +26,9 @@
 - 生成的程序集过 ILVerify（`dotnet run tools/build.cs -- ilverify`）。
 - 自举不动点不变；编译整个种子的统计输出不变。
 - 同步完成的 `(await t)` 每次调用 ≤ 50 ns（基准脚本放在 `tests/async/bench.sps`）。
+
+## 结论
+- `codegen.sls`：`mctx` 加 `async` 字段（`aframe` 记录），`lambda-class!` 拆成 `procedure-class!` + `async-clause-method`（过程类的 `C0` 建帧并 `Start`，帧类 `名字$Frame : AsyncFrame` 带 `MoveNext`）；`cg` 新增 `async-lambda`、`await`、`label`、`jump`、`escape-frame` 子句，`try-finally` 与 `let` 子句扩展到 async 上下文；`bind-local!` / `store-var!` 支持帧字段；`finish-*` 的尾上下文在 async 下经 `Complete`；`collect-known!` 认 `async-lambda`（库级 async 过程也是已知过程，直接 `call C0`）。形状与细节写在 [10 §3.3](../designs/10-async.md) D14 后的实现说明。
+- 运行时的两处改动（实测逼出来的）：**处理器栈不进入新 task / 新帧**——帧内的 `$current-handlers` 读写帧的 `handlers` 字段（线程静态 `AsyncFrame.Current`，`MoveNext` 开头 `Enter`、finally 里 `Exit`），`task-run` / `task-then` 的回调先清空处理器栈；原因是调用方的 `guard` 是逃逸续延，在 task 恢复到的线程上调用它只会抛 `ContinuationException`，条件就不是 `SchemeException` 了（见 10 §2 D7、§4）。**帧内的参数赋值不改创建线程的回退值**（`AsyncFrame.InFrame`），否则 `parameterize` 在别的线程上换出时主线程会留下换入的值。先试过在 `Start` 里改 AsyncLocal，一次调用 1 µs，改成线程静态后 Release 下 async 调用比同步调用只多 7 ns。
+- 发射器：查实例构造函数时去掉 `Static`（`AsyncFrame` 有静态字段后 `.ctor` 与 `.cctor` 二义）；`EscapeContinuation.Invalidate` 改 public。
+- 验收：`tests/async/basic.sps`（34 项：快路径不换线程、挂起恢复、命名 let / `do` 循环、`dynamic-wind`、`guard` / `with-exception-handler` / `parameterize` 跨 await、被等待 task 的 Scheme 条件与 .NET 异常、async 调 async、深递归一万层（同步与异步）、闭包、剩余参数、多值、操作数求值顺序、100 × 300 ms = 300 ms、TCS）与 `tests/async/interop.sps` 全过；编译成 `.fasl` 后 ILVerify 通过；`tests/async/bench.sps` Release 下同步调用 81 ns、async 调用 88 ns；`snapshots.sps` / `async-snapshots.sps` 不变；全部 C# 测试通过（含自举不动点）。种子编译统计比 iron-051 时多 7 个类、338 条指令，来自 iron-051 末尾重新生成的种子（展开器多了 `async-lambda` 的转换器），不是 codegen 的改动。

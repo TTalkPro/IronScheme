@@ -1,0 +1,9 @@
+(async-lambda
+  #f
+  (clause
+    (f g t)
+    #f
+    (let ((t%1 (call f)))
+      (let ((t%2 (let ((t%3 (await t)))
+                   (let ((t%4 (call g))) (primcall cons t%3 t%4)))))
+        (primcall cons t%1 t%2)))))

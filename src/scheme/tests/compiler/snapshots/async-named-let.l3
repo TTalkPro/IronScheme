@@ -1,0 +1,17 @@
+(async-lambda
+  #f
+  ()
+  (clause
+    (l)
+    #f
+    (label
+      loop
+      (l acc)
+      (jump loop l '0)
+      (if (primcall null? l)
+        acc
+        (let ((t%1 (primcall cdr l)))
+          (let ((t%2 (let ((t%3 acc))
+                       (let ((t%4 (await (primcall car l))))
+                         (primcall $fx+ t%3 t%4)))))
+            (jump loop t%1 t%2)))))))

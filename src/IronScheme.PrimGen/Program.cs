@@ -27,6 +27,7 @@ public static class Program
   ("call-with-values", "call-with-values", "消费者为字面 lambda 时可内联"),
   ("apply", "apply", "展开最后一个列表参数"),
   ("values", "values", "在 Scheme 中定义（boot/exceptions.sls）；作为原语出现时编译为多值构造"),
+  ("await", "await", "(await e)：只能在 async-lambda 体内，等待 task 完成并取结果（designs/10-async.md）"),
 };
 
     public static int Main(string[] args)

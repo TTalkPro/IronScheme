@@ -80,7 +80,8 @@ public sealed class EscapeContinuation : VariadicProcedure
 
     public bool IsValid => _valid;
 
-    internal void Invalidate() => _valid = false;
+    /// <summary>捕获帧退出时调用（codegen 生成的 escape-frame 也调用，10 §3.3），之后续延失效。</summary>
+    public void Invalidate() => _valid = false;
 
     public override string Name => "continuation";
 

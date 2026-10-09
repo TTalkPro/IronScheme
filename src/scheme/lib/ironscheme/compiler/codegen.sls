@@ -84,6 +84,10 @@ See docs/license.txt. |#
   (define symbol-type "IronScheme.Core.Symbol")
   (define rt-type "IronScheme.Core.RT")
   (define calls-type "IronScheme.Core.Calls")
+  (define frame-type "IronScheme.Core.AsyncFrame")
+  (define task-type "System.Threading.Tasks.Task`1[System.Object]")
+  (define escape-type "IronScheme.Core.EscapeContinuation")
+  (define cont-exn-type "IronScheme.Core.ContinuationException")
 
   (define (objs n) (if (= n 0) '() (cons obj (objs (- n 1)))))
 
@@ -182,10 +186,72 @@ See docs/license.txt. |#
             loop-label           ; 自尾调用跳回的标签，#f 表示不做
             loop-arity           ; 当前子句的固定参数个数（有剩余参数时为 #f）
             self-mref            ; 已知过程自己的库变量（自尾调用识别），或 #f
-            arg-base))           ; 第一个形参的 ldarg 下标（实例方法为 1）
+            arg-base             ; 第一个形参的 ldarg 下标（实例方法为 1）
+            (mutable async)))    ; async-lambda 的 MoveNext：aframe 记录；否则 #f
 
   (define (make-method-ctx u class static? loop-label loop-arity self-mref)
-    (make-mctx u class static? (make-eq-hashtable) '() 0 '() 0 0 loop-label loop-arity self-mref (if static? 0 1)))
+    (make-mctx u class static? (make-eq-hashtable) '() 0 '() 0 0 loop-label loop-arity self-mref (if static? 0 1) #f))
+
+  ;; ———————————————— async 方法上下文（designs/10-async.md §3.3 D12 ~ D13）————————————————
+  ;;
+  ;; async-lambda 的体编译成帧类（AsyncFrame 的子类）的 MoveNext：形参、局部变量、临时变量一律是帧的字段
+  ;; （vars 表中为 (field . 名字)），挂起后不丢；恢复点 n 在方法开头按 state 分派（beq 链），
+  ;; 恢复点在 try 区域里时外层分派到 try 入口前的标签、进入 try 后再分派一次（IL 不许从外面跳进 try）。
+  (define-record-type aframe
+    (fields class                ; 帧类名
+            (mutable fields)     ; 字段名（逆序）
+            (mutable nfields)
+            (mutable regions)    ; 恢复点区域栈：每项是 ((n . 标签) …)，栈顶是当前最内层 try 区域
+            (mutable nresume)
+            end-label            ; MoveNext 末尾：挂起与完成都 leave 到这里
+            (mutable scratch)    ; stfld 用的临时 IL 局部变量下标，按需分配
+            labels))             ; eq 哈希表：label 的名字 → (IL 标签 . 形参表)
+
+  (define (new-field! mc)
+    (let* ((af (mctx-async mc)) (n (aframe-nfields af)) (f (string-append "v" (number->string n))))
+      (aframe-fields-set! af (cons f (aframe-fields af)))
+      (aframe-nfields-set! af (+ n 1))
+      f))
+
+  (define (scratch! mc)
+    (let ((af (mctx-async mc)))
+      (or (aframe-scratch af)
+          (let ((t (new-local! mc obj)))
+            (aframe-scratch-set! af t)
+            t))))
+
+  ;; 在新的恢复点区域里生成代码，返回区域内登记的恢复点 ((n . 标签) …)
+  (define (with-region mc thunk)
+    (let ((af (mctx-async mc)))
+      (aframe-regions-set! af (cons '() (aframe-regions af)))
+      (thunk)
+      (let ((entries (reverse (car (aframe-regions af)))))
+        (aframe-regions-set! af (cdr (aframe-regions af)))
+        entries)))
+
+  (define (region-add! mc n label)
+    (let ((af (mctx-async mc)))
+      (aframe-regions-set! af (cons (cons (cons n label) (car (aframe-regions af))) (cdr (aframe-regions af))))))
+
+  ;; 内层区域的恢复点在外层都分派到 pre（try 入口前）
+  (define (propagate! mc entries pre)
+    (for-each (lambda (e) (region-add! mc (car e) pre)) entries))
+
+  (define (dispatch-code entries)
+    (apply append
+      (map (lambda (e) `((ldarg 0) (ldfld ,frame-type "state") (ldc.i4 ,(car e)) (beq ,(cdr e)))) entries)))
+
+  ;; finally 守卫：挂起（state >= 0）时跳过用户的 finally 体
+  (define (guarded-finally mc code)
+    (let ((skip (new-label! mc)))
+      `((ldarg 0) (ldfld ,frame-type "state") (ldc.i4 0) (bge ,skip) ,@code (label ,skip))))
+
+  ;; 栈上的值作为结果完成
+  (define (complete! mc)
+    (let ((t (scratch! mc)))
+      (emit! mc `(stloc ,t) '(ldarg 0) `(ldloc ,t)
+             `(call ,frame-type "Complete" (,obj) "System.Void")
+             `(leave ,(aframe-end-label (mctx-async mc))))))
 
   (define (emit! mc . ins)
     (for-each (lambda (i) (mctx-buffer-set! mc (cons i (mctx-buffer mc)))) ins))
@@ -241,7 +307,7 @@ See docs/license.txt. |#
       ((value) (void))
       ((effect) (emit! mc '(pop)))
       ((test) (emit! mc `(call ,rt-type "IsTrue" (,obj) "System.Boolean")))
-      ((tail) (emit! mc '(ret)))))
+      ((tail) (if (mctx-async mc) (complete! mc) (emit! mc '(ret))))))
 
   ;; 栈上是一个 CLR bool
   (define (finish-bool! mc ctx)
@@ -249,7 +315,7 @@ See docs/license.txt. |#
       ((test) (void))
       ((effect) (emit! mc '(pop)))
       ((value) (emit! mc `(call ,rt-type "Bool" ("System.Boolean") ,obj)))
-      ((tail) (emit! mc `(call ,rt-type "Bool" ("System.Boolean") ,obj) '(ret)))))
+      ((tail) (emit! mc `(call ,rt-type "Bool" ("System.Boolean") ,obj)) (finish-value! mc 'tail))))
 
   ;; 没有值（赋值等）
   (define (finish-none! mc ctx)
@@ -257,9 +323,10 @@ See docs/license.txt. |#
       ((effect) (void))
       ((test) (emit! mc '(ldc.i4 1)))
       ((value) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")))
-      ((tail) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance") '(ret)))))
+      ((tail) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")) (finish-value! mc 'tail))))
 
-  (define (tail-ok? mc ctx) (and (eq? ctx 'tail) (= (mctx-try-depth mc) 0)))
+  ;; async 体内没有尾调用（10 §3.3 D13）：结果总是经 Complete 交出
+  (define (tail-ok? mc ctx) (and (eq? ctx 'tail) (= (mctx-try-depth mc) 0) (not (mctx-async mc))))
 
   ;; ———————————————— 常量 ————————————————
 
@@ -313,12 +380,28 @@ See docs/license.txt. |#
       (case (car loc)
         ((arg) (emit! mc `(starg ,(cdr loc))))
         ((local) (emit! mc `(stloc ,(cdr loc))))
+        ((field)
+         ;; 帧字段（async）：值先存临时变量，再 ldarg 0 / stfld
+         (if (mctx-async mc)
+             (let ((t (scratch! mc)))
+               (emit! mc `(stloc ,t) '(ldarg 0) `(ldloc ,t) `(stfld ,(mctx-class mc) ,(cdr loc))))
+             (error 'codegen "cannot assign captured variable (should be boxed)" x)))
         (else (error 'codegen "cannot assign captured variable (should be boxed)" x)))))
 
+  ;; 为词法变量分配存储：IL 局部变量；async 体内是帧字段。返回下标或字段名
   (define (bind-local! mc x)
-    (let ((i (new-local! mc obj)))
-      (hashtable-set! (mctx-vars mc) x (cons 'local i))
-      i))
+    (if (mctx-async mc)
+        (let ((f (new-field! mc)))
+          (hashtable-set! (mctx-vars mc) x (cons 'field f))
+          f)
+        (let ((i (new-local! mc obj)))
+          (hashtable-set! (mctx-vars mc) x (cons 'local i))
+          i)))
+
+  ;; 栈顶的值绑定到新变量 x
+  (define (bind-value! mc x)
+    (bind-local! mc x)
+    (store-var! mc x))
 
   ;; 实参都是 (clr-cast T e) 时返回类型名列表（Lcil 的实参类型提示，发射器据此静态决议重载，iron-033）；否则 #f
   (define (cast-types e*)
@@ -331,9 +414,90 @@ See docs/license.txt. |#
 
   ;; ———————————————— 表达式 ————————————————
 
+  ;; 异步节点只能出现在 async-lambda 的体里（lower-async 保证）
+  (define (async-unsupported e)
+    (syntax-violation 'codegen "async node outside an async-lambda body" (unparse-L3 e)))
+
   (define (cg e mc ctx)
     (nanopass-case (L3 Expr) e
       [,x (unless (eq? ctx 'effect) (load-var! mc x) (finish-value! mc ctx))]
+      [(async-lambda ,nm (,x* ...) ,cl)
+       (unless (eq? ctx 'effect)
+         (let ((c (lambda-class! e mc #f #f)))
+           (make-closure! mc c x* #f)
+           (finish-value! mc ctx)))]
+      [(await ,e)
+       ;; <e>; Suspend(task, n) 为真则直接继续（快路径）；否则 leave 出去，恢复时按 state 分派回 L_n 再 Resume
+       (unless (mctx-async mc) (async-unsupported e))
+       (cg e mc 'value)
+       (let* ((af (mctx-async mc)) (n (aframe-nresume af)) (l (new-label! mc)) (t (scratch! mc)))
+         (aframe-nresume-set! af (+ n 1))
+         (region-add! mc n l)
+         (emit! mc `(stloc ,t) '(ldarg 0) `(ldloc ,t) `(ldc.i4 ,n)
+                `(call ,frame-type "Suspend" (,obj "System.Int32") "System.Boolean")
+                `(brtrue ,l) `(leave ,(aframe-end-label af))
+                `(label ,l) '(ldarg 0) `(call ,frame-type "Resume" () ,obj))
+         (finish-value! mc ctx))]
+      [(label ,x (,x* ...) ,body0 ,body1)
+       ;; 局部循环（10 §3.2 D9）：形参是帧字段，jump 给它们赋值后 br 到循环体
+       (unless (mctx-async mc) (async-unsupported e))
+       (for-each (lambda (p) (bind-local! mc p)) x*)
+       (let ((lf (new-label! mc)) (end-l (new-label! mc)))
+         (hashtable-set! (aframe-labels (mctx-async mc)) x (cons lf x*))
+         (cg body0 mc ctx)
+         (unless (eq? ctx 'tail) (emit! mc `(br ,end-l)))
+         (emit! mc `(label ,lf))
+         (cg body1 mc ctx)
+         (unless (eq? ctx 'tail) (emit! mc `(label ,end-l))))]
+      [(jump ,x ,e* ...)
+       (unless (mctx-async mc) (async-unsupported e))
+       (let* ((entry (or (hashtable-ref (aframe-labels (mctx-async mc)) x #f) (error 'codegen "jump to unknown label" x)))
+              ;; 实参先全部求值到临时变量再写入形参字段（并行赋值）
+              (temps (map (lambda (a) (cg a mc 'value) (let ((t (new-local! mc obj))) (emit! mc `(stloc ,t)) t)) e*)))
+         (for-each (lambda (p t) (emit! mc `(ldloc ,t)) (store-var! mc p)) (cdr entry) temps)
+         (emit! mc `(br ,(car entry)))
+         ;; 之后的代码不可达；补一个值保持栈形状一致（同 throw）
+         (case ctx
+           ((value) (emit! mc '(ldnull)))
+           ((test) (emit! mc '(ldc.i4 0)))
+           (else (void))))]
+      [(escape-frame ,x ,body)
+       ;; 内联的 call/cc（10 §3.2 D10）：k = new EscapeContinuation；try { 值 = body } catch (ContinuationException e)
+       ;; { e.Continuation == k ? 值 = e.Value : rethrow } finally { 未挂起时 k.Invalidate() }
+       (unless (mctx-async mc) (async-unsupported e))
+       (bind-local! mc x)
+       (emit! mc `(newobj ,escape-type ()))
+       (store-var! mc x)
+       (let* ((tmp (new-local! mc obj))
+              (exc (new-local! mc obj))
+              (pre (new-label! mc)) (after (new-label! mc)) (match (new-label! mc))
+              (entries #f)
+              (b (begin
+                   (mctx-try-depth-set! mc (+ (mctx-try-depth mc) 1))
+                   (let ((code (with-buffer mc (lambda ()
+                                                 (set! entries (with-region mc (lambda () (cg body mc 'value))))
+                                                 (emit! mc `(stloc ,tmp) `(leave ,after))))))
+                     (mctx-try-depth-set! mc (- (mctx-try-depth mc) 1))
+                     code)))
+              (handler
+               `((stloc ,exc)
+                 (ldloc ,exc) (castclass ,cont-exn-type) (callvirt ,cont-exn-type "get_Continuation" () ,escape-type)
+                 (ldarg 0) (ldfld ,(mctx-class mc) ,(cdr (var-location mc x)))
+                 (beq ,match)
+                 (rethrow)
+                 (label ,match)
+                 (ldloc ,exc) (castclass ,cont-exn-type) (callvirt ,cont-exn-type "get_Value" () ,obj)
+                 (stloc ,tmp)
+                 (leave ,after)))
+              (cleanup
+               `((ldarg 0) (ldfld ,(mctx-class mc) ,(cdr (var-location mc x))) (castclass ,escape-type)
+                 (callvirt ,escape-type "Invalidate" () "System.Void"))))
+         (unless (null? entries) (propagate! mc entries pre) (emit! mc `(label ,pre)))
+         (emit! mc `(try (body ,@(dispatch-code entries) ,@b)
+                         (catch ,cont-exn-type ,@handler)
+                         (finally ,@(if (null? entries) cleanup (guarded-finally mc cleanup))))
+                `(label ,after) `(ldloc ,tmp))
+         (finish-value! mc ctx))]
       [(quote ,d)
        (case ctx
          ((effect) (void))
@@ -399,12 +563,15 @@ See docs/license.txt. |#
              (unless (car c)
                (nanopass-case (L3 LambdaExpr) le
                  [(lambda ,nm (,x1* ...) ,cl* ...)
+                  (fill-fields! mc c (remq x x1*) (lambda () (load-var! mc x)))]
+                 [(async-lambda ,nm (,x1* ...) ,cl)
                   (fill-fields! mc c (remq x x1*) (lambda () (load-var! mc x)))])))
            x* classes le*)
          (cg body mc ctx))]
       [(let ([,x* ,e*] ...) ,body)
-       (let ((slots (map (lambda (e) (cg e mc 'value) (let ((i (new-local! mc obj))) (emit! mc `(stloc ,i)) i)) e*)))
-         (for-each (lambda (x i) (hashtable-set! (mctx-vars mc) x (cons 'local i))) x* slots)
+       ;; 右边依次求值并存入新变量（IL 局部变量；async 体内是帧字段）；右边看不到同一 let 绑定的变量
+       (let ((codes (map (lambda (e) (with-buffer mc (lambda () (cg e mc 'value)))) e*)))
+         (for-each (lambda (x code) (emit-code! mc code) (bind-value! mc x)) x* codes)
          (cg body mc ctx))]
       [(library ,d ([,x* ,s* ,e*] ...) ,body)
        ;; 非顶层的 library-letrec*（compile-library 把库的 invoke 代码包在 lambda 中）：库变量仍是模块静态字段，
@@ -448,13 +615,23 @@ See docs/license.txt. |#
        (finish-value! mc ctx)]
       [(try-finally ,e0 ,e1)
        (let* ((tmp (and (not (eq? ctx 'effect)) (new-local! mc obj)))
+              (entries '())
               (body (begin
                       (mctx-try-depth-set! mc (+ (mctx-try-depth mc) 1))
-                      (let ((b (with-buffer mc (lambda () (cg e0 mc (if tmp 'value 'effect)) (when tmp (emit! mc `(stloc ,tmp))))))
+                      (let ((b (with-buffer mc (lambda ()
+                                                 (let ((gen (lambda () (cg e0 mc (if tmp 'value 'effect)) (when tmp (emit! mc `(stloc ,tmp))))))
+                                                   (if (mctx-async mc) (set! entries (with-region mc gen)) (gen))))))
                             (f (with-buffer mc (lambda () (cg e1 mc 'effect)))))
                         (mctx-try-depth-set! mc (- (mctx-try-depth mc) 1))
                         (cons b f)))))
-         (emit! mc `(try (body ,@(car body)) (finally ,@(cdr body))))
+         (if (null? entries)
+             (emit! mc `(try (body ,@(car body)) (finally ,@(cdr body))))
+             ;; 体内有恢复点（async）：外层分派到 try 入口前，进入 try 后再分派；finally 加 state 守卫
+             (let ((pre (new-label! mc)))
+               (propagate! mc entries pre)
+               (emit! mc `(label ,pre)
+                      `(try (body ,@(dispatch-code entries) ,@(car body))
+                            (finally ,@(guarded-finally mc (cdr body)))))))
          (when tmp
            (emit! mc `(ldloc ,tmp))
            (finish-value! mc ctx)))]
@@ -683,7 +860,11 @@ See docs/license.txt. |#
   ;; self-mref：已知过程的库变量，或 #f
   (define (lambda-class! le mc self self-mref . preset)
     (nanopass-case (L3 LambdaExpr) le
-      [(lambda ,nm (,x1* ...) ,cl* ...)
+      [(lambda ,nm (,x1* ...) ,cl* ...) (procedure-class! mc nm x1* cl* #f self self-mref preset)]
+      [(async-lambda ,nm (,x1* ...) ,cl) (procedure-class! mc nm x1* (list cl) #t self self-mref preset)]))
+
+  ;; async? 为真时（10 §3.3 D12）子句方法 C0 新建帧、复制自由变量与实参并 Start，帧类另外生成
+  (define (procedure-class! mc nm x1* cl* async? self self-mref preset)
        (let* ((u (mctx-unit mc))
               (fields (if self (remq self x1*) x1*))
               (static? (null? fields))
@@ -698,7 +879,9 @@ See docs/license.txt. |#
          ;; 子句方法 C0、C1 …
          (let loop ((cl* cl*) (i 0))
            (unless (null? cl*)
-             (add-method! (clause-method u name static? (car cl*) i fields field-names self self-mref))
+             (add-method! (if async?
+                              (async-clause-method u name static? (car cl*) fields field-names self x1*)
+                              (clause-method u name static? (car cl*) i fields field-names self self-mref)))
              (loop (cdr cl*) (+ i 1))))
          ;; Invoke0..4：转发到第一个匹配的固定参数子句
          (let k-loop ((k 0))
@@ -744,7 +927,69 @@ See docs/license.txt. |#
            `(type ,name (base ,base) (attrs sealed)
               ,@(if static? `((field "Instance" ,name static)) (map (lambda (f) `(field ,f ,obj)) field-names))
               ,@(reverse methods)))
-         (list static? name))]))
+         (list static? name)))
+
+  ;; async-lambda 的子句方法（10 §3.3 D12 ~ D13）：
+  ;;   帧类 名字$Frame : AsyncFrame，字段 = 自由变量（含 letrec 中的自己）+ 形参 + 体内的变量，override MoveNext；
+  ;;   C0(args) = newobj 帧；复制自由变量与实参到字段；call Start；ret（Task<object> 当 object 返回）。
+  ;;   MoveNext：prev = Enter(this); try { 分派; 体（尾上下文 → Complete; leave END） } catch (Exception e) { Fail(e) }
+  ;;             finally { Exit(prev) } END: ret
+  (define (async-clause-method u class static? cl fields field-names self x1*)
+    (nanopass-case (L3 Clause) cl
+      [(clause (,x* ...) ,x ,body)
+       (let* ((frame (string-append class "$Frame"))
+              (params (if x (append x* (list x)) x*))
+              (end (string->symbol "END"))
+              (af (make-aframe frame '() 0 (list '()) 0 end #f (make-eq-hashtable)))
+              (mc (make-method-ctx u frame #f #f #f #f)))
+         (mctx-async-set! mc af)
+         (let* ((fv-names (map (lambda (v) (bind-local! mc v)) x1*))
+                (p-names (map (lambda (p) (bind-local! mc p)) params))
+                (t (scratch! mc))
+                (prev (new-local! mc obj)))
+           (cg body mc 'tail)
+           (let ((entries (reverse (car (aframe-regions af))))
+                 (code (reverse (mctx-buffer mc))))
+             (add-class! u
+               `(type ,frame (base ,frame-type) (attrs sealed)
+                  ,@(map (lambda (f) `(field ,f ,obj)) (reverse (aframe-fields af)))
+                  (method ".ctor" (attrs ctor) (params)
+                    (body (ldarg 0) (call ,frame-type ".ctor" () "System.Void") (ret)))
+                  (method "MoveNext" (attrs override) (params) (ret "System.Void")
+                    (locals ,@(reverse (mctx-locals mc)))
+                    (clr-namespaces)
+                    (body
+                      (ldarg 0) (call ,frame-type "Enter" (,frame-type) ,frame-type) (stloc ,prev)
+                      (try (body ,@(dispatch-code entries) ,@code)
+                           (catch "System.Exception"
+                             (stloc ,t) (ldarg 0) (ldloc ,t) (castclass "System.Exception")
+                             (call ,frame-type "Fail" ("System.Exception") "System.Void"))
+                           (finally (ldloc ,prev) (castclass ,frame-type) (call ,frame-type "Exit" (,frame-type) "System.Void")))
+                      (label ,end)
+                      (ret)))))
+             ;; C0：在过程类的上下文里建帧
+             (let ((arg-base (if static? 0 1)))
+               `(method "C0" (attrs ,@(if static? '(static) '())) (params ,@(objs (length params))) (ret ,obj)
+                  (body
+                    (newobj ,frame ())
+                    ,@(apply append
+                        (map (lambda (v f)
+                               `((dup)
+                                 ,@(cond
+                                     ((eq? v self) (if static? `((ldsfld ,class "Instance")) '((ldarg 0))))
+                                     (else
+                                      (let loop ((fs fields) (ns field-names))
+                                        (cond
+                                          ((null? fs) (error 'codegen "free variable not in procedure fields" v))
+                                          ((eq? (car fs) v) `((ldarg 0) (ldfld ,class ,(car ns))))
+                                          (else (loop (cdr fs) (cdr ns)))))))
+                                 (stfld ,frame ,f)))
+                             x1* fv-names))
+                    ,@(apply append
+                        (let loop ((ps p-names) (j arg-base))
+                          (if (null? ps) '() (cons `((dup) (ldarg ,j) (stfld ,frame ,(car ps))) (loop (cdr ps) (+ j 1))))))
+                    (call ,frame-type "Start" () ,task-type)
+                    (ret)))))))]))
 
   (define (class-name u nm)
     (string-append (sanitize (unit-module u)) "$" (number->string (next-id! u))
@@ -919,6 +1164,9 @@ See docs/license.txt. |#
              [(lambda ,nm (,x1* ...) ,cl* ...)
               (when (and (null? x1*) (not (hashtable-ref (unit-massigned u) x #f)))
                 (hashtable-set! (unit-known u) x (make-known (class-name u nm) (map clause-shape cl*))))]
+             [(async-lambda ,nm (,x1* ...) ,cl)
+              (when (and (null? x1*) (not (hashtable-ref (unit-massigned u) x #f)))
+                (hashtable-set! (unit-known u) x (make-known (class-name u nm) (list (clause-shape cl)))))]
              [else (void)]))
          x* s* e*)]
       [else (void)]))

@@ -355,6 +355,7 @@
   (special $throw throw)   ; 抛出参数（一个 .NET 异常对象）
   (special $try/finally try-finally)   ; ($try/finally body finalizer)：finalizer 在 finally 中求值
   (special apply apply)   ; 展开最后一个列表参数
+  (special await await)   ; (await e)：只能在 async-lambda 体内，等待 task 完成并取结果（designs/10-async.md）
   (special call-with-current-continuation escape-frame)   ; 同 call/cc
   (special call-with-values call-with-values)   ; 消费者为字面 lambda 时可内联
   (special call/cc escape-frame)   ; 逃逸续延捕获帧（02 §6）

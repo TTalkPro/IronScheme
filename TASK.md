@@ -58,9 +58,9 @@
 | [iron-048](tasks/iron-048-spike-runtime-async.md) | 验证 Runtime Async 能否做 async-lambda 的后端 | 后续 | iron-003 | 完成 |
 | [iron-049](tasks/iron-049-spike-async-frame.md) | 验证 AsyncFrame 状态机能否做 async-lambda 的后端 | 后续 | iron-048 | 完成 |
 | [iron-050](tasks/iron-050-async-runtime.md) | 异步：运行时支持 | 后续 | iron-049 | 完成 |
-| [iron-051](tasks/iron-051-async-frontend.md) | 异步：展开器、parse-core 与 lower-async | 后续 | iron-050 | 未开始 |
-| [iron-052](tasks/iron-052-async-codegen.md) | 异步：codegen 生成状态机 | 后续 | iron-051 | 未开始 |
-| [iron-053](tasks/iron-053-async-library-and-tests.md) | 异步：库、测试与文档 | 后续 | iron-052 | 未开始 |
+| [iron-051](tasks/iron-051-async-frontend.md) | 异步：展开器、parse-core 与 lower-async | 后续 | iron-050 | 完成 |
+| [iron-052](tasks/iron-052-async-codegen.md) | 异步：codegen 生成状态机 | 后续 | iron-051 | 完成 |
+| [iron-053](tasks/iron-053-async-library-and-tests.md) | 异步：库、测试与文档 | 后续 | iron-052 | 完成 |
 | [iron-056](tasks/iron-056-boot-std-without-clr.md) | boot 与 std 去 `clr-*` | 后续 | 无 | 未开始 |
 | [iron-057](tasks/iron-057-host-neutral-interop-nodes.md) | 互操作节点改 `host-*`，codegen 加 `target` 参数 | 后续 | iron-056 | 未开始 |
 

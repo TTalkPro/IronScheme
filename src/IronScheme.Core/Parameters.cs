@@ -6,9 +6,10 @@ namespace IronScheme.Core;
 /// <summary>
 /// 参数对象的存储（designs/10-async.md §2 D7）：每个参数一个 <see cref="AsyncLocal{T}"/>，
 /// 值随 ExecutionContext 流动——parameterize 的值在 Task.Run 的子任务里可见、在 await 之后的恢复线程上可见；
-/// 子任务里的赋值不流回。没有设置过的上下文读到回退值：创建时的初始值，以及之后在**创建线程**上的赋值
-/// （与旧的 Thread.AllocateDataSlot 实现相同：启动时主线程上 <c>(p v)</c> 设置的库路径、库集合等，
-/// 宿主的工作线程也要看到；其他线程上的赋值只影响自己的上下文）。
+/// 子任务里的赋值不流回。没有设置过的上下文读到回退值：创建时的初始值，以及之后在**创建线程**上、
+/// async 帧之外的赋值（与旧的 Thread.AllocateDataSlot 实现相同：启动时主线程上 <c>(p v)</c> 设置的库路径、
+/// 库集合等，宿主的工作线程也要看到）。其他线程上的赋值、以及 async-lambda 帧里的赋值（含 parameterize 的
+/// 换入换出，换出可能发生在别的线程上）只影响自己的上下文。
 /// </summary>
 public sealed class ParamSlot
 {
@@ -30,7 +31,7 @@ public sealed class ParamSlot
         }
         set
         {
-            if (Environment.CurrentManagedThreadId == _ownerThread) _fallback = value;
+            if (Environment.CurrentManagedThreadId == _ownerThread && !AsyncFrame.InFrame) _fallback = value;
             _local.Value = value ?? s_nil;
         }
     }
@@ -55,7 +56,8 @@ public static class Parameters
 
 /// <summary>
 /// 当前异常处理器栈（boot/exceptions.sls 的 with-exception-handler / raise 使用）：Scheme 过程的列表，栈顶在前。
-/// 同样是 AsyncLocal，所以恢复到另一个线程后 raise 仍能找到 guard 装的处理器。
+/// 在 async-lambda 的帧里（<see cref="AsyncFrame.Current"/>）读写帧自己的字段：新帧从缺省表开始，挂起后自然保留，
+/// 恢复到另一个线程后 raise 仍能找到体内 guard 装的处理器；帧之外是 AsyncLocal，随 ExecutionContext 流动。
 /// 缺省（以及设为空表时）是只含默认处理器的表，默认处理器把条件包成 <see cref="SchemeException"/> 抛出。
 /// </summary>
 public static class ExceptionHandlers
@@ -64,12 +66,18 @@ public static class ExceptionHandlers
     private static readonly object s_default = new Cons(new DefaultHandler(), null);
 
     [Primitive("$current-handlers", Flags = PrimitiveFlags.Unsafe)]
-    public static object Current() => s_handlers.Value ?? s_default;
+    public static object Current()
+    {
+        var frame = AsyncFrame.Current;
+        return (frame != null ? frame.handlers : s_handlers.Value) ?? s_default;
+    }
 
     [Primitive("$set-current-handlers!", Flags = PrimitiveFlags.Unsafe)]
     public static object Set(object handlers)
     {
-        s_handlers.Value = handlers;
+        var frame = AsyncFrame.Current;
+        if (frame != null) frame.handlers = handlers;
+        else s_handlers.Value = handlers;
         return Unspecified.Instance;
     }
 

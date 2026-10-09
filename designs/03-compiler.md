@@ -25,6 +25,7 @@ e ::= x                                  ; 符号（见 §3 分类）
     | (typed-case-lambda [fmls tspec body] ...)
     | (annotated-typed-case-lambda ann [fmls tspec body] ...)
     | (lambda fmls body)                 ; 少见，保留
+    | (async-lambda fmls body)           ; 体编译成状态机（10 §1）；(await e) 以原语调用的形式出现
     | (letrec ((x e) ...) body)
     | (letrec* ((x e) ...) body)
     | (library-letrec* name ((x loc e) ...) body)
@@ -36,7 +37,7 @@ fmls ::= (x ...) | (x x ... . x) | x
 body ::= e ...                           ; 展开器实际只生成一个
 ```
 
-- `$try/finally`、`$throw`、`$break`、`$and?`、`$or?` 等以**原语调用**的形式出现（`($try/finally e1 e2)`），由编译器按原语表中的"特殊原语"处理。
+- `$try/finally`、`$throw`、`$break`、`$and?`、`$or?`、`await` 等以**原语调用**的形式出现（`($try/finally e1 e2)`），由编译器按原语表中的"特殊原语"处理。
 - `typed-…-lambda` 第一版**按无类型处理**：忽略类型说明，参数和返回值按 `object` 编译；以后再利用类型做拆箱。
 - `annotated-*` 中的注解只取源位置，供调试信息使用。
 
@@ -82,14 +83,15 @@ body ::= e ...                           ; 展开器实际只生成一个
 
 | 语言 | 内容 |
 |---|---|
-| L0 | parse-core 输出；词法变量 `x`、全局位置 `(gref s)`、库变量 `(mref x)`、原语 `(prim pr)`/`(primcall pr e …)`；`(lambda 名字 (clause (x …) 剩余 体) …)`；`(library 名字 ([x loc e] …) 体)`；特殊原语为 `and` `or` `throw` `break` `try-finally`；互操作 `clr-…` |
-| L1 | 增加 `let`；`letrec` 只绑定 lambda |
+| L0 | parse-core 输出；词法变量 `x`、全局位置 `(gref s)`、库变量 `(mref x)`、原语 `(prim pr)`/`(primcall pr e …)`；`(lambda 名字 (clause (x …) 剩余 体) …)`、`(async-lambda 名字 (clause …))`；`(library 名字 ([x loc e] …) 体)`；特殊原语为 `and` `or` `throw` `break` `try-finally` `await`；互操作 `clr-…`。`let` 与异步节点 `(label f (x …) 体 循环体)` `(jump f e …)` `(escape-frame k 体)` 只由 lower-async 产生（iron-051） |
+| L1 | `letrec` 只绑定 lambda（`let` 自 iron-051 起已在 L0 中） |
 | L2 | 增加 `box` `unbox` `set-box!` |
 | L3 | lambda 带自由变量表 |
 
 | 步骤 | 实现 |
 |---|---|
 | 1 parse-core | `parse.sls`，L0 |
+| — lower-async | `async.sls`，L0 → L0（iron-051，[10 §3.2](10-async.md)）：只改 `async-lambda` 的体——命名 let / `do` 的单绑定 letrec 变 `label`/`jump`，立即调用的 lambda 与 `dynamic-wind` / `with-exception-handler` / `call-with-values` / `call/cc` 的字面 lambda 实参内联，`await` 拆到语句位置，剩余不合法的 `await` 报错；没有 `async-lambda` 的单元原样返回 |
 | — analyze | `front.sls`：一遍分析得出被赋值、被捕获的词法变量，letrec 右边引用的同组变量，被 `mset!` 的库变量 |
 | 2、3 recognize-let + simplify-letrec | 合为一个 pass（`front.sls`，L0 → L1）：连续的、未被赋值的 lambda 绑定成一组 `letrec`；其余为 `let`；右边引用了此后（不在同一组）才绑定的变量时，该变量先绑定为未指定值再按序 `set!` |
 | 4 cp0-lite | `if` 常量测试、`begin` 中的常量、少量纯原语（`$fx+` 等、`not`、`null?`、`pair?`、`eq?`）的常量折叠 |
@@ -109,6 +111,7 @@ body ::= e ...                           ; 展开器实际只生成一个
 
 - **自尾调用**（含命名 let、`do`）：pass 9 改写成循环，不占栈。
 - **其余尾位置调用**：发射 CIL `tail.` 前缀，作用于 `callvirt Procedure::InvokeK` 与对静态方法的 `call`。
+- **async 体内没有尾调用**（iron-052，[10 §3.3](10-async.md) D13）：`async-lambda` 的体是状态机的 `MoveNext`，结果经 `Complete` 交出，`tail-ok?` 恒假，也没有自尾调用循环（命名 let / `do` 由 `lower-async` 变成 `label`/`jump`）。
 - **不能加 `tail.` 的位置**：try/catch/finally 区域内（CIL 禁止）。`$try/finally`、逃逸续延帧内部的尾调用因此不是真尾调用，这与 R6RS 对 `dynamic-wind` 的规定一致（thunk 调用本来就不在尾位置）。
 - 依据：iron-003 在 .NET 10（Linux x64）实测：经虚调用的相互尾递归、参数个数变化的尾调用、调用静态方法、被调方需栈传参的尾调用，一千万层全部通过，关闭 JIT 优化（`DOTNET_JITMinOpts=1`）时依然成立；不加前缀的对照在关优化时约一万层栈溢出。栈传参情形走运行时辅助路径，约慢 8 倍，参数多的调用本来就走 `InvokeN`，影响有限。
 

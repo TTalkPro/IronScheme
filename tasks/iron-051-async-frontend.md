@@ -1,6 +1,6 @@
 # iron-051 异步：展开器、parse-core 与 `lower-async`
 
-- 里程碑：后续　依赖：iron-050　状态：未开始
+- 里程碑：后续　依赖：iron-050　状态：完成
 - 设计依据：[10 §1](../designs/10-async.md) D1 ~ D2、[10 §3.1 ~ 3.2](../designs/10-async.md) D9 ~ D11
 
 ## 目标
@@ -23,3 +23,9 @@
 - `compiler/tests/` 新增 `lower-async` 的快照测试：命名 let、`do`、`parameterize`、`dynamic-wind`、`guard`、`with-exception-handler`、操作数位置的 await、`and`/`or` 各一个用例，比对 `.l0` dump。
 - 错误用例：`(for-each (lambda (x) (await x)) l)`、非尾位置调用的循环、finally 里的 await，各给出预期错误信息。
 - 编译整个种子的统计输出（类数、方法数、指令数）与改动前相同。
+
+## 结论
+- 展开器：`core.sls` 加核心宏 `async-lambda`（`async-lambda-transformer`，与 `lambda` 并列）与普通宏 `define-async`；`builders.sls` 加 `build-async-lambda`（Lcore `(async-lambda fmls body)`，暂无注解变体）；`rewrite` 显式走 `async-lambda`；两个构建脚本的 `expander-system-macros` 与 `identifier->library-map` 登记 `async-lambda`、`define-async`、`await`；PrimGen 的 `specials` 加 `await`（`primitives.ss` 已重新生成，11 个特殊原语）；种子已重新生成。stage0 不解释 `async-lambda`（不需要：boot 与构建脚本里没有）。
+- 编译器：L0 加 `async-lambda`（LambdaExpr，单子句）、`await`、`label`、`jump`、`escape-frame`，并把 `let` 从 L1 提前到 L0（lower-async 的输出要用）；L3 的 `async-lambda` 带自由变量表。新 pass `compiler/async.sls`（`lower-async`，L0 → L0，接在 parse-core 之后，`IRONSCHEME_DUMP_PASSES` 的 `.la` 是它的输出）；analyze / simplify-letrec / convert-assignments / uncover-free 透传（`label` 的形参被装箱时 `jump` 传新 Box）；codegen 对这些节点报 "not supported by codegen yet (iron-052)"。
+- 与设计的出入（已写回 [10 §3.2](../designs/10-async.md)、[03 §2、§4.1](../designs/03-compiler.md)）：`dynamic-wind` / `with-exception-handler` 按全局位置符号的名字识别（编译器拿不到绑定身份）；只降级单绑定的 letrec，互相递归的局部过程保持 lambda；嵌套普通 lambda 的体完全不变换；D9 / D10 在 async 体内无条件进行；`((letrec ((f le)) f) e …)`（命名 let 的实际展开形状）先归一成 `(letrec ((f le)) (f e …))`。
+- 验收：`tests/compiler/async-snapshots.sps`（9 个用例 × la / l2 / l3 快照，7 个错误用例：for-each 回调、非尾位置循环、参数个数不符、当值使用、finally 里的 await、互相递归、async-lambda 之外的 await）全部通过；原有 `snapshots.sps` 不变；`slow-compile-seed.sps` 的统计与改动前相同（2360 个类、2530 个方法、158918 条指令）；`define-async` 端到端：展开 → lower-async 输出正确，codegen 按预期报未实现。

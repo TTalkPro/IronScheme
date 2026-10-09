@@ -1226,6 +1226,22 @@
                           (cons b b*) r mr)))
            (build-lambda (syntax-annotation e) fmls body))))))
            
+  ;; (async-lambda fmls b b* ...)：体编译成状态机（designs/10-async.md）；形参与体的处理与 lambda 相同
+  (define async-lambda-transformer
+    (lambda (e r mr)
+      (syntax-match e ()
+        ((_ fmls b b* ...)
+         (let-values (((fmls body)
+                       (chi-lambda-clause e fmls
+                          (cons b b*) r mr)))
+           (build-async-lambda (syntax-annotation e) fmls body))))))
+
+  (define define-async-macro
+    (lambda (stx)
+      (syntax-match stx ()
+        ((_ (name . fmls) b b* ...)
+         (bless `(define ,name (async-lambda ,fmls ,b ,@b*)))))))
+
   (define typed-lambda-transformer
     (lambda (e r mr)
       (syntax-match e ()
@@ -2709,6 +2725,7 @@
       (case name
         ((quote)                  quote-transformer)
         ((lambda)                 lambda-transformer)
+        ((async-lambda)           async-lambda-transformer)
         ((typed-lambda)           typed-lambda-transformer)
         ((case-lambda)            case-lambda-transformer)
         ((typed-case-lambda)      typed-case-lambda-transformer)
@@ -2777,6 +2794,7 @@
            ((define-enumeration)    define-enumeration-macro)
            ((trace-lambda)          trace-lambda-macro)
            ((trace-define)          trace-define-macro)
+           ((define-async)          define-async-macro)
            ((trace-let)             trace-let-macro)
            ((trace-define-syntax)   trace-define-syntax-macro)
            ((trace-let-syntax)      trace-let-syntax-macro)

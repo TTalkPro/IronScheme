@@ -17,6 +17,7 @@
 | FFI（`ffi-callout`、`ffi-callback`、`pinvoke-call`） | 编译器静态生成调用代码 | 支持，改为运行时原语（02 §9，iron-032）；`dlopen`/`dlsym`/`dlclose` 改用 `NativeLibrary`，不再限于 Windows |
 | `define-clr-class` | 运行时生成 CLR 类型 | **不支持**：编译为运行时报错（`Calls.Unsupported`）；与记录不生成 CLR 类型（D11）一致，`lib/` 中无使用者 |
 | 调试器（`(ironscheme debugger)` 的 `step-into`） | 依赖 DLR 调试设施 | 保留导出，调用时报不支持（02 §10） |
+| `(ironscheme async)` 的 `await`（[10 §4](10-async.md)，iron-050 ~ 053） | 旧库在当前线程阻塞等待 | 真正的状态机。`await` 只能在 `async-lambda` 体内（含尾递归的局部循环与 `dynamic-wind` / `parameterize` / `guard` / `with-exception-handler` 的体），在其他 lambda、`guard` 子句、finally 里是编译错误；挂起、恢复不触发 `dynamic-wind` 的 before/after；async 体内没有尾调用；调用方的异常处理器不进入 async 体（条件经 task 传递）；体内对参数对象的直接赋值对调用方不可见 |
 
 ### 必须保持的
 

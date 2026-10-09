@@ -74,13 +74,17 @@ public static class Tasks
         return tcs.Task;
     }
 
-    /// <summary>(task-run thunk)：在线程池上调用 thunk；thunk 返回 task 时展开（async-lambda 可以直接传入）。</summary>
+    /// <summary>
+    /// (task-run thunk)：在线程池上调用 thunk；thunk 返回 task 时展开（async-lambda 可以直接传入）。
+    /// thunk 从缺省异常处理器表开始（调用方的 guard 不进入新 task）：没接住的条件让 task 失败。
+    /// </summary>
     [Primitive("task-run")]
     public static object Run(object thunk)
     {
         var p = Errors.RequiresType<Procedure>(thunk, "task-run");
         return Task.Run(() =>
         {
+            ExceptionHandlers.Set(null);
             var r = p.Invoke0();
             return r is Task t ? Box(t) : Task.FromResult(r);
         });
@@ -102,6 +106,7 @@ public static class Tasks
     private static async Task<object> ThenAsync(Task<object> task, Procedure proc)
     {
         var r = await task;          // 与 await 相同：回到捕获的 SynchronizationContext（D4）
+        ExceptionHandlers.Set(null); // 回调从缺省处理器表开始（同 task-run）
         var v = proc.Invoke1(r);
         return v is Task t ? await Box(t) : v;
     }

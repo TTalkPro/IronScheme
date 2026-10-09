@@ -72,6 +72,36 @@ A compiled program records the libraries it was compiled against. If one of them
 
 Run `(compile-system-libraries)` from the REPL in `src/scheme` to precompile all bundled libraries (including SRFI and PFDS) to dlls.
 
+Async
+=====
+
+`(ironscheme async)` compiles `async-lambda` bodies to state machines (like C# `async`), so an `await` does not hold a thread while it waits. A call to an async procedure returns a .NET `Task<object>`; `await` takes any task, including a `Task<T>` or `Task` returned by .NET methods. Design notes: `designs/10-async.md`.
+
+```scheme
+(import (ironscheme) (ironscheme clr) (ironscheme async))
+(clr-using System.IO) (clr-using System.Threading)
+
+(define-async (read-file f)                      ; File.ReadAllTextAsync returns Task<string>
+  (await (clr-static-call File (ReadAllTextAsync String CancellationToken)
+                          f (clr-static-prop-get CancellationToken None))))
+
+(define-async (total-length files)
+  (let loop ((files files) (n 0))                ; await inside named let / do loops is fine
+    (if (null? files)
+        n
+        (loop (cdr files) (+ n (string-length (await (read-file (car files)))))))))
+
+(task-result (total-length '("a.txt" "b.txt")))            ; block for the result
+(task-result (task-when-all (map read-file files)))         ; run several tasks concurrently
+(task-result (map-async read-file files))                   ; one after another
+```
+
+Rules and limits:
+
+- `await` may only appear inside an `async-lambda` body: directly, in named `let` / `do` loops that are tail-recursive, and in the bodies of `dynamic-wind`, `parameterize`, `guard` and `with-exception-handler`. It is a compile-time error inside other lambdas (for example a `for-each` callback: use `for-each-async` / `map-async` or a loop), in a `guard` clause, or in a `dynamic-wind` before/after thunk.
+- After an `await` the body may resume on another thread. `parameterize` values and handlers installed inside the body follow it; handlers installed by the caller do not: a condition that is not handled inside the async body makes the task fail, and `await` / `task-result` raise it again in the waiting code. .NET exceptions propagate as .NET exceptions.
+- The rest of the library: `task?` `task-completed?` `task-faulted?` `task-result` `task-from-result` `task-from-exception` `task-delay` `task-yield` `task-run` (run a thunk on the thread pool) `task-then` `task-when-all` `task-when-any`, and `make-task-source` / `task-source-task` / `task-source-set-result!` / `task-source-set-exception!` to build tasks from callback APIs. A Scheme procedure that returns a task can be passed to .NET where a `Func<Task<T>>` is expected (`clr-cast`).
+
 Self-contained publishing
 =========================
 

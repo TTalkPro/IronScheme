@@ -1,0 +1,13 @@
+(async-lambda
+  #f
+  ()
+  (clause
+    (n f)
+    #f
+    (label
+      loop
+      (i)
+      (jump loop '0)
+      (if (primcall $fx=? i n)
+        i
+        (begin (await (call f i)) (jump loop (primcall $fx+ i '1)))))))

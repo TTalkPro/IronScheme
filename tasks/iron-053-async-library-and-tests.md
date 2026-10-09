@@ -1,6 +1,6 @@
 # iron-053 异步：`(ironscheme async)` 库、测试与文档
 
-- 里程碑：后续　依赖：iron-052　状态：未开始
+- 里程碑：后续　依赖：iron-052　状态：完成
 - 设计依据：[10 §1](../designs/10-async.md) D5、§4、§5
 
 ## 目标
@@ -20,3 +20,9 @@
 ## 验收标准
 - `dotnet test --filter TestCategory=Async` 通过；全部测试通过；系统库编译与 ILVerify 通过。
 - `(import (ironscheme async))` 后 README 里的示例可直接运行。
+
+## 结论
+- `lib/ironscheme/async.sls` 重写：再导出 `async-lambda` / `define-async` / `await`，Task 过程来自 `(ironscheme core)` 的 C# 原语，`for-each-async` / `map-async` 是 `define-async` + 命名 let（f 须返回 task；要并发用 `(task-when-all (map f l))`）；`start` / `started?` / `status` 删除；库加进 `system-libraries.ironscheme.ss`（`compile-system-libraries` 会编译它，`SystemLibraries` 测试覆盖）。
+- 测试 `tests/async/`（类别 `Async`，`AsyncTests.cs`）：`basic.sps`（iron-052，状态机语义 34 项）、`interop.sps`（iron-050，Task 转换与原语 26 项）、`library.sps`（本任务 23 项：再导出、`for-each-async` / `map-async` 顺序与并发写法、多值跨 await、六个编译期错误用例经 `eval` 验证错误信息、`Func<Task<int>>` 互操作、失败经 task 传递）、`bench.sps`（Release 下 async 调用比同步调用多 7 ns）。
+- 文档：README 加 Async 一节（写法、限制、与 .NET Task 的互操作）；06 §1 偏离表加 10 §4 的条目；`docs/` 目录不存在，无旧说明要改。
+- 示例：`examples/WordCount` 改为用 `File.ReadAllTextAsync` + `task-when-all` 并发读文件（自包含发布测试 `PublishTests` 因此也覆盖了 async 的整程序编译）。

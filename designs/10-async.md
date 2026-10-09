@@ -65,6 +65,7 @@ public abstract class AsyncFrame : IAsyncStateMachine
 
 **D7 参数对象改为 `AsyncLocal`**：`make-parameter` 的存储由 `Thread.AllocateDataSlot` 改为每个参数一个 `AsyncLocal<object>`（C# 原语 `$make-param-slot` / `$param-ref` / `$param-set!`）。于是 `parameterize` 的值、异常处理器栈 `*current-exception-handlers*`（它本身是参数）都随 `ExecutionContext` 跨 await 流动，恢复到另一个线程后 `raise` 仍能找到 `guard` 装的处理器。
 偏离：async 体内直接赋值参数（`(p v)`）对调用方不可见（§0 的 `ExecutionContext` 规则）；`parameterize` 的动态范围不受影响。`make-parameter` 里"创建线程上的赋值同时更新一份回退值"的逻辑**保留**（搬进 C#）：没有自己值的上下文读到的是回退值——创建时的初始值与之后创建线程上的赋值。于是 async 体在第一个 await 之前（仍在调用线程上同步运行）若在参数的创建线程上赋值，和同步代码一样更新回退值；await 之后在池线程上的赋值只影响自己的上下文。iron-050 实测删掉它会坏掉宿主：启动时主线程上 `(current-library-collection …)`、库路径等用 `(p v)` 设置，Kestrel 的请求线程（缺省 `ExecutionContext`）读不到就无法 `eval`。
+**处理器栈不进入新的 task**（iron-052 实测后定）：`task-run` 的 thunk、`task-then` 的回调、async-lambda 的帧都从缺省处理器表开始（帧内的处理器栈是帧的 `handlers` 字段，由线程静态的 `AsyncFrame.Current` 找到；不用 AsyncLocal 是因为每次 `Start` 改 AsyncLocal 要复制整个 ExecutionContext，实测一次调用 1 µs）。调用方的 `guard` 是逃逸续延，在 task 恢复到的线程上调用它只会抛出 `ContinuationException`；所以 task 里没接住的条件让 task 失败（`SchemeException`），由 `await`（`AsyncFrame.Resume`）/ `task-result` 在等待方重新 `raise`——与 C# 的 async 异常经 Task 传递一致。代价：`(with-exception-handler h (lambda () (task-result (f))))` 里 `f` 体内的 `raise-continuable` 看不到 `h`（见 §4）。参数对象相反，**流入**新 task 与帧；帧内的赋值（含 `parameterize` 的换入换出）只影响本上下文，不改创建线程的回退值（`AsyncFrame.InFrame`）。
 实现（iron-050，`Parameters.cs`）：槽是 `ParamSlot`，空表 `'()` 在运行时是 `null`、与 `AsyncLocal` 的"未设置"冲突，所以空表用哨兵存放，`(p '())` 不再被当成未设置（旧实现的一个小 bug）。处理器栈不再是参数对象，而是 C# 里单独的 `AsyncLocal`（`ExceptionHandlers`，原语 `$current-handlers` / `$set-current-handlers!`），`with-exception-handlers` 改为 `$try/finally` 保存恢复，不再经过 `parameterize`（少一层 `dynamic-wind` 和 swap 闭包，也让 §3 的 `lower-async` 少内联一种形式）；设为空表等于缺省表。
 
 **D8 互操作里的 Task**：
@@ -82,7 +83,7 @@ public abstract class AsyncFrame : IAsyncStateMachine
 | 展开器 | 核心宏 `async-lambda`（`core.sls`，注册在 buildscript 的 `expander-system-macros`）；`define-async` 是普通宏。builders 产生 Lcore 形式 `(async-lambda fmls body)`；`await` 是导出的特殊原语（PrimGen `specials` 加 `await`，种类 `await`），Lcore 中写作 `(await e)` |
 | `rewrite`（`internal.sls`） | 像 `lambda` 一样显式走 `async-lambda` 的体 |
 | parse-core（`parse.sls`） | L0 新节点 `(async-lambda nm (x* …) (maybe x) body)`（单子句）与 `(await e)` |
-| **`lower-async`（新 pass，L0 → L0）** | 只处理 `async-lambda` 的体：循环降级（D9）、内联（D10）、拆分（D11）、检查（D2）。不含 `async-lambda` 的单元直接跳过，普通代码的输出不变 |
+| **`lower-async`（新 pass，L0 → L0）** | 只处理 `async-lambda` 的体：循环降级（D9）、内联（D10）、拆分（D11）、检查（D2）。不含 `async-lambda` 的单元直接跳过，普通代码的输出不变。`IRONSCHEME_DUMP_PASSES` 的 `.la` 文件是它的输出（iron-051） |
 | analyze … uncover-free | `async-lambda` 按 lambda 处理（赋值、捕获、自由变量）；新增节点 `await` `label` `jump` `escape-frame` 逐 pass 透传 |
 | codegen | `async-lambda` → 过程类 + 帧类（D12）；帧的 `MoveNext` 用 async 方法上下文（D13） |
 
@@ -107,6 +108,7 @@ public abstract class AsyncFrame : IAsyncStateMachine
 | `(call/cc (lambda (k) body))` | `(escape-frame k body)` |
 
 `dynamic-wind`、`with-exception-handler`、`call-with-values`、`call/cc` 按**绑定身份**识别（`(boot exceptions)` / 原语的库变量，不是按名字）。`$current-handlers` / `$set-current-handlers!` 是新的 C# 原语，`*current-exception-handlers*` 的存储移到 C#（`AsyncLocal`，D7），`(boot exceptions)` 的 `with-exception-handlers`、`raise` 改用这两个原语；语义不变。
+实现说明（iron-051）：`dynamic-wind` 与 `with-exception-handler` 展开后是 `(boot exceptions)` 的全局位置 `(gref g$dynamic-wind$…)`，编译器只看 Lcore 与原语表、拿不到绑定身份，所以按位置符号去掉 gensym 后缀的**名字**识别（用户自己定义同名全局过程并在 async 体内调用时会被当作系统的那个；`call-with-values` 与 `call/cc` 是原语 `primcall`，按身份识别）。只内联单绑定的 letrec（命名 let、`do`）；互相递归的局部过程保持 lambda。嵌套的普通 lambda 的体完全不变换；D9 / D10 在 async 体内无条件进行，不只在含 `await` 的地方。内联后的 `((lambda …) …)` 直接写成 L0 的 `let`（`let` 因此从 L1 提前到 L0）。
 `escape-frame` 是 `call/cc` 的内联版本：codegen 生成 `k = new EscapeContinuation(); try { body } catch (ContinuationException e) { if (e.Continuation != k) rethrow; 值 = e.Value } finally { k.Invalidate() }`，与 `Control.CallWithCurrentContinuation` 相同。
 这五条合起来覆盖 `guard` 的整个展开（`((call/cc (lambda (k) (with-exception-handler H (lambda () (call-with-values (lambda () body) C))))))`），**不改 `guard` 和 `parameterize` 宏**。`guard` 的子句体、`dynamic-wind` 的 before/after、`try-finally` 的 finally 里仍然不能 `await`（Roslyn 对 catch/finally 里的 await 有专门变换，以后需要再做）。
 
@@ -136,6 +138,8 @@ Scheme 不规定操作数求值顺序，这里固定为从左到右（codegen �
 
 **D14 Lcil 与发射器**：不需要新指令。帧类的方法引用里写 `"IronScheme.Core.AsyncFrame"` 和返回类型反射名 ``"System.Threading.Tasks.Task`1[System.Object]"``。`ilverify` 命令不用改。
 
+实现说明（iron-052，`codegen.sls`）：`mctx` 加 `async` 字段指向 `aframe` 记录（帧类名、字段表、恢复点区域栈、`END` 标签、`stfld` 用的临时局部变量、`label` 表）；`bind-local!` 在 async 上下文分配帧字段，`let` / `letrec` / `label` 形参 / `escape-frame` 的 `k` 都经它绑定，`pack-array!`、lift-try 与 `jump` 实参的临时变量仍是 IL 局部变量（D11 保证它们活着时不会挂起）；`finish-value!` 等在 async 上下文的尾上下文改为 `Complete; leave END`；`try-finally` 与 `escape-frame` 体内有恢复点时才加入口前标签、区域内分派与 finally 守卫。`MoveNext` 的形状：`prev = Enter(this); try { 分派; 体 } catch (Exception e) { Fail(e) } finally { Exit(prev) } END: ret`。`Resume` 对以 Scheme 条件失败的 task 重新 `raise`（帧内的 `guard` 能接住）。发射器修了一处：查实例构造函数时不含 `Static`（`AsyncFrame` 有 `.cctor` 后二义）；`EscapeContinuation.Invalidate` 改为 public。
+
 ## §4 偏离与限制
 
 | 项 | 行为 |
@@ -145,6 +149,7 @@ Scheme 不规定操作数求值顺序，这里固定为从左到右（codegen �
 | `dynamic-wind` 与挂起 | 挂起、恢复**不**触发 before/after（一次性续延语义，与 C# finally 一致） |
 | 逃逸续延跨线程 | async 体内捕获的 `k` 在帧完成前有效；从别的线程调用它只会在那个线程上抛异常，不会回到帧（与现在"续延只能向上逃逸"一致，文档写明） |
 | 参数对象 | async 体内 `(p v)` 对调用方不可见（D7） |
+| 异常处理器 | 调用方的处理器（`guard` / `with-exception-handler`）不进入 async 过程的体与 `task-run` 的 thunk：体内没接住的条件让 task 失败，`await` / `task-result` 在等待方重新 `raise`（非继续式）。`raise-continuable` 想要调用方处理器的返回值做不到，与 C# 一致（D7） |
 | 尾调用 | async 体内没有 `tail.`；async 过程互相尾递归一百万层也不溢出（续延链在堆上），但比循环慢 |
 | 多值 | `(await t)` 若 Task 的结果是 `MultipleValues`，按多值返回（和普通调用一致） |
 | stage0 与 boot 镜像 | boot 源码不用 `async-lambda`，stage0 不实现它；`(ironscheme async)` 是普通系统库 |

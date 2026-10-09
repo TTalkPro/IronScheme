@@ -1,0 +1,7 @@
+(async-lambda
+  #f
+  (clause
+    (a t u)
+    #f
+    (let ((t%1 (if a (await t) '#f)))
+      (if t%1 (let ((t%2 (await u))) (if t%2 t%2 '0)) '#f))))

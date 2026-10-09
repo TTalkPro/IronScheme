@@ -26,6 +26,7 @@ See docs/license.txt. |#
     (ironscheme clr)
     (ironscheme compiler primitives)
     (ironscheme compiler parse)
+    (ironscheme compiler async)
     (ironscheme compiler languages)
     (ironscheme compiler front)
     (ironscheme compiler closures)
@@ -34,7 +35,8 @@ See docs/license.txt. |#
 
   (clr-reference IronScheme.Emit)
 
-  ;; 调试：设置环境变量 IRONSCHEME_DUMP_PASSES=前缀 时，把各阶段的中间语言写到 <前缀>.l0 / .l1 / .l2 / .l3
+  ;; 调试：设置环境变量 IRONSCHEME_DUMP_PASSES=前缀 时，把各阶段的中间语言写到 <前缀>.l0 / .la / .l1 / .l2 / .l3
+  ;; （.la 是 lower-async 的输出，10 §3.2）
   (define (dump-pass tag unparse x)
     (let ((prefix (clr-static-call System.Environment GetEnvironmentVariable "IRONSCHEME_DUMP_PASSES")))
       (when (string? prefix)
@@ -46,6 +48,8 @@ See docs/license.txt. |#
   (define (front-end x)
     (let* ((l0 (parse-core x))
            (_ (dump-pass "l0" unparse-L0 l0))
+           (l0 (lower-async l0))
+           (_ (dump-pass "la" unparse-L0 l0))
            (an (analyze l0))
            (l1 (cp0-lite (check-forward (simplify-letrec l0 an) an)))
            (_ (dump-pass "l1" unparse-L1 l1))

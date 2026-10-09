@@ -72,6 +72,8 @@
                      (cddr x))))
            ((lambda) ; not sure if this is ever hit
             (cons* 'lambda (cadr x) (map f (cddr x))))
+           ((async-lambda)
+            (cons* 'async-lambda (cadr x) (map f (cddr x))))
            ((letrec) 
             (let ((bindings (cadr x)) (body* (cddr x)))
               (let ((lhs* (map car bindings)) (rhs* (map cadr bindings)))

@@ -61,6 +61,9 @@ public abstract class Procedure {
     public virtual string Name { get; }
 }
 public sealed class Box { public object Value; }   // 被赋值且被捕获的变量
+public abstract class AsyncFrame : IAsyncStateMachine { … }   // async-lambda 的状态机基类（10 §2 D6，iron-050 ~ 052）：
+    // 每个 async-lambda 除过程类外还生成一个帧类（AsyncFrame 的子类，字段 = 自由变量 + 形参 + 局部变量，override MoveNext），
+    // 过程类的 C0 新建帧并 Start，Task<object> 当 object 返回；Suspend / Resume / Complete / Fail 把 builder 与 awaiter 收在基类里
 ```
 
 **两个基类**（iron-006 实现时确定）：
@@ -93,7 +96,7 @@ public sealed class Box { public object Value; }   // 被赋值且被捕获的�
 | 机制 | 设计 |
 |---|---|
 | Scheme 条件 | `SchemeException : Exception`，携带条件对象。沿用现状 |
-| `raise` / `with-exception-handler` / `guard` | 保持在 Scheme 实现（`boot/exceptions.sls`、展开器的 `guard`）。不改语义。处理器栈本身（栈顶在前的过程列表）自 iron-050 起放在 C# 的 `AsyncLocal` 里（`ExceptionHandlers`，原语 `$current-handlers` / `$set-current-handlers!`），随 `ExecutionContext` 流入子任务与 await 之后的续接；参数对象（`make-parameter`）同样改为每个参数一个 `AsyncLocal`（`ParamSlot`，原语 `$make-param-slot` / `$param-ref` / `$param-set!`），见 10 §2 D7 |
+| `raise` / `with-exception-handler` / `guard` | 保持在 Scheme 实现（`boot/exceptions.sls`、展开器的 `guard`）。不改语义。处理器栈本身（栈顶在前的过程列表）自 iron-050 起放在 C# 里（`ExceptionHandlers`，原语 `$current-handlers` / `$set-current-handlers!`）：async 帧内是帧的 `handlers` 字段（新帧从缺省表开始，挂起后保留；`AsyncFrame.Current` 是线程静态的"当前帧"，生成的 `MoveNext` 开头 `Enter`、finally 里 `Exit`），帧外是 `AsyncLocal`；参数对象（`make-parameter`）同样改为每个参数一个 `AsyncLocal`（`ParamSlot`，原语 `$make-param-slot` / `$param-ref` / `$param-set!`），见 10 §2 D7 |
 | **call/cc** | 只支持逃逸续延。`call/cc` 创建 `EscapeContinuation : Procedure`，带唯一标记；调用时抛 `ContinuationException(标记, 值)`；`call/cc` 所在帧按标记捕获并返回值。帧退出后（finally 中置失效标志）再调用该续延，报"续延已失效"的条件，而不是现在的模糊错误 |
 | `dynamic-wind` | 沿用 Scheme 定义 `(in) ($try/finally (proc) (out))`，`$try/finally` 是编译器核心形式 |
 | **运行时钩子**（取代 `IronScheme.Glue.il`） | `RuntimeHooks` 静态类持有若干 `Procedure` 字段：`Raise`、`RaiseContinuable`、`WithExceptionHandler`、`AssertionViolation`、`Exact`、`Inexact`、`SyntaxError`、`LexicalError`、`UndefinedError`、I/O 与文件条件构造器等（与现有 15 个胶水方法一一对应）。boot 镜像初始化时由 Scheme 调用原语 `($set-runtime-hook! 'raise raise)` 登记。C# 代码通过钩子调用，不再依赖 boot dll 的方法名 |

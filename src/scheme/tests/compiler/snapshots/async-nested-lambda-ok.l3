@@ -1,0 +1,12 @@
+(async-lambda
+  #f
+  ()
+  (clause
+    (l)
+    #f
+    (begin
+      (call
+        (gref g$for-each$1$%b)
+        (lambda #f () (clause (x) #f (call (gref display) x)))
+        l)
+      (await (call (async-lambda #f () (clause (y) #f (await y))) l)))))

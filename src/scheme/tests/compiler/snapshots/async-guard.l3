@@ -1,0 +1,69 @@
+(async-lambda
+  #f
+  ()
+  (clause
+    (t)
+    #f
+    (let ((t%3 (escape-frame
+                 outerk
+                 (let ((handlers%1 (primcall $current-handlers)))
+                   (begin
+                     (primcall
+                       $set-current-handlers!
+                       (primcall
+                         cons
+                         (lambda #f
+                           (outerk)
+                           (clause
+                             (e)
+                             #f
+                             (call
+                               (primcall
+                                 call/cc
+                                 (lambda #f
+                                   (outerk e)
+                                   (clause
+                                     (raisek)
+                                     #f
+                                     (call
+                                       outerk
+                                       (lambda #f
+                                         (e)
+                                         (clause
+                                           ()
+                                           #f
+                                           (if (call (gref symbol?) e)
+                                             e
+                                             (let ()
+                                               (call
+                                                 (gref
+                                                   g$raise-continuable$1$%b)
+                                                 e))))))))))))
+                         handlers%1))
+                     (try-finally
+                       (let ((values%2 (await t)))
+                         (primcall
+                           call-with-values
+                           (lambda #f
+                             (values%2)
+                             (clause () #f values%2))
+                           (lambda #f
+                             (outerk)
+                             (clause
+                               ()
+                               args
+                               (call
+                                 outerk
+                                 (lambda #f
+                                   (args)
+                                   (clause
+                                     ()
+                                     #f
+                                     (primcall
+                                       apply
+                                       (gref g$values$1$%b)
+                                       args))))))))
+                       (primcall
+                         $set-current-handlers!
+                         handlers%1)))))))
+      (call t%3))))

@@ -1,0 +1,8 @@
+(async-lambda
+  #f
+  (clause
+    (t)
+    #f
+    (begin
+      (call (gref display) 'in)
+      (try-finally (await t) (call (gref display) 'out)))))
