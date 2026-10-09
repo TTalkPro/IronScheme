@@ -28,7 +28,6 @@ See docs/license.txt. |#
   (import 
     ;(boot config) 
     (only (ironscheme) import make-stacktrace-condition stacktrace-condition? display-stacktrace ungensym)
-    (ironscheme clr)
     (ironscheme unsafe)
     (ironscheme contracts)
     (except (rnrs) 
@@ -40,13 +39,12 @@ See docs/license.txt. |#
       dynamic-wind
       values))
       
-  (clr-using IronScheme.Core)
       
   (define (values . x)
     (if (and (not (null? x))
              (null? (cdr x)))
         (car x)
-        (clr-new MultipleValues (clr-cast Object[] (list->vector x)))))   ; clr-cast 给发射器类型提示，静态调用构造函数（iron-033）      
+        ($make-multiple-values (list->vector x))))      
     
   (define (dynamic-wind in proc out)
     (in)
@@ -76,8 +74,7 @@ See docs/license.txt. |#
           (apply condition
                  (append cc
                         (list (make-stacktrace-condition
-                                (clr-static-call IronScheme.Core.Exceptions 
-                                                 GetStackTrace))))))))
+                                ($stack-trace))))))))
 
   (define (raise obj)
     (let ((obj (add-stacktrace obj)))

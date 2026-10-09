@@ -19,8 +19,7 @@ See docs/license.txt. |#
       /)
     (ironscheme core)
     (ironscheme unsafe)
-    (ironscheme contracts)
-    (ironscheme clr))
+    (ironscheme contracts))
 
   (define-syntax reduce
     (syntax-rules ()

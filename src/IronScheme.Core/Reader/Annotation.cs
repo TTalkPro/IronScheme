@@ -40,3 +40,19 @@ public readonly struct SourceSpan
     /// <summary>与旧系统 Microsoft.Scripting.SourceSpan.ToString 相同的格式。</summary>
     public override string ToString() => $"({StartLine},{StartColumn}) - ({EndLine},{EndColumn})";
 }
+
+/// <summary>注解对象的原语（boot/io/ports.sls 的 annotation? 等经这里，iron-056）。</summary>
+public static class AnnotationPrimitives
+{
+    [Primitive("$annotation?", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object IsAnnotation(object o) => RT.Bool(o is Annotation);
+
+    [Primitive("$annotation-expression", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object Expression(object a) => ((Annotation)a).expression;
+
+    [Primitive("$annotation-source", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object Source(object a) => ((Annotation)a).source;
+
+    [Primitive("$annotation-stripped", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object Stripped(object a) => ((Annotation)a).stripped;
+}

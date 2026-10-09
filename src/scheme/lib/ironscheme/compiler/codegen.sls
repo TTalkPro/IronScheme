@@ -23,7 +23,7 @@ See docs/license.txt. |#
 ;;; - try 要求进入时求值栈为空：多操作数的形式中，若排在后面的操作数含 try，先把各操作数存入临时变量（lift-try）。
 ;;; - 常量：fixnum、布尔、'()、字符、字符串直接生成；其余进常量表（iron-020 的编码）。
 (library (ironscheme compiler codegen)
-  (export generate-unit canonical-gensyms)
+  (export generate-unit canonical-gensyms current-target)
   (import
     (rnrs)
     (only (ironscheme) void unspecified? make-parameter gensym)
@@ -31,7 +31,8 @@ See docs/license.txt. |#
     (ironscheme compiler languages)
     (ironscheme compiler primitives)
     (ironscheme compiler constants)
-    (only (ironscheme clr) clr-is))
+    (only (ironscheme unsafe) $immutable-string?)
+    (ironscheme compiler targets))
 
   ;; 规范 gensym 名（iron-030，designs/05-bootstrap.md §7 的后备方案）：设为 #t 时，常量表中本进程生成的 gensym
   ;; （名字以本进程的 TICKS 后缀结尾）按首次出现的顺序改名为 g$名字$序号$%b。构建过程本身用非确定性 gensym，
@@ -76,18 +77,35 @@ See docs/license.txt. |#
         ((char=? (string-ref s i) #\$) i)
         (else (loop (+ i 1))))))
 
-  (define obj "System.Object")
-  (define proc-type "IronScheme.Core.Procedure")
-  (define variadic-type "IronScheme.Core.VariadicProcedure")
-  (define cons-type "IronScheme.Core.Cons")
-  (define box-type "IronScheme.Core.Box")
-  (define symbol-type "IronScheme.Core.Symbol")
-  (define rt-type "IronScheme.Core.RT")
-  (define calls-type "IronScheme.Core.Calls")
-  (define frame-type "IronScheme.Core.AsyncFrame")
-  (define task-type "System.Threading.Tasks.Task`1[System.Object]")
-  (define escape-type "IronScheme.Core.EscapeContinuation")
-  (define cont-exn-type "IronScheme.Core.ContinuationException")
+  ;; 目标机器（designs/11-portability.md §2 D6，iron-057）：运行时类型名与 tail. 等都查描述表（targets.sls），
+  ;; 由驱动 parameterize；缺省 clr。下面的名字是标识符宏，用法与原来的字符串常量相同
+  (define current-target (make-parameter (target-of 'clr)))
+  (define-syntax define-target-type
+    (syntax-rules ()
+      [(_ name key) (define-syntax name (identifier-syntax (target-type (current-target) 'key)))]))
+  (define-target-type obj object)
+  (define-target-type obj-array object-array)
+  (define-target-type int32-type int32)
+  (define-target-type double-type double)
+  (define-target-type bool-type boolean)
+  (define-target-type char-type char)
+  (define-target-type string-type string)
+  (define-target-type void-type void)
+  (define-target-type exception-type exception)
+  (define-target-type unspecified-type unspecified)
+  (define-target-type proc-type procedure)
+  (define-target-type variadic-type variadic-procedure)
+  (define-target-type cons-type cons)
+  (define-target-type box-type box)
+  (define-target-type symbol-type symbol)
+  (define-target-type rt-type rt)
+  (define-target-type calls-type calls)
+  (define-target-type frame-type async-frame)
+  (define-target-type task-type task)
+  (define-target-type escape-type escape-continuation)
+  (define-target-type cont-exn-type continuation-exception)
+  ;; host-* 节点对应的发射器指令名（CLR 目标就是 Lcil 的 clr-*）
+  (define (interop key) (target-interop (current-target) key))
 
   (define (objs n) (if (= n 0) '() (cons obj (objs (- n 1)))))
 
@@ -250,7 +268,7 @@ See docs/license.txt. |#
   (define (complete! mc)
     (let ((t (scratch! mc)))
       (emit! mc `(stloc ,t) '(ldarg 0) `(ldloc ,t)
-             `(call ,frame-type "Complete" (,obj) "System.Void")
+             `(call ,frame-type "Complete" (,obj) ,void-type)
              `(leave ,(aframe-end-label (mctx-async mc))))))
 
   (define (emit! mc . ins)
@@ -306,7 +324,7 @@ See docs/license.txt. |#
     (case ctx
       ((value) (void))
       ((effect) (emit! mc '(pop)))
-      ((test) (emit! mc `(call ,rt-type "IsTrue" (,obj) "System.Boolean")))
+      ((test) (emit! mc `(call ,rt-type "IsTrue" (,obj) ,bool-type)))
       ((tail) (if (mctx-async mc) (complete! mc) (emit! mc '(ret))))))
 
   ;; 栈上是一个 CLR bool
@@ -314,19 +332,20 @@ See docs/license.txt. |#
     (case ctx
       ((test) (void))
       ((effect) (emit! mc '(pop)))
-      ((value) (emit! mc `(call ,rt-type "Bool" ("System.Boolean") ,obj)))
-      ((tail) (emit! mc `(call ,rt-type "Bool" ("System.Boolean") ,obj)) (finish-value! mc 'tail))))
+      ((value) (emit! mc `(call ,rt-type "Bool" (,bool-type) ,obj)))
+      ((tail) (emit! mc `(call ,rt-type "Bool" (,bool-type) ,obj)) (finish-value! mc 'tail))))
 
   ;; 没有值（赋值等）
   (define (finish-none! mc ctx)
     (case ctx
       ((effect) (void))
       ((test) (emit! mc '(ldc.i4 1)))
-      ((value) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")))
-      ((tail) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")) (finish-value! mc 'tail))))
+      ((value) (emit! mc `(ldsfld ,unspecified-type "Instance")))
+      ((tail) (emit! mc `(ldsfld ,unspecified-type "Instance")) (finish-value! mc 'tail))))
 
   ;; async 体内没有尾调用（10 §3.3 D13）：结果总是经 Complete 交出
-  (define (tail-ok? mc ctx) (and (eq? ctx 'tail) (= (mctx-try-depth mc) 0) (not (mctx-async mc))))
+  (define (tail-ok? mc ctx)
+    (and (eq? ctx 'tail) (= (mctx-try-depth mc) 0) (not (mctx-async mc)) (target-tail-calls? (current-target))))
 
   ;; ———————————————— 常量 ————————————————
 
@@ -343,19 +362,19 @@ See docs/license.txt. |#
 
   (define (load-constant! mc d)
     (cond
-      ((and (fixnum? d) (exact? d)) (emit! mc `(ldc.i4 ,d) `(call ,rt-type "Box" ("System.Int32") ,obj)))
+      ((and (fixnum? d) (exact? d)) (emit! mc `(ldc.i4 ,d) `(call ,rt-type "Box" (,int32-type) ,obj)))
       ((eq? d #t) (emit! mc `(ldsfld ,rt-type "True")))
       ((eq? d #f) (emit! mc `(ldsfld ,rt-type "False")))
       ((null? d) (emit! mc '(ldnull)))
-      ((unspecified? d) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")))
+      ((unspecified? d) (emit! mc `(ldsfld ,unspecified-type "Instance")))
       ((and (char? d) (< (char->integer d) #x10000))
-       (emit! mc `(ldc.i4 ,(char->integer d)) '(box "System.Char")))
-      ((and (clr-string? d) (bmp-safe-string? d)) (emit! mc `(ldstr ,d)))
+       (emit! mc `(ldc.i4 ,(char->integer d)) `(box ,char-type)))
+      ((and (immutable-string? d) (bmp-safe-string? d)) (emit! mc `(ldstr ,d)))
       (else (emit! mc `(ldconst ,(constant-index! (mctx-unit mc) d))))))
 
   ;; 只有 System.String（不可变、不含代理码元）用 ldstr；SchemeString（可变串、含 BMP 外字符的串，iron-055）
   ;; 与旧的可变串 StringBuilder 进常量表，加载时经 Fasl 还原为正确的表示
-  (define (clr-string? s) (clr-is System.String s))
+  (define (immutable-string? s) ($immutable-string? s))
 
   (define (load-symbol! mc s) (emit! mc `(ldconst ,(constant-index! (mctx-unit mc) s))))
 
@@ -403,13 +422,13 @@ See docs/license.txt. |#
     (bind-local! mc x)
     (store-var! mc x))
 
-  ;; 实参都是 (clr-cast T e) 时返回类型名列表（Lcil 的实参类型提示，发射器据此静态决议重载，iron-033）；否则 #f
+  ;; 实参都是 (host-cast T e) 时返回类型名列表（Lcil 的实参类型提示，发射器据此静态决议重载，iron-033）；否则 #f
   (define (cast-types e*)
     (and (pair? e*)
          (let loop ((e* e*) (acc '()))
            (if (null? e*)
                (reverse acc)
-               (let ((d (nanopass-case (L3 Expr) (car e*) [(clr-cast ,d ,e) d] [else #f])))
+               (let ((d (nanopass-case (L3 Expr) (car e*) [(host-cast ,d ,e) d] [else #f])))
                  (and d (loop (cdr e*) (cons d acc))))))))
 
   ;; ———————————————— 表达式 ————————————————
@@ -434,7 +453,7 @@ See docs/license.txt. |#
          (aframe-nresume-set! af (+ n 1))
          (region-add! mc n l)
          (emit! mc `(stloc ,t) '(ldarg 0) `(ldloc ,t) `(ldc.i4 ,n)
-                `(call ,frame-type "Suspend" (,obj "System.Int32") "System.Boolean")
+                `(call ,frame-type "Suspend" (,obj ,int32-type) ,bool-type)
                 `(brtrue ,l) `(leave ,(aframe-end-label af))
                 `(label ,l) '(ldarg 0) `(call ,frame-type "Resume" () ,obj))
          (finish-value! mc ctx))]
@@ -491,7 +510,7 @@ See docs/license.txt. |#
                  (leave ,after)))
               (cleanup
                `((ldarg 0) (ldfld ,(mctx-class mc) ,(cdr (var-location mc x))) (castclass ,escape-type)
-                 (callvirt ,escape-type "Invalidate" () "System.Void"))))
+                 (callvirt ,escape-type "Invalidate" () ,void-type))))
          (unless (null? entries) (propagate! mc entries pre) (emit! mc `(label ,pre)))
          (emit! mc `(try (body ,@(dispatch-code entries) ,@b)
                          (catch ,cont-exn-type ,@handler)
@@ -526,7 +545,7 @@ See docs/license.txt. |#
          (finish-value! mc ctx))]
       [(gset! ,s ,e)
        (operands! mc (list (lambda () (load-symbol! mc s)) (lambda () (cg e mc 'value))))
-       (emit! mc `(call ,calls-type "SetGlobal" (,obj ,obj) "System.Void"))
+       (emit! mc `(call ,calls-type "SetGlobal" (,obj ,obj) ,void-type))
        (finish-none! mc ctx)]
       [(mref ,x)
        (unless (eq? ctx 'effect)
@@ -604,7 +623,7 @@ See docs/license.txt. |#
              (finish-bool! mc ctx)))]
       [(throw ,e)
        (cg e mc 'value)
-       (emit! mc '(castclass "System.Exception") '(throw))
+       (emit! mc `(castclass ,exception-type) '(throw))
        ;; 之后的代码不可达；value / test 上下文补一个值保持栈形状一致
        (case ctx
          ((value) (emit! mc '(ldnull)))
@@ -635,38 +654,38 @@ See docs/license.txt. |#
          (when tmp
            (emit! mc `(ldloc ,tmp))
            (finish-value! mc ctx)))]
-      [(clr-call ,d0 ,d1 ,st ,e* ...)
+      [(host-call ,d0 ,d1 ,st ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
        (let ((hints (and (string? d1) (cast-types (if st e* (cdr e*)))))
              (argc (- (length e*) (if st 0 1))))
-         (emit! mc (if hints `(clr-call ,d0 ,d1 ,st ,argc ,hints) `(clr-call ,d0 ,d1 ,st ,argc))))
+         (emit! mc (if hints `(,(interop 'call) ,d0 ,d1 ,st ,argc ,hints) `(,(interop 'call) ,d0 ,d1 ,st ,argc))))
        (finish-value! mc ctx)]
-      [(clr-field-get ,d0 ,d1 ,st ,e* ...)
+      [(host-field-get ,d0 ,d1 ,st ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
-       (emit! mc `(clr-field-get ,d0 ,d1 ,st))
+       (emit! mc `(,(interop 'field-get) ,d0 ,d1 ,st))
        (finish-value! mc ctx)]
-      [(clr-field-set ,d0 ,d1 ,st ,e* ...)
+      [(host-field-set ,d0 ,d1 ,st ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
-       (emit! mc `(clr-field-set ,d0 ,d1 ,st))
+       (emit! mc `(,(interop 'field-set) ,d0 ,d1 ,st))
        (finish-value! mc ctx)]
-      [(clr-new ,d ,e* ...)
+      [(host-new ,d ,e* ...)
        (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
        (let ((hints (cast-types e*)))
-         (emit! mc (if hints `(clr-new ,d ,(length e*) ,hints) `(clr-new ,d ,(length e*)))))
+         (emit! mc (if hints `(,(interop 'new) ,d ,(length e*) ,hints) `(,(interop 'new) ,d ,(length e*)))))
        (finish-value! mc ctx)]
-      [(clr-new-array ,d ,e) (cg e mc 'value) (emit! mc `(clr-new-array ,d)) (finish-value! mc ctx)]
-      [(clr-cast ,d ,e) (cg e mc 'value) (emit! mc `(clr-cast ,d)) (finish-value! mc ctx)]
-      [(clr-is ,d ,e) (cg e mc 'value) (emit! mc `(clr-is ,d)) (finish-value! mc ctx)]
-      [(clr-type ,d) (emit! mc `(clr-type ,d)) (finish-value! mc ctx)]
-      [(clr-using ,d) (add-namespace! (mctx-unit mc) d) (finish-none! mc ctx)]
-      [(clr-reference ,d) (add-reference! (mctx-unit mc) d) (finish-none! mc ctx)]
-      [(clr-namespaces)
+      [(host-new-array ,d ,e) (cg e mc 'value) (emit! mc `(,(interop 'new-array) ,d)) (finish-value! mc ctx)]
+      [(host-cast ,d ,e) (cg e mc 'value) (emit! mc `(,(interop 'cast) ,d)) (finish-value! mc ctx)]
+      [(host-is ,d ,e) (cg e mc 'value) (emit! mc `(,(interop 'is) ,d)) (finish-value! mc ctx)]
+      [(host-typeof ,d) (emit! mc `(,(interop 'typeof) ,d)) (finish-value! mc ctx)]
+      [(host-using ,d) (add-namespace! (mctx-unit mc) d) (finish-none! mc ctx)]
+      [(host-reference ,d) (add-reference! (mctx-unit mc) d) (finish-none! mc ctx)]
+      [(host-namespaces)
        (unless (eq? ctx 'effect)
          (load-constant! mc (unit-namespaces (mctx-unit mc)))
          (finish-value! mc ctx))]
       [(unsupported ,d ,e* ...)
        (for-each (lambda (x) (cg x mc 'effect)) e*)
-       (emit! mc `(ldstr ,d) `(call ,calls-type "Unsupported" ("System.String") ,obj))
+       (emit! mc `(ldstr ,d) `(call ,calls-type "Unsupported" (,string-type) ,obj))
        (finish-value! mc ctx)]
       [(box ,e)
        (cg e mc 'value)
@@ -688,7 +707,7 @@ See docs/license.txt. |#
   (define (invoke-method n)
     (if (<= n 4)
         `(callvirt ,proc-type ,(string-append "Invoke" (number->string n)) ,(objs n) ,obj)
-        `(callvirt ,proc-type "InvokeN" ("System.Object[]") ,obj)))
+        `(callvirt ,proc-type "InvokeN" (,obj-array) ,obj)))
 
   (define (self-call? e0 mc)
     (nanopass-case (L3 Expr) e0
@@ -747,7 +766,7 @@ See docs/license.txt. |#
       (define (unbox-args! type)
         (operands! mc (map (lambda (x)
                              (lambda ()
-                               (let ((k (and (string=? type "System.Int32") (fixnum-constant x))))
+                               (let ((k (and (string=? type int32-type) (fixnum-constant x))))
                                  (if k
                                      (emit! mc `(ldc.i4 ,k))
                                      (begin (cg x mc 'value) (emit! mc `(unbox.any ,type)))))))
@@ -761,8 +780,8 @@ See docs/license.txt. |#
          (operands! mc (cons (lambda () (cg (car e*) mc 'value) (emit! mc `(call ,calls-type "Proc" (,obj) ,proc-type)))
                              (map (lambda (x) (lambda () (cg x mc 'value))) (cdr e*))))
          (pack-array! mc (- argc 1))
-         (emit! mc `(call ,calls-type "ApplyArgs" ("System.Object[]") "System.Object[]")
-                '(tail) `(callvirt ,proc-type "InvokeN" ("System.Object[]") ,obj) '(ret)))
+         (emit! mc `(call ,calls-type "ApplyArgs" (,obj-array) ,obj-array)
+                '(tail) `(callvirt ,proc-type "InvokeN" (,obj-array) ,obj) '(ret)))
         (else
          (case (overload-inline o)
            ((void) (args!) (for-each (lambda (x) (emit! mc '(pop))) e*) (finish-none! mc ctx))
@@ -777,42 +796,42 @@ See docs/license.txt. |#
            ((eq?) (args!) (emit! mc '(ceq)) (finish-bool! mc ctx))
            ((not)
             (args!)
-            (emit! mc `(call ,rt-type "IsTrue" (,obj) "System.Boolean") '(ldc.i4 0) '(ceq))
+            (emit! mc `(call ,rt-type "IsTrue" (,obj) ,bool-type) '(ldc.i4 0) '(ceq))
             (finish-bool! mc ctx))
            ((null?) (args!) (emit! mc '(ldnull) '(ceq)) (finish-bool! mc ctx))
            ((pair?) (args!) (emit! mc `(isinst ,cons-type) '(ldnull) '(cgt.un)) (finish-bool! mc ctx))
            (($fx+ $fx* $fxand $fxior $fxxor)
-            (unbox-args! "System.Int32")
+            (unbox-args! int32-type)
             (emit! mc (case pr (($fx+) '(add)) (($fx*) '(mul)) (($fxand) '(and)) (($fxior) '(or)) (else '(xor))))
-            (emit! mc `(call ,rt-type "Box" ("System.Int32") ,obj))
+            (emit! mc `(call ,rt-type "Box" (,int32-type) ,obj))
             (finish-value! mc ctx))
            (($fx-)
-            (unbox-args! "System.Int32")
-            (emit! mc (if (= argc 1) '(neg) '(sub)) `(call ,rt-type "Box" ("System.Int32") ,obj))
+            (unbox-args! int32-type)
+            (emit! mc (if (= argc 1) '(neg) '(sub)) `(call ,rt-type "Box" (,int32-type) ,obj))
             (finish-value! mc ctx))
            (($fxnot)
-            (unbox-args! "System.Int32")
-            (emit! mc '(not) `(call ,rt-type "Box" ("System.Int32") ,obj))
+            (unbox-args! int32-type)
+            (emit! mc '(not) `(call ,rt-type "Box" (,int32-type) ,obj))
             (finish-value! mc ctx))
            (($fx=? $fx<? $fx>? $fx<=? $fx>=?)
-            (unbox-args! "System.Int32")
+            (unbox-args! int32-type)
             (emit-compare! mc pr #f)
             (finish-bool! mc ctx))
            (($fxzero? $fxnegative? $fxpositive?)
-            (unbox-args! "System.Int32")
+            (unbox-args! int32-type)
             (emit! mc '(ldc.i4 0))
             (emit! mc (case pr (($fxzero?) '(ceq)) (($fxnegative?) '(clt)) (else '(cgt))))
             (finish-bool! mc ctx))
            (($fl+ $fl* $fl/)
-            (unbox-args! "System.Double")
-            (emit! mc (case pr (($fl+) '(add)) (($fl*) '(mul)) (else '(div))) '(box "System.Double"))
+            (unbox-args! double-type)
+            (emit! mc (case pr (($fl+) '(add)) (($fl*) '(mul)) (else '(div))) `(box ,double-type))
             (finish-value! mc ctx))
            (($fl-)
-            (unbox-args! "System.Double")
-            (emit! mc (if (= argc 1) '(neg) '(sub)) '(box "System.Double"))
+            (unbox-args! double-type)
+            (emit! mc (if (= argc 1) '(neg) '(sub)) `(box ,double-type))
             (finish-value! mc ctx))
            (($fl=? $fl<? $fl>? $fl<=? $fl>=?)
-            (unbox-args! "System.Double")
+            (unbox-args! double-type)
             (emit-compare! mc pr #t)
             (finish-bool! mc ctx))
            (else (cg-static-call! o e* mc ctx)))))))
@@ -840,7 +859,7 @@ See docs/license.txt. |#
       (let ((tail? (and (tail-ok? mc ctx) (overload-allow-tail-call? o))))
         (when tail? (emit! mc '(tail)))
         (emit! mc `(call ,(overload-type o) ,(overload-method o)
-                         ,(append (objs fixed) (if rest? '("System.Object[]") '()))
+                         ,(append (objs fixed) (if rest? (list obj-array) '()))
                          ,obj))
         (if tail? (emit! mc '(ret)) (finish-value! mc ctx)))))
 
@@ -906,7 +925,7 @@ See docs/license.txt. |#
              `(method "get_Arity" (attrs override) (params) (ret ,obj)
                 (body ,@(cond
                           ((null? arity) '((ldnull)))
-                          ((fixnum? arity) `((ldc.i4 ,arity) (call ,rt-type "Box" ("System.Int32") ,obj)))
+                          ((fixnum? arity) `((ldc.i4 ,arity) (call ,rt-type "Box" (,int32-type) ,obj)))
                           (else `((ldconst ,(constant-index! u arity)))))
                       (ret)))))
          ;; procedure-form：各子句的 (名字 . 形参)，形参取源码中的名字（REPL 的参数提示使用，iron-038）
@@ -916,10 +935,10 @@ See docs/license.txt. |#
                 (body (ldconst ,(constant-index! u (map (lambda (cl) (clause-form nm cl)) cl*)))
                       (ret)))))
          (when nm
-           (add-method! `(method "get_Name" (attrs override) (params) (ret "System.String")
+           (add-method! `(method "get_Name" (attrs override) (params) (ret ,string-type)
                            (body (ldstr ,(if (symbol? nm) (symbol->string nm) nm)) (ret)))))
          (add-method! `(method ".ctor" (attrs ctor) (params)
-                         (body (ldarg 0) (call ,base ".ctor" () "System.Void") (ret))))
+                         (body (ldarg 0) (call ,base ".ctor" () ,void-type) (ret))))
          (when static?
            (add-method! `(method ".cctor" (attrs cctor) (params)
                            (body (newobj ,name ()) (stsfld ,name "Instance") (ret)))))
@@ -954,17 +973,17 @@ See docs/license.txt. |#
                `(type ,frame (base ,frame-type) (attrs sealed)
                   ,@(map (lambda (f) `(field ,f ,obj)) (reverse (aframe-fields af)))
                   (method ".ctor" (attrs ctor) (params)
-                    (body (ldarg 0) (call ,frame-type ".ctor" () "System.Void") (ret)))
-                  (method "MoveNext" (attrs override) (params) (ret "System.Void")
+                    (body (ldarg 0) (call ,frame-type ".ctor" () ,void-type) (ret)))
+                  (method "MoveNext" (attrs override) (params) (ret ,void-type)
                     (locals ,@(reverse (mctx-locals mc)))
-                    (clr-namespaces)
+                    (,(interop 'namespaces))
                     (body
                       (ldarg 0) (call ,frame-type "Enter" (,frame-type) ,frame-type) (stloc ,prev)
                       (try (body ,@(dispatch-code entries) ,@code)
-                           (catch "System.Exception"
-                             (stloc ,t) (ldarg 0) (ldloc ,t) (castclass "System.Exception")
-                             (call ,frame-type "Fail" ("System.Exception") "System.Void"))
-                           (finally (ldloc ,prev) (castclass ,frame-type) (call ,frame-type "Exit" (,frame-type) "System.Void")))
+                           (catch ,exception-type
+                             (stloc ,t) (ldarg 0) (ldloc ,t) (castclass ,exception-type)
+                             (call ,frame-type "Fail" (,exception-type) ,void-type))
+                           (finally (ldloc ,prev) (castclass ,frame-type) (call ,frame-type "Exit" (,frame-type) ,void-type)))
                       (label ,end)
                       (ret)))))
              ;; C0：在过程类的上下文里建帧
@@ -1029,10 +1048,10 @@ See docs/license.txt. |#
   (define (invoke-n-method name static? clauses)
     (let loop ((cs clauses) (i 0) (code '()))
       (if (null? cs)
-          `(method "InvokeN" (attrs override) (params "System.Object[]") (ret ,obj)
+          `(method "InvokeN" (attrs override) (params ,obj-array) (ret ,obj)
              (body ,@(reverse code)
                    (ldarg 0) (ldarg 1) (ldlen) (conv.i4)
-                   (call ,proc-type "ArityError" ("System.Int32") ,obj)
+                   (call ,proc-type "ArityError" (,int32-type) ,obj)
                    (ret)))
           (let* ((n (caar cs)) (rest? (cdar cs))
                  (next (string->symbol (string-append "N" (number->string i))))
@@ -1041,7 +1060,7 @@ See docs/license.txt. |#
                   `((ldarg 1) (ldlen) (conv.i4) (ldc.i4 ,n) ,(if rest? `(blt ,next) `(bne.un ,next))
                     ,@(if static? '() '((ldarg 0)))
                     ,@load-args
-                    ,@(if rest? `((ldarg 1) (ldc.i4 ,n) (call ,variadic-type "RestList" ("System.Object[]" "System.Int32") ,obj)) '())
+                    ,@(if rest? `((ldarg 1) (ldc.i4 ,n) (call ,variadic-type "RestList" (,obj-array ,int32-type) ,obj)) '())
                     (call ,name ,(string-append "C" (number->string i)) ,(objs (+ n (if rest? 1 0))) ,obj)
                     (ret)
                     (label ,next))))
@@ -1066,7 +1085,7 @@ See docs/license.txt. |#
   (define (finish-method mc name attrs params)
     `(method ,name (attrs ,@attrs) (params ,@params) (ret ,obj)
        (locals ,@(reverse (mctx-locals mc)))
-       (clr-namespaces)
+       (,(interop 'namespaces))
        (body ,@(reverse (mctx-buffer mc)))))
 
   ;; 创建闭包：newobj 后逐个写自由变量字段
@@ -1117,7 +1136,7 @@ See docs/license.txt. |#
                             (reverse (unit-prelink u))))
                    ,@(let loop ((k 0) (n (length inits)))
                        (cond
-                         ((= n 0) `((ldsfld "IronScheme.Core.Unspecified" "Instance") (ret)))
+                         ((= n 0) `((ldsfld ,unspecified-type "Instance") (ret)))
                          ((= k (- n 1)) `((call ,module-name ,(init-name k) () ,obj) (ret)))
                          (else (cons* `(call ,module-name ,(init-name k) () ,obj) '(pop) (loop (+ k 1) n))))))))
              (module
@@ -1129,7 +1148,7 @@ See docs/license.txt. |#
         (values
          `(lcil 1
            (assembly ,assembly-name
-             (references "IronScheme.Core" ,@(unit-references u))
+             (references ,(target-core-assembly (current-target)) ,@(unit-references u))
              (entry ,module-name "Initialize"))
            ,@(let ((cs (reverse (unit-consts u))))
                (cond
@@ -1145,12 +1164,12 @@ See docs/license.txt. |#
 
   (define (init-name k) (string-append "Init" (number->string k)))
 
-  ;; 把方法中的占位 (clr-namespaces . NAMESPACES) 换成单元的命名空间列表（方法生成时可能还没见到全部 clr-using）
+  ;; 把方法中的占位 (命名空间指令 . NAMESPACES) 换成单元的命名空间列表（方法生成时可能还没见到全部 host-using）
   (define (fill-namespaces t namespaces)
     (map (lambda (item)
            (if (and (pair? item) (eq? (car item) 'method))
                (map (lambda (c)
-                      (if (and (pair? c) (eq? (car c) 'clr-namespaces)) `(clr-namespaces ,@namespaces) c))
+                      (if (and (pair? c) (eq? (car c) (interop 'namespaces))) `(,(car c) ,@namespaces) c))
                     item)
                item))
          t))

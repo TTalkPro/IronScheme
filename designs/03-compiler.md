@@ -30,7 +30,7 @@ e ::= x                                  ; 符号（见 §3 分类）
     | (letrec* ((x e) ...) body)
     | (library-letrec* name ((x loc e) ...) body)
     | (annotated-call ann . X)           ; X 为 符号 | (quote d) | (set! …) | (f arg …)
-    | (clr-…-internal …)                 ; 互操作形式，见 §7
+    | (clr-…-internal …)                 ; 互操作形式，见 §7；parse-core 解析为宿主中性的 host-* 节点（iron-057）
     | (ffi-callout-internal …) | (ffi-callback-internal …) | (pinvoke-call-internal …)
     | (e e ...)                          ; 应用
 fmls ::= (x ...) | (x x ... . x) | x
@@ -83,7 +83,7 @@ body ::= e ...                           ; 展开器实际只生成一个
 
 | 语言 | 内容 |
 |---|---|
-| L0 | parse-core 输出；词法变量 `x`、全局位置 `(gref s)`、库变量 `(mref x)`、原语 `(prim pr)`/`(primcall pr e …)`；`(lambda 名字 (clause (x …) 剩余 体) …)`、`(async-lambda 名字 (clause …))`；`(library 名字 ([x loc e] …) 体)`；特殊原语为 `and` `or` `throw` `break` `try-finally` `await`；互操作 `clr-…`。`let` 与异步节点 `(label f (x …) 体 循环体)` `(jump f e …)` `(escape-frame k 体)` 只由 lower-async 产生（iron-051） |
+| L0 | parse-core 输出；词法变量 `x`、全局位置 `(gref s)`、库变量 `(mref x)`、原语 `(prim pr)`/`(primcall pr e …)`；`(lambda 名字 (clause (x …) 剩余 体) …)`、`(async-lambda 名字 (clause …))`；`(library 名字 ([x loc e] …) 体)`；特殊原语为 `and` `or` `throw` `break` `try-finally` `await`；互操作节点 `host-call` `host-field-get` `host-field-set` `host-new` `host-new-array` `host-cast` `host-is` `host-typeof` `host-using` `host-reference` `host-namespaces`（iron-057 起宿主中性，由 codegen 按 target 翻成发射器的指令）。`let` 与异步节点 `(label f (x …) 体 循环体)` `(jump f e …)` `(escape-frame k 体)` 只由 lower-async 产生（iron-051） |
 | L1 | `letrec` 只绑定 lambda（`let` 自 iron-051 起已在 L0 中） |
 | L2 | 增加 `box` `unbox` `set-box!` |
 | L3 | lambda 带自由变量表 |
@@ -142,6 +142,8 @@ body ::= e ...                           ; 展开器实际只生成一个
 装箱的 fixnum：第一版沿用现状，`int` 每次装箱。可以加一个小整数装箱缓存（现有 `Int32ToObject` 的做法）。
 
 ## 7. CLR 互操作形式
+
+iron-057 起（[11 §2](11-portability.md) D6）：L0 ~ L3 里的互操作节点叫 `host-call` / `host-new` / `host-is` …，不带 CLR 字样；codegen 通过 `target` 参数查机器描述表 `targets.sls`（运行时类名、基本类型名、是否发 `tail.`、互操作节点对应的发射器指令名）生成下面的 Lcil 指令。现在只有 `clr` 一个表项，生成的 Lcil 与改动前逐字相同。驱动的 `current-compile-target` 参数（缺省 `clr`，未知目标报错）选择表项，并同步给运行时的 `target-host-type` 原语（展开期可用，`cond-expand` 的宿主特性用它）；`(compile-file 文件 [输出] 'target 'clr)` 可指定。
 
 | 形式 | 编译结果（Lcil 指令，详见 04） |
 |---|---|

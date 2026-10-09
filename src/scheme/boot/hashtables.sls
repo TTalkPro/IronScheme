@@ -63,29 +63,27 @@ See docs/license.txt. |#
       hashtable-hash-function)
     (except (ironscheme core) eqv-hash)
     (ironscheme contracts)
-    (ironscheme clr)
     (ironscheme unsafe))
     
-  (clr-using System.Collections)
-  (clr-using IronScheme.Core)
   
+  ;; 散列表是宿主对象，经 $hashtable-* 原语操作（IronScheme.Core.HostPrimitives，iron-056）
   (define (hashtable? obj)
-    (clr-is Hashtable obj))
+    ($hashtable? obj))
     
   (define-syntax to-null
     (syntax-rules ()
       [(_ o)
-        (clr-static-call Hashtables ToNull o)]))
+        ($hashtable-to-null o)]))
 
   (define-syntax from-null
     (syntax-rules ()
       [(_ o)
-        (clr-static-call Hashtables FromNull o)]))
+        ($hashtable-from-null o)]))
   
   (define/contract make-eq-hashtable
     (case-lambda
       [()           (make-eq-hashtable 32)]
-      [(k:fixnum)   (clr-new Hashtable (clr-cast Int32 k))]))
+      [(k:fixnum)   ($make-eq-hashtable k)]))
     
   (define/contract make-eqv-hashtable
     (case-lambda
@@ -97,75 +95,52 @@ See docs/license.txt. |#
       [(hash equiv)
         (make-hashtable hash equiv 32)]
       [(hash:procedure equiv:procedure k:fixnum)
-        (let ((cmp (clr-new HashComparer hash equiv)))
-          (clr-new HashtableEx k cmp))]))  
+        ($make-hashtable hash equiv k)]))  
           
   (define/contract hashtable-copy
     (case-lambda
       [(ht)
         (hashtable-copy ht #f)]
       [(ht:hashtable mutable?:boolean)
-        (cond
-          [mutable? (clr-call Hashtable Clone ht)]
-          [(clr-is HashtableEx ht)
-            (clr-call HashtableEx MakeReadOnly ht)]
-          [else
-            (clr-new ReadOnlyHashtable ht)])]))
+        (if mutable?
+            ($hashtable-clone ht)
+            ($hashtable-readonly-copy ht))]))
             
   (define/contract (hashtable-keys ht:hashtable)
-    (let ((keys (clr-new ArrayList (clr-prop-get Hashtable Keys ht))))
-      (vector-map (lambda (k) (from-null k)) (clr-call ArrayList ToArray keys))))  
+    ($hashtable-keys ht))  
       
   (define/contract (hashtable-mutable? ht:hashtable)
-    (not (clr-is ReadOnlyHashtable ht)))
+    ($hashtable-mutable? ht))
     
   (define (eqv-hash obj)
-    (if (null? obj)
-        0
-        (clr-call Object GetHashCode obj)))
+    ($object-hash obj))
         
   (define/contract (hashtable-equivalence-function ht:hashtable)
-    (cond 
-      [(clr-is HashtableEx ht)
-        (clr-prop-get HashtableEx EqualityFunction ht)]
-      [(clr-is ReadOnlyHashtable ht)
-        (let ((ef (clr-prop-get ReadOnlyHashtable EqualityFunction ht)))
-          (if (null? ef)
-              eq?
-              ef))]
-      [else  eq?]))
+    (or ($hashtable-equivalence-function ht) eq?))
          
   ;; R6RS：eq 与 eqv 散列表返回 #f（iron-054；eqv 表内部用 eqv-hash，原来把它返回出去）
   (define/contract (hashtable-hash-function ht:hashtable)
-    (cond 
-      [(clr-is HashtableEx ht)
-        (let ((hf (clr-prop-get HashtableEx HashFunction ht)))
-          (if (eq? hf eqv-hash) #f hf))]
-      [(clr-is ReadOnlyHashtable ht)
-        (let ((hf (clr-prop-get ReadOnlyHashtable HashFunction ht)))
-          (if (or (null? hf) (eq? hf eqv-hash))
-              #f
-              hf))]
-      [else  #f]))
+    (let ((hf ($hashtable-hash-function ht)))
+      (if (eq? hf eqv-hash) #f hf)))
   
   (define/contract (hashtable-size ht:hashtable)
-    (clr-prop-get Hashtable Count ht))
+    ($hashtable-count ht))
     
   (define/contract (hashtable-ref ht:hashtable key default)
     (let ((key (to-null key)))
-      (let ((r (clr-indexer-get Hashtable ht key)))
+      (let ((r ($hashtable-get ht key)))
         (if (or (not (null? r)) (hashtable-contains? ht key))
             r
             default))))
       
   (define/contract (hashtable-set! ht:hashtable key obj)
-    (clr-indexer-set! Hashtable ht (to-null key) obj))
+    ($hashtable-put! ht (to-null key) obj))
 
   (define/contract (hashtable-delete! ht:hashtable key)
-    (clr-call Hashtable Remove ht (to-null key)))
+    ($hashtable-remove! ht (to-null key)))
   
   (define/contract (hashtable-contains? ht:hashtable key)
-    (clr-call Hashtable ContainsKey ht (to-null key)))
+    ($hashtable-contains? ht (to-null key)))
     
   (define/contract (hashtable-update! ht:hashtable key proc:procedure default)
     (let ((key (to-null key)))
@@ -178,18 +153,18 @@ See docs/license.txt. |#
       [(ht)     
         (hashtable-clear! ht 32)]
       [(ht:hashtable k:fixnum)   
-        (clr-call Hashtable Clear ht)]))
+        ($hashtable-clear! ht)]))
       
   ;; R6RS 要求散列值为非负精确整数。原来取 .NET 的 GetHashCode：可能为负，且字符串的值每个进程不同。
   ;; 现在用 FNV-1a，只取决于内容（iron-054）。
   (define/contract (string-hash str:string)
-    (clr-static-call Builtins StringHash str))
+    ($string-hash str))
 
   (define/contract (string-ci-hash str:string)
-    (clr-static-call Builtins StringCiHash str))
+    ($string-ci-hash str))
         
   (define/contract (symbol-hash sym:symbol)
-    ($fxand #x3FFFFFFF (clr-call Object GetHashCode sym)))
+    ($fxand #x3FFFFFFF ($object-hash sym)))
     
   (define (equal-hash obj)
     (define-syntax clobber

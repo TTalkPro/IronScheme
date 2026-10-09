@@ -9,7 +9,7 @@
   (export equal?)
   (import 
     (except (ironscheme) equal?)
-    (ironscheme clr))
+    (only (ironscheme unsafe) $make-random $random-next))
     
   (define k0 400)
   (define kb -40)    
@@ -32,9 +32,9 @@
   (define-record-type box (fields (mutable content box-content set-box-content!)))
   
   (define random
-    (let ((rg (clr-new Random)))
+    (let ((rg ($make-random)))
       (lambda (k)
-        (clr-call Random Next rg k))))    
+        ($random-next rg k))))    
 
   (define (union-find ht x y)
     (import UNSAFE)

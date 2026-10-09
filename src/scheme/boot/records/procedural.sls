@@ -16,14 +16,12 @@ See docs/license.txt. |#
     record-mutator)
   (import 
     (except (ironscheme) record-type-descriptor? record-constructor-descriptor?)
-    (ironscheme clr)
     (ironscheme contracts)
     (ironscheme unsafe))
     
-  (clr-using IronScheme.Core)
   
   (define (record-type-descriptor? obj)
-    (clr-is RecordTypeDescriptor obj))
+    ($rtd? obj))
     
   (define (record-constructor-descriptor? obj)
-    (clr-is RecordConstructorDescriptor obj)))
+    ($rcd? obj)))

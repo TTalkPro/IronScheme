@@ -101,32 +101,17 @@ See docs/license.txt. |#
     string-foldcase
     string-compare
     string-ci-compare)
-    (ironscheme clr)
     (ironscheme unsafe)
     (ironscheme contracts))
     
-  (clr-using System.Globalization)
-  (clr-using IronScheme.Core)
   
-  (define culture-info  
-    (clr-static-prop-get CultureInfo InvariantCulture))
-    
-  (define compare-info 
-    (clr-prop-get CultureInfo CompareInfo culture-info))
-      
-  (define text-info 
-    (clr-prop-get CultureInfo TextInfo culture-info))
-      
+  ;; 字符分类与大小写映射经 $char-* 原语（IronScheme.Core.HostPrimitives，iron-056）；
   ;; BMP 之外的字符（SchemeChar）按 Unicode 不变区域映射（iron-055；原来原样返回）
   (define/contract (char-upcase chr:char)
-    (if (clr-is Char chr)
-        (clr-static-call Char ToUpper chr)
-        (clr-static-call Builtins CharUpcaseWide chr)))
+    ($char-upcase chr))
 
   (define/contract (char-downcase chr:char)
-    (if (clr-is Char chr)
-        (clr-static-call Char ToLower chr)
-        (clr-static-call Builtins CharDowncaseWide chr)))
+    ($char-downcase chr))
 
   (define/contract (char-titlecase chr:char)
     (if (char-title-case? chr)
@@ -140,13 +125,13 @@ See docs/license.txt. |#
         (char-downcase (char-upcase chr))]))
     
   (define/contract (char-alphabetic? chr:char)
-    (clr-static-call Char (IsLetter String Int32) (clr-call Object ToString chr) 0))               
+    ($char-alphabetic? chr))               
 
   (define/contract (char-numeric? chr:char)
-    (clr-static-call Char (IsNumber String Int32) (clr-call Object ToString chr) 0))               
+    ($char-numeric? chr))               
 
   (define/contract (char-whitespace? chr:char)
-    (clr-static-call Char (IsWhiteSpace String Int32) (clr-call Object ToString chr) 0))               
+    ($char-whitespace? chr))               
 
   (define/contract (char-upper-case? chr:char)
     (eq? 'Lu (char-general-category chr)))
@@ -158,59 +143,12 @@ See docs/license.txt. |#
     (eq? 'Lt (char-general-category chr)))
         
   (define/contract (char-general-category chr:char)
-    (case (clr-static-call Char (GetUnicodeCategory String Int32) (clr-call Object ToString chr) 0)
-      [(ClosePunctuation)          'Pe]
-      [(ConnectorPunctuation)      'Pc]
-      [(Control)                   'Cc]
-      [(CurrencySymbol)            'Sc]
-      [(DashPunctuation)           'Pd]
-      [(DecimalDigitNumber)        'Nd]
-      [(EnclosingMark)             'Me]
-      [(FinalQuotePunctuation)     'Pf]
-      [(Format)                    'Cf]
-      [(InitialQuotePunctuation)   'Pi]
-      [(LetterNumber)              'Nl]
-      [(LineSeparator)             'Zl]
-      [(LowercaseLetter)           'Ll]
-      [(MathSymbol)                'Sm]
-      [(ModifierLetter)            'Lm]
-      [(ModifierSymbol)            'Sk]
-      [(NonSpacingMark)            'Mn]
-      [(OpenPunctuation)           'Ps]
-      [(OtherLetter)               'Lo]
-      [(OtherNotAssigned)          'Cn]
-      [(OtherNumber)               'No]
-      [(OtherPunctuation)          'Po]
-      [(OtherSymbol)               'So]
-      [(ParagraphSeparator)        'Zp]
-      [(PrivateUse)                'Co]
-      [(SpaceSeparator)            'Zs]
-      [(SpacingCombiningMark)      'Mc]
-      [(Surrogate)                 'Cs]
-      [(TitlecaseLetter)           'Lt]
-      [(UppercaseLetter)           'Lu]
-      [else #f]))
-      
-  (define (clr-string? obj)
-    (clr-is String obj))  
-
-  (define ->string
-    (typed-lambda (str)
-      ((Object) String)    
-      (if (clr-string? str)
-          str
-          (clr-call Object ToString str))))   
+    ($char-general-category chr))
         
-  ;; 返回 -1 / 0 / 1（iron-054；原来直接返回 CompareInfo.Compare 的结果，即码点差或长度差）
+  ;; 按码点比较（$string-compare，iron-055），返回 -1 / 0 / 1（iron-054；原来直接返回码点差或长度差）
   (define/contract (string-compare a:string b:string)
     (let ((r ($string-compare a b)))
       (cond (($fx<? r 0) -1) (($fx>? r 0) 1) (else 0))))
-                     
-  ;; 按码点比较，-1 / 0 / 1（iron-055；原来按 UTF-16 码元比较 ->string 的结果）
-  (define-syntax $string-compare
-    (syntax-rules ()
-      [(_ a b)
-        (clr-static-call Builtins StringCompare a b)]))                       
                        
   (define-syntax define-string-compare
     (syntax-rules ()
@@ -361,7 +299,7 @@ See docs/license.txt. |#
     (syntax-rules ()
       [(_ str form)
         (if (string? str)
-            (clr-call String Normalize (->string str) 'form)
+            ($string-normalize str 'form)
             (assertion-violation 'string-normalize "not a string" str))]))
   
   (define (string-normalize-nfc s)

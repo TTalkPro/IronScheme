@@ -33,38 +33,39 @@
     (rnrs)
     (rnrs r5rs)
     (ironscheme reader)
-    (ironscheme clr)
     (ironscheme records printer)
     (only (ironscheme) fprintf symbol-bound? remove-location)
-    (only (ironscheme unsafe) $make-param-slot $param-ref $param-set!)
+    (only (ironscheme unsafe) $make-param-slot $param-ref $param-set!
+          $application-directory $current-directory $set-current-directory!
+          $path-extension $string-replace $path-change-extension $path-file-name)
     (only (boot system bootstrap)
           void gensym set-symbol-value! symbol-value compile-core))
           
   (define (application-directory) 
-    (clr-static-prop-get IronScheme.Core.Builtins ApplicationDirectory))
+    ($application-directory))
 
   (define current-directory
     (case-lambda
       [()       
-        (clr-static-prop-get Environment CurrentDirectory)]
+        ($current-directory)]
       [(path)
-        (clr-static-prop-set! Environment CurrentDirectory path)]))
+        ($set-current-directory! path)]))
     
   (define (compiled-library-filename? filename) 
-    (let ((ext (clr-static-call System.IO.Path GetExtension filename)))
+    (let ((ext ($path-extension filename)))
       (or (string=? ext ".dll") (string=? ext ".fasl"))))    
 
   (define (eval-core expr)
     ((compile-core expr)))
           
   (define (replace s b a)
-    (clr-call String (Replace String String) s b a))
+    ($string-replace s b a))
     
   (define (change-extension filename newext)
-    (clr-static-call System.IO.Path ChangeExtension filename newext))  
+    ($path-change-extension filename newext))  
 
   (define (get-filename filename)
-    (clr-static-call System.IO.Path GetFileName filename))  
+    ($path-file-name filename))  
     
   (define (relative-filename filename)
     (let ((rf (replace 

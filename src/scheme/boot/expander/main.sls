@@ -59,12 +59,13 @@
     (only (ironscheme core) get-command-line format compile-library-dll load-library-dll load-fasl compress-constants? constant-fold)
     (boot enums)
     (boot files)
-    (ironscheme clr)
-    (only (ironscheme unsafe) $fx+ $fx- $throw)
+    (only (ironscheme unsafe) $fx+ $fx- $throw $program-failed
+          $console-foreground-color $set-console-foreground-color! $system-exception? $exception-message
+          $path-change-extension $path-extension $string-lower $path-combine $directory-create
+          $directory-exists? $path-full $path-trim-separator $string-replace $directory-files
+          $procedure-form $procedure-arity)
     (except (ironscheme library) file-locator alternative-file-locator)
-    (only (ironscheme) printf pretty-print initialize-default-printers debug-mode? compile-to-current-directory? serialize-port deserialize-port time time-it string=?))
-    
-  (clr-reference System)
+    (only (ironscheme) with-clr-exception-handler printf pretty-print initialize-default-printers debug-mode? compile-to-current-directory? serialize-port deserialize-port time time-it string=?))
     
   (define trace-printer (make-parameter pretty-print))
   (define display-stacktrace (make-parameter #f))
@@ -99,7 +100,7 @@
             (lambda ()
               (load/unsafe filename)
               #f))
-      ($throw (clr-new IronScheme.Core.ProgramFailedException))))
+      ($program-failed)))
 
   (define (load/unsafe filename)
     (apply load-r6rs-top-level filename 'load (cdr (command-line)))
@@ -127,14 +128,22 @@
     
   (define foreground-color
     (case-lambda
-      [()           (and (not (emacs-mode?)) (clr-static-prop-get Console ForegroundColor))]
-      [(color)      (and (not (emacs-mode?)) (clr-static-prop-set! Console ForegroundColor color))])) 
+      [()           (and (not (emacs-mode?)) ($console-foreground-color))]
+      [(color)      (and (not (emacs-mode?)) ($set-console-foreground-color! color))])) 
       
   (define (system-exception? e)
-    (clr-is SystemException e))  
+    ($system-exception? e))
+
+  ;; 接住宿主异常（iron-056：原 clr-guard 的展开，with-clr-exception-handler 是原语）
+  (define-syntax host-guard
+    (syntax-rules ()
+      [(_ [var cls ...] b b* ...)
+       (with-clr-exception-handler
+         (lambda (var) (cond cls ...))
+         (lambda () b b* ...))]))  
     
   (define (eval-top-level x)
-    (clr-guard [e [e (parameterize ((foreground-color 'Red)
+    (host-guard [e [e (parameterize ((foreground-color 'Red)
                                     (current-output-port (current-error-port)))
                        (display "Unhandled CLR exception during evaluation:\n")
                        (display e)
@@ -174,7 +183,7 @@
                      (compile ,path #f ,constant-compression?)))))))]))
                
   (define (with-guard f)
-    (clr-guard [e [e (parameterize ((current-output-port (current-error-port)))
+    (host-guard [e [e (parameterize ((current-output-port (current-error-port)))
                        (display "Unhandled CLR exception during evaluation:\n")
                        (display e)
                        (newline))]]
@@ -268,9 +277,9 @@
       (if dll-filename
           (if (or (not (file-exists? filename))
                   (file-newer? dll-filename filename))
-              (clr-guard [e 
+              (host-guard [e 
                       (e 
-                        (display (format "WARNING: precompiled library ~a could not load. ~s\n" libname (clr-prop-get Exception Message e)) 
+                        (display (format "WARNING: precompiled library ~a could not load. ~s\n" libname ($exception-message e)) 
                                  (current-error-port))
                         #f)]
                 (let ((content (load-library-dll dll-filename)))
@@ -319,10 +328,10 @@
   (define compile-imported-libraries (make-parameter #f))
 
   (define (fasl-file-name filename)
-    (clr-static-call System.IO.Path (ChangeExtension String String) filename ".fasl"))
+    ($path-change-extension filename ".fasl"))
 
   (define (fasl-file? filename)
-    (string=? (clr-call String ToLowerInvariant (clr-static-call System.IO.Path (GetExtension String) filename)) ".fasl"))
+    (string=? ($string-lower ($path-extension filename)) ".fasl"))
 
   (define (strip x) (if (annotation? x) (annotation-stripped x) x))
 
@@ -392,14 +401,24 @@
             out))]))
 
   ;; 文件以 library 形式开头时按库文件编译，否则按顶层程序编译（与 load 对源文件的处理一致）
-  (define compile-file
-    (case-lambda
-      [(filename) (compile-file filename (fasl-file-name filename))]
-      [(filename out)
-        (let ((forms (read-source-forms filename)))
-          (if (and (pair? forms) (library-form? (car forms)))
-              (compile-library filename out)
-              (compile-program filename out)))]))
+  ;; (compile-file 文件 [输出] ['target 目标])：目标缺省为本宿主（iron-057；现在只有 clr，未知目标报错）
+  (define (compile-file filename . args)
+    (let-values (((out opts) (if (and (pair? args) (string? (car args)))
+                                 (values (car args) (cdr args))
+                                 (values (fasl-file-name filename) args))))
+      (let ((target (let loop ((opts opts))
+                      (cond
+                        ((null? opts) #f)
+                        ((and (eq? (car opts) 'target) (pair? (cdr opts))) (cadr opts))
+                        (else (assertion-violation 'compile-file "invalid option" (car opts)))))))
+        (define (compile)
+          (let ((forms (read-source-forms filename)))
+            (if (and (pair? forms) (library-form? (car forms)))
+                (compile-library filename out)
+                (compile-program filename out))))
+        (if target
+            (parameterize (((symbol-value 'current-compile-target) target)) (compile))
+            (compile)))))
 
   ;; (load "x.fasl")：顶层程序运行；库安装（已安装的同名库被替换）
   (define (load-fasl-file filename)
@@ -432,8 +451,8 @@
   ;; 依赖在前），程序本身 program.fasl，清单 ironscheme.app 每行 "library 文件" 或 "program 文件"。
   ;; 展开时不使用已有的编译产物（.fasl、库 dll），保证每个库都从源码展开、都能序列化。
   (define (compile-whole-program filename out-dir)
-    (define (out name) (clr-static-call System.IO.Path (Combine String String) out-dir name))
-    (clr-static-call System.IO.Directory (CreateDirectory String) out-dir)
+    (define (out name) ($path-combine out-dir name))
+    ($directory-create out-dir)
     (parameterize ([library-path (local-library-path filename)]
                    [current-precompiled-library-loader (lambda (libname filename sk) #f)])
       (let-values (((lib* invoke-code macro* export-subst export-env)
@@ -467,7 +486,7 @@
       (and fasl
            (file-exists? fasl)
            (file-newer? fasl filename)
-           (let ((content (clr-guard [e (e (display (format "WARNING: compiled library ~a could not load. ~s\n" fasl (clr-prop-get Exception Message e))
+           (let ((content (host-guard [e (e (display (format "WARNING: compiled library ~a could not load. ~s\n" fasl ($exception-message e))
                                                     (current-error-port))
                                            #f)]
                             (load-fasl fasl))))
@@ -514,22 +533,19 @@
         (apply append
           (map
             (lambda (dir)
-              (if (clr-static-call System.IO.Directory (Exists String) dir)
-                  (let ((full (clr-static-call System.IO.Path (TrimEndingDirectorySeparator String)
-                                               (clr-static-call System.IO.Path (GetFullPath String) dir))))
+              (if ($directory-exists? dir)
+                  (let ((full ($path-trim-separator ($path-full dir))))
                     (map
                       (lambda (file)
                         (let* ((rel (substring file (+ (string-length full) 1) (string-length file)))
-                               (rel (clr-call String (Replace String String) rel "\\" "/"))
+                               (rel ($string-replace rel "\\" "/"))
                                (base (cond
                                        ((string-suffix? ".ironscheme.sls" rel) (substring rel 0 (- (string-length rel) 15)))
                                        (else (substring rel 0 (- (string-length rel) 4))))))
                           (library-name->string
                             (map (lambda (c) (string->symbol (decode-component c)))
                                  (split-path base)))))
-                      (vector->list
-                        (clr-static-call System.IO.Directory (GetFiles String String System.IO.SearchOption)
-                                         full "*.sls" 'AllDirectories))))
+                      ($directory-files full "*.sls")))
                   '()))
             (library-path)))))
     library-file-names)
@@ -573,10 +589,10 @@
           ((< i n) (cons '_ (f (+ i 1))))
           (rest? '_)
           (else '()))))
-    (let ((form (clr-prop-get IronScheme.Core.Procedure Form p)))
+    (let ((form ($procedure-form p)))
       (if (pair? form)
           (join-hints (map (lambda (f) (show (cons sym (cdr f)))) form))
-          (let ((arity (clr-prop-get IronScheme.Core.Procedure Arity p)))
+          (let ((arity ($procedure-arity p)))
             (define (one a)
               (cond
                 ((and (integer? a) (exact? a)) (show (cons sym (placeholders a #f))))

@@ -25,40 +25,38 @@ See docs/license.txt. |#
     (rnrs)
     (only (ironscheme) string-compare)
     (ironscheme contracts)
-    (ironscheme clr))
+    (ironscheme unsafe))
   
-  (clr-using IronScheme.Core)
   
   (define/contract (procedure-arity proc:procedure)
-    (clr-prop-get Procedure Arity proc))
+    ($procedure-arity proc))
     
   (define/contract (procedure-name proc:procedure)
-    (string->symbol (clr-prop-get Procedure Name proc)))
+    ($procedure-name proc))
 
   ;; 每个子句一个值：(名字 . 形参)（编译器生成 Form 属性，iron-038）；未知时为 unspecified
   (define/contract (procedure-form proc:procedure)
-    (let ((f (clr-prop-get Procedure Form proc)))
+    (let ((f ($procedure-form proc)))
       (if (pair? f) (apply values f) f)))
 
   (define/contract (procedure-environment proc:procedure)
     #f)
     
   (define (make-guid)
-    (clr-static-call Guid NewGuid))
+    ($make-guid))
   
   (define (typeof obj)
-    (if (null? obj)
-        (clr-type-of Object)
-        (clr-call Object GetType obj))) 
+    ($type-of obj)) 
         
+  ;; 宿主的类型对象（名字沿用；iron-056 起经原语判断）
   (define (clr-type? o)
-    (clr-is Type o))
+    ($type? o))
     
   (define (set-symbol-value! symbol value)
-    (clr-static-call Builtins SetSymbolValueFast symbol value))
+    ($symbol-value-set! symbol value))
     
   (define (gc-collect)
-    (clr-static-call GC Collect)) 
+    ($gc-collect)) 
     
   ;; SRFI 133 的接口（iron-054；原来是 .NET 的 Array.BinarySearch：默认比较器，找不到时返回负数）：
   ;; (vector-binary-search 向量 值 比较过程 [start end])，(比较过程 元素 值) 返回负数 / 0 / 正数；
@@ -88,13 +86,13 @@ See docs/license.txt. |#
                    [else (loop lo mid)]))))]))
   
   (define/contract (vector-index-of vec:vector obj)
-    (clr-static-call Array IndexOf vec obj))
+    ($vector-index-of vec obj))
     
   (define/contract (vector-contains? vec:vector obj)
-    (fx>=? (clr-static-call Array IndexOf vec obj) 0))
+    (fx>=? ($vector-index-of vec obj) 0))
     
   (define/contract (vector-copy vec:vector)
-    (clr-call Array Clone vec))
+    ($vector-clone vec))
     
   (define/contract (vector-reverse! vec:vector)
-    (clr-static-call Array Reverse vec)))      
+    ($vector-reverse! vec)))      

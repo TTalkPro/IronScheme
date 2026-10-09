@@ -41,12 +41,10 @@ See docs/license.txt. |#
     (rnrs)
     (rnrs r5rs)
     (rnrs mutable-strings)
-    (ironscheme clr)
+    (ironscheme unsafe)
     (only (ironscheme datetime) now datetime->local make-utc-datetime difference ticks total-seconds datetime-add)
     (only (ironscheme process) process-user-cpu-time process-total-cpu-time get-current-process)
     (only (ironscheme std private compat) vanish-define))
-
-(clr-using System)
 
 ;; ———————————————— 宿主时间（原 chez-srfi 的 (srfi :19 time compat) IronScheme 版） ————————————————
 ;; .NET 的时间以 100 纳秒为一个 tick；以 1970-01-01 UTC 为起点
@@ -57,11 +55,7 @@ See docs/license.txt. |#
 (define (host:time-second t) (exact (truncate (total-seconds (difference t host:epoch)))))
 ;; 当前时区相对 UTC 的偏移（秒）。原实现用两次 (now) 相减再截断，常比实际少 1 秒（如 +0759）；
 ;; 这里取 TimeZoneInfo.Local 当前的偏移。在载入时求值一次，此后的夏令时切换不反映。
-(define host:timezone-offset
-  (exact (round (clr-prop-get TimeSpan TotalSeconds
-                  (clr-call TimeZoneInfo (GetUtcOffset DateTime)
-                            (clr-static-prop-get TimeZoneInfo Local)
-                            (clr-static-prop-get DateTime Now))))))
+(define host:timezone-offset ($timezone-offset-seconds))
 (define (host:cumulative-thread-time)
   (datetime-add host:epoch (process-user-cpu-time (get-current-process))))
 (define (host:cumulative-process-time)

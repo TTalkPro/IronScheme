@@ -1,6 +1,6 @@
 # iron-057 互操作节点改 `host-*`，codegen 加 `target` 参数
 
-- 里程碑：后续　依赖：iron-056（不是硬依赖，但先做 056 可减少受影响的源码）　状态：未开始
+- 里程碑：后续　依赖：iron-056（不是硬依赖，但先做 056 可减少受影响的源码）　状态：完成
 - 设计依据：[11 §2](../designs/11-portability.md) D6、§3；[11 §1](../designs/11-portability.md) D5 的 `(target-host-type)`
 
 ## 目标
@@ -23,3 +23,10 @@
 - 编译整个种子得到的 `.lcil` 与改动前逐字相同（快照测试），boot 镜像字节相同；自举不动点不变。
 - `grep -rn "clr-" src/scheme/lib/ironscheme/compiler` 只剩 parse-core 中从 `clr-*-internal` 到 `host-*` 的映射。
 - `(compile-file … 'target 'clr)` 可用；给未知目标报清楚的错误。
+
+## 结论
+- L0 ~ L3 的互操作节点改名为 `host-call` `host-field-get` `host-field-set` `host-new` `host-new-array` `host-cast` `host-is` `host-typeof` `host-using` `host-reference` `host-namespaces`（`languages.sls`、`parse.sls`、`front.sls`、`closures.sls`、`async.sls`）；`parse.sls` 仍接受 `clr-*-internal` 形式，是编译器里唯一出现 `clr-` 的地方。
+- 新文件 `compiler/targets.sls`：`target` 记录（名字、`tail-calls?`、运行时程序集、类型名表、host-* 节点 → 发射器指令名表），`(target-of 'clr)`；未知目标报 "unknown compilation target (known: clr)"。codegen 用参数 `current-target` 与一组标识符宏（`obj`、`proc-type`、`int32-type` …）查表，写死的 21 个类型名与 `tail.` 判断全部改为查表；互操作节点发出的 Lcil 指令名也查表（`clr` 表项就是 `clr-call` 等）。常量编码（`constants.sls`）对宿主对象的检查改为 `$` 原语（`$record?`、`$rcd-rtd`、`$string-mutable?`、`$eq-hashtable?`、`$plain-string?` 等，`HostPrimitives.cs`）。
+- 驱动：`(ironscheme compiler)` 导出参数 `current-compile-target`（缺省 `clr`；设置时经 `target-of` 校验并同步给运行时的 `RuntimeOptions.CompileTarget`）；`compile-forms->lcil*` 据此 parameterize codegen 的 `current-target`。新原语 `target-host-type`（`(ironscheme)`，11 D5）返回它，未设置时同 `host-type`；`compile-file` 接受 `'target 目标` 选项（展开器经符号值取得参数，不导入编译器库）。
+- 编译器库也由运行中系统从源码加载（同展开器文件），用新原语前先重新生成了种子。
+- 验收：`snapshots.sps` 的 5 个 `.lcil` 快照逐字不变（`.l0/.l2/.l3/.la` 因节点改名重新生成）；同一份种子由改动前的编译器（参考 boot 镜像里内置的，经 `compile-bootfile`）与改动后的编译器编译，得到的 `seed.dll` 逐字节相同（boot 镜像本身因为含编译器的记录定义，节点改名后文本自然不同）；快速类别 59 项、Core.Tests 254 项与整套 `IronScheme.Tests` 84 项（含自举不动点）通过。

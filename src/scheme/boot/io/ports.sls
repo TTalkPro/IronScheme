@@ -121,7 +121,6 @@ See docs/license.txt. |#
     annotation-source
     annotation-stripped)  
   (import 
-    (ironscheme clr)
     (ironscheme contracts)
     (ironscheme unsafe)
     (only (ironscheme reader) read-annotated)
@@ -203,13 +202,18 @@ See docs/license.txt. |#
       standard-input-port
       standard-output-port))
   
-  (clr-using System)
-  (clr-using System.IO)
-  (clr-using System.Text)
-  (clr-using IronScheme.Core)
-  
+  ;; 宿主操作全部经 $port-* 原语（IronScheme.Core.PortPrimitives，iron-056）：端口对象是 .NET 的 Stream / TextReader /
+  ;; TextWriter，文本双向端口是 CustomTextReaderWriter；原语对双向端口自动取输入端或输出端。
+  ;; 宿主抛出的异常用 with-clr-exception-handler 接住，转成 &i/o-port 条件。
+  (define-syntax host-guard
+    (syntax-rules ()
+      [(_ (var handler) b b* ...)
+       (with-clr-exception-handler
+         (lambda (var) handler)
+         (lambda () b b* ...))]))
+
   (define (codec? obj)
-    (clr-is Encoding obj))
+    ($codec? obj))
     
   (define (textual-input-port? obj)
     (and (input-port? obj)
@@ -220,28 +224,16 @@ See docs/license.txt. |#
          (textual-port? obj)))                        
     
   (define (latin-1-codec) 
-    (clr-static-call Encoding (GetEncoding String) "iso-8859-1"))
+    ($latin-1-codec))
     
   (define (utf-8-codec) 
-    (clr-new UTF8Encoding #f))
+    ($utf-8-codec))
     
   (define (utf-16-codec) 
-    (clr-new UnicodeEncoding #t #f))
+    ($utf-16-codec))
   
-  (define (get-newline sym current)
-    (case sym
-      [(none)   current]
-      [(lf)     "\n"]
-      [(cr)     "r"]
-      [(crlf)   "\r\n"]
-      [(nel)    "\x0085;"]
-      [(crnel)  "\r\x0085;"]
-      [(ls)     "\x2028;"]
-      [else
-        (assertion-violation 'transcode-port "not a valid eof symbol" sym)]))
-        
   (define (transcoder? obj)
-    (clr-is Transcoder obj))
+    ($transcoder? obj))
     
   (define/contract make-transcoder
     (case-lambda
@@ -250,25 +242,19 @@ See docs/license.txt. |#
       [(codec eol)
         (make-transcoder codec eol 'replace)]
       [(codec:codec eol:symbol handling-mode:symbol)
-        (clr-new Transcoder
-                 codec
-                 eol
-                 handling-mode)]))
+        ($make-transcoder codec eol handling-mode)]))
                      
   (define (native-transcoder)
-    (clr-static-field-get Transcoder native))                     
+    ($native-transcoder))
 
   (define/contract (transcoder-codec tc:transcoder)
-    (clr-field-get Transcoder codec tc))
+    ($transcoder-codec tc))
 
   (define/contract (transcoder-eol-style tc:transcoder)
-    (clr-field-get Transcoder eolstyle tc))
+    ($transcoder-eol-style tc))
 
   (define/contract (transcoder-error-handling-mode tc:transcoder)
-    (clr-field-get Transcoder handlingmode tc))
-    
-  (define (string-replace str old new)
-    (clr-call String (Replace String String) str old new))
+    ($transcoder-error-handling-mode tc))
     
   (define (has-preamble? bv)
     (let ((b0 ($bytevector-ref bv 0))
@@ -277,46 +263,28 @@ See docs/license.txt. |#
             ($and? ($fx=? b0 #xfe) ($fx=? b1 #xff)))))
 
   (define/contract (port-transcoder port:port) 
-    (cond
-      [(clr-is TranscodedReader port)
-        (clr-prop-get TranscodedReader Transcoder port)]
-      [(clr-is NonBufferedTranscodedReader port)
-        (clr-prop-get NonBufferedTranscodedReader Transcoder port)]
-      [(clr-is TranscodedWriter port)
-        (clr-prop-get TranscodedWriter Transcoder port)]
-      [(clr-is CustomTextReaderWriter port)
-        (or (port-transcoder (get-output-port port))
-            (port-transcoder (get-input-port port)))]
-      [else #f]))
+    ($port-transcoder port))
   
   (define (textual-port? obj)
-    (or (clr-is TextReader obj)
-        (clr-is TextWriter obj)
-        (clr-is CustomTextReaderWriter obj)))
+    ($textual-port? obj))
         
   (define (binary-port? obj)
-    (clr-is Stream obj))
+    ($binary-port? obj))
     
   (define (binary-input-port? obj)
-    (and (clr-is Stream obj)
-         (clr-prop-get Stream CanRead obj)))    
+    ($binary-input-port? obj))
          
   (define (binary-output-port? obj)
-    (and (clr-is Stream obj)
-         (clr-prop-get Stream CanWrite obj)))    
+    ($binary-output-port? obj))
     
   (define (input-port? obj)
-    (or (binary-input-port? obj)
-        (clr-is TextReader obj)
-        (clr-is CustomTextReaderWriter obj)))
+    ($input-port? obj))
         
   (define (output-port? obj)
-    (or (binary-output-port? obj)
-        (clr-is TextWriter obj)
-        (clr-is CustomTextReaderWriter obj)))
+    ($output-port? obj))
   
   (define current-input-port 
-    (make-parameter (clr-static-prop-get Console In) 
+    (make-parameter ($console-input-port) 
                     (lambda (x) 
                       (unless (and (textual-port? x)
                                    (input-port? x))
@@ -326,7 +294,7 @@ See docs/license.txt. |#
                       x)))
 
   (define current-output-port 
-    (make-parameter (clr-static-prop-get Console Out) 
+    (make-parameter ($console-output-port) 
                     (lambda (x) 
                       (unless (and (textual-port? x)
                                    (output-port? x))
@@ -336,7 +304,7 @@ See docs/license.txt. |#
                       x)))
                       
   (define current-error-port 
-    (make-parameter (clr-static-prop-get Console Error) 
+    (make-parameter ($console-error-port) 
                     (lambda (x) 
                       (unless (and (textual-port? x)
                                    (output-port? x))
@@ -346,71 +314,51 @@ See docs/license.txt. |#
                       x)))
    
   (define (standard-error-port)
-    (clr-static-call Console OpenStandardError))
+    ($standard-error-port))
     
   (define (standard-input-port)
-    (clr-static-call Console OpenStandardInput))
+    ($standard-input-port))
 
   (define (standard-output-port)
-    (clr-static-call Console OpenStandardOutput))
+    ($standard-output-port))
   
   (define/contract (open-input-file filename:string)
     (unless (file-exists? filename)
       (file-not-found 'open-file-input-port filename))
-    (clr-guard (e 
-      [e (assertion-violation 'open-input-file "oops" filename)])
-        (clr-static-call File OpenText (->string filename))))
+    (host-guard (e (assertion-violation 'open-input-file "oops" filename))
+      ($open-input-file filename)))
 
   (define/contract open-output-file 
     (case-lambda
       [(filename)
         (open-output-file filename #f)]
       [(filename:string append?:boolean)
-        (clr-guard (e 
-          [e (assertion-violation 'open-output-file "oops" filename)])
-            (if append?
-                (clr-static-call File AppendText (->string filename))
-                (clr-static-call File CreateText (->string filename))))]))
+        (host-guard (e (assertion-violation 'open-output-file "oops" filename))
+          ($open-output-file filename append?))]))
   
   (define (get-input-port port)
-    (clr-field-get CustomTextReaderWriter input port))
+    ($custom-port-input port))
     
   (define (get-output-port port)
-    (clr-field-get CustomTextReaderWriter output port))
+    ($custom-port-output port))
     
   (define (close-input-port port)
-    (cond
-      [(clr-is Stream port) 
-        (clr-call Stream Close port)]
-      [(clr-is TextReader port)
-        (clr-call TextReader Close port)]
-      [(clr-is CustomTextReaderWriter port)
-        (close-input-port (get-input-port port))]
-      [else
-        (assertion-violation 'close-input-port "not an input-port" port)]))
+    ($port-close-input port))
         
   (define (close-output-port port)
-    (cond
-      [(clr-is Stream port) 
-        (clr-call Stream Close port)]
-      [(clr-is TextWriter port)
-        (clr-call TextWriter Close port)]
-      [(clr-is CustomTextReaderWriter port)
-        (close-output-port (get-output-port port))]
-      [else
-        (assertion-violation 'close-output-port "not an output-port" port)]))  
+    ($port-close-output port))
         
   (define (annotation? obj)
-    (clr-is Annotation obj))
+    ($annotation? obj))
     
   (define/contract (annotation-expression anno:annotation)
-    (clr-field-get Annotation expression anno))
+    ($annotation-expression anno))
 
   (define/contract (annotation-source anno:annotation)
-    (clr-field-get Annotation source anno))
+    ($annotation-source anno))
 
   (define/contract (annotation-stripped anno:annotation)
-    (clr-field-get Annotation stripped anno))
+    ($annotation-stripped anno))
     
   (define/contract read    
     (case-lambda
@@ -423,95 +371,19 @@ See docs/license.txt. |#
               r))]))
               
   (define/contract (transcoded-port port:binary-port tc:transcoder)
-    (let ((r? (clr-prop-get Stream CanRead port))
-          (w? (clr-prop-get Stream CanWrite port)))
-      (if r?
-          (if w?
-              (clr-new CustomTextReaderWriter 
-                       "textual/input-output-port"
-                       (clr-new NonBufferedTranscodedReader port tc)
-                       (clr-new TranscodedWriter port tc))
-              (clr-new TranscodedReader port tc))
-          (clr-new TranscodedWriter port tc))))
+    ($transcoded-port port tc))
           
   (define (port-has-port-position? port)
-    (cond
-      [(clr-is CustomTextWriter port)
-        (clr-prop-get CustomTextWriter HasPosition port)]
-      [(clr-is CustomTextReader port)
-        (clr-prop-get CustomTextReader HasPosition port)]
-      [(clr-is CustomStream port)
-        (clr-prop-get CustomStream HasPosition port)]
-      [(clr-is Stream port)   #t]
-      [(clr-is CustomTextReaderWriter port)
-        (port-has-port-position? (get-input-port port))]
-      [(clr-is TextWriter port) #f]
-	    [(clr-is TextReader port) #f]
-      [else
-        (assertion-violation 'port-has-port-position? "not a port" port)]))
-        
-  (define-syntax long->fixnum
-    (syntax-rules ()
-      [(_ n)
-        (clr-static-call Convert (ToInt32 Int64) n)]))
+    ($port-has-position? port))
         
   (define (port-position port)
-    (cond
-      [(clr-is CustomTextReader port)
-        (if (clr-prop-get CustomTextReader HasPosition port)
-            (clr-prop-get CustomTextReader Position port)
-            (assertion-violation 'port-position "not supplied to custom port" port))]
-      [(clr-is CustomTextWriter port)
-        (if (clr-prop-get CustomTextWriter HasPosition port)
-            (clr-prop-get CustomTextWriter Position port)
-            (assertion-violation 'port-position "not supplied to custom port" port))]
-      [(clr-is CustomStream port)
-        (if (clr-prop-get CustomStream HasPosition port)
-            (long->fixnum (clr-prop-get Stream Position port))
-            (assertion-violation 'port-position "not supplied to custom port" port))]
-      [(clr-is Stream port)
-        (long->fixnum (clr-prop-get Stream Position port))]
-      [(clr-is CustomTextReaderWriter port)
-        (port-position (get-input-port port))]
-      [else
-        (assertion-violation 'port-position "not supported" port)]))
+    ($port-position port))
 
   (define (port-has-set-port-position!? port)
-    (cond
-      [(clr-is CustomTextWriter port)
-        (clr-prop-get CustomTextWriter HasSetPosition port)]
-      [(clr-is CustomTextReader port)
-        (clr-prop-get CustomTextReader HasSetPosition port)]
-      [(clr-is Stream port)
-        (clr-prop-get Stream CanSeek port)]
-      [(clr-is CustomTextReaderWriter port)
-        (port-has-set-port-position!? (get-input-port port))]
-      [(clr-is TextWriter port) #f]
-	  [(clr-is TextReader port) #f]
-      [else
-        (assertion-violation 'port-has-set-port-position!? "not a port" port)]))
+    ($port-has-set-position? port))
 
-  (define-syntax fixnum->long
-    (syntax-rules ()
-      [(_ n)
-        (clr-static-call Convert (ToInt64 Int32) n)]))
-        
   (define/contract (set-port-position! port pos:fixnum)        
-    (cond
-      [(clr-is CustomTextWriter port)
-        (if (clr-prop-get CustomTextWriter HasSetPosition port)
-            (clr-prop-set! CustomTextWriter Position port pos)
-            (assertion-violation 'set-port-position! "not supplied to custom port" port))]
-      [(clr-is CustomTextReader port)
-        (if (clr-prop-get CustomTextReader HasSetPosition port)
-            (clr-prop-set! CustomTextReader Position port pos)
-            (assertion-violation 'set-port-position! "not supplied to custom port" port))]
-      [(clr-is Stream port)
-        (clr-prop-set! Stream Position port (fixnum->long pos))]
-      [(clr-is CustomTextReaderWriter port)
-        (set-port-position! (get-input-port port) pos)]
-      [else
-        (assertion-violation 'set-port-position! "not supported" port)]))
+    ($port-set-position! port pos))
         
   (define (close-port port)
     (when (input-port? port)
@@ -522,12 +394,10 @@ See docs/license.txt. |#
   (define/contract (port-eof? port:input-port)
     (eof-object?
       (cond
-        [(clr-is Stream port)
+        [(binary-port? port)
           (lookahead-u8 port)]
-        [(clr-is TextReader port)
+        [(textual-port? port)
           (lookahead-char port)]
-        [(clr-is CustomTextReaderWriter port)
-          (port-eof? (get-input-port port))]
         [else
           (assertion-violation 'port-eof? "not supported" port)])))
           
@@ -548,28 +418,24 @@ See docs/license.txt. |#
       [(filename:string options buffer-mode:buffer-mode tc)
         (unless (file-exists? filename)
           (file-not-found 'open-file-input-port filename))
-        (clr-guard (e 
-          [e (assertion-violation 'open-file-input-port "oops" filename)])
-            (let ((s (clr-static-call File OpenRead (->string filename))))
-              (let ((s (if (eq? buffer-mode 'block)
-                           (clr-new BufferedStream s)
-                           s)))
-                  (if tc
-                      (transcoded-port s tc)
-                      s))))]))
+        (host-guard (e (assertion-violation 'open-file-input-port "oops" filename))
+          (let ((s ($open-file-input-port filename (eq? buffer-mode 'block))))
+            (if tc
+                (transcoded-port s tc)
+                s)))]))
 
   (define/contract open-bytevector-input-port
     (case-lambda
       [(bv)
         (open-bytevector-input-port bv #f)]
       [(bv:bytevector tc)
-        (let ((s (clr-new MemoryStream bv #f)))
+        (let ((s ($open-bytevector-input-port bv)))
           (if tc
               (transcoded-port s tc)
               s))]))
 
   (define/contract (open-string-input-port str:string)
-    (clr-new StringReader (->string str)))
+    ($open-string-input-port str))
     
   (define (proc/false? obj)
     (or (eq? obj #f)
@@ -581,7 +447,7 @@ See docs/license.txt. |#
                                      get-pos:proc/false 
                                      set-pos:proc/false 
                                      close:proc/false)
-    (clr-new CustomBinaryInputStream id read get-pos set-pos close))
+    ($make-custom-binary-input-port id read get-pos set-pos close))
                     
   (define/contract 
       (make-custom-textual-input-port id:string 
@@ -589,7 +455,7 @@ See docs/license.txt. |#
                                       get-pos:proc/false 
                                       set-pos:proc/false 
                                       close:proc/false)
-    (clr-new CustomTextReader id read get-pos set-pos close))
+    ($make-custom-textual-input-port id read get-pos set-pos close))
     
   (define (io-port-error who port)    
     (raise-continuable
@@ -598,16 +464,16 @@ See docs/license.txt. |#
         (make-who-condition who))))
     
   (define/contract (get-u8 port:binary-input-port)
-    (clr-guard (e [e (io-port-error 'get-u8 port)])
-      (let ((c (clr-call Stream ReadByte port)))
+    (host-guard (e (io-port-error 'get-u8 port))
+      (let ((c ($port-read-byte port)))
         (if (fx=? c -1) 
             (eof-object)
             c))))
       
   (define/contract (lookahead-u8 port:binary-input-port)
-    (clr-guard (e [e (io-port-error 'lookahead-u8 port)])  
+    (host-guard (e (io-port-error 'lookahead-u8 port))
       (if (port-has-set-port-position!? port)
-          (let ((c (clr-call Stream ReadByte port)))
+          (let ((c ($port-read-byte port)))
             (if (fx=? c -1) 
                 (eof-object)
                 (begin 
@@ -618,15 +484,13 @@ See docs/license.txt. |#
   (define-syntax read-buffer
     (syntax-rules ()
       [(_ port buffer start length)
-        (clr-call Stream Read port buffer start length)])) 
+        ($port-read-bytes port buffer start length)])) 
         
   (define (trim-buffer bv k)
-    (let ((nb (make-bytevector k)))
-      (clr-static-call Array (Copy Array Array Int32) bv nb k)
-      nb))
+    ($bytevector-truncate bv k))
       
   (define/contract (get-bytevector-n port:binary-input-port count:fixnum)
-    (clr-guard (e [e (io-port-error 'get-bytevector-n port)])
+    (host-guard (e (io-port-error 'get-bytevector-n port))
       (let* ((buffer (make-bytevector count))
              (r (read-buffer port buffer 0 count)))
         (if (and ($fxzero? r) (not ($fxzero? count)))
@@ -647,7 +511,7 @@ See docs/license.txt. |#
                       buffer)))))))
                       
   (define/contract (get-bytevector-n! port:binary-input-port bv:bytevector start:fixnum count:fixnum)
-    (clr-guard (e [e (io-port-error 'get-bytevector-n! port)])
+    (host-guard (e (io-port-error 'get-bytevector-n! port))
       (let* ((r (read-buffer port bv start count)))
         (if (and ($fxzero? r) (not ($fxzero? count)))
             (eof-object)
@@ -662,9 +526,9 @@ See docs/license.txt. |#
                         (f ($fx+ rr r))))))))))
                         
   (define/contract (get-bytevector-some port:binary-input-port)
-    (clr-guard (e [e (io-port-error 'get-bytevector-some port)])
+    (host-guard (e (io-port-error 'get-bytevector-some port))
       (let f ((a '()))
-        (let ((c (clr-call Stream ReadByte port)))
+        (let ((c ($port-read-byte port)))
           (if ($fx=? c -1)
               (if (null? a)
                   (eof-object)
@@ -672,9 +536,9 @@ See docs/license.txt. |#
               (f (cons c a)))))))
         
   (define/contract (get-bytevector-all port:binary-input-port)
-    (clr-guard (e [e (io-port-error 'get-bytevector-all port)])
+    (host-guard (e (io-port-error 'get-bytevector-all port))
       (let f ((a '()))
-        (let ((c (clr-call Stream ReadByte port)))
+        (let ((c ($port-read-byte port)))
           (if ($fx=? c -1)
               (if (null? a)
                   (eof-object)
@@ -682,24 +546,18 @@ See docs/license.txt. |#
               (f (cons c a)))))))
               
   (define/contract (get-char port:textual-input-port)
-    (if (clr-is CustomTextReaderWriter port)
-        (get-char (get-input-port port))
-        (clr-guard (e [e (io-port-error 'get-char port)])
-          ;; 按码点：代理对组合为一个字符（iron-055，原来读到代理码元时 integer->char 报错）
-          (clr-static-call TextPorts ReadChar port))))
+    (host-guard (e (io-port-error 'get-char port))
+      ;; 按码点：代理对组合为一个字符（iron-055，原来读到代理码元时 integer->char 报错）
+      ($port-read-char port)))
 
   (define/contract (lookahead-char port:textual-input-port)
-    (if (clr-is CustomTextReaderWriter port)
-        (lookahead-char (get-input-port port))
-        (clr-guard (e [e (io-port-error 'lookahead-char port)])
-          (clr-static-call TextPorts PeekChar port))))
+    (host-guard (e (io-port-error 'lookahead-char port))
+      ($port-peek-char port)))
 
   (define/contract (get-string-n port:textual-input-port count:fixnum)
-    (if (clr-is CustomTextReaderWriter port)
-        (get-string-n (get-input-port port) count)  
-        (clr-guard (e [e (io-port-error 'get-string-n port)])
-          ;; count 按字符（码点）计
-          (clr-static-call TextPorts ReadString port count))))
+    (host-guard (e (io-port-error 'get-string-n port))
+      ;; count 按字符（码点）计
+      ($port-read-string port count)))
 
   (define/contract (get-string-n! port:textual-input-port str:string start:fixnum count:fixnum)
     (let* ((ss (get-string-n port count))
@@ -711,33 +569,19 @@ See docs/license.txt. |#
                      (string-ref ss i)))))
                      
   (define/contract (get-string-all port:textual-input-port)
-    (if (clr-is CustomTextReaderWriter port)
-        (get-string-all (get-input-port port))  
-        (clr-guard (e 
-            [e (io-port-error 'get-string-all port)])
-          ;; R6RS：没有字符时为文件尾对象（iron-055；原来返回空串）
-          (clr-static-call TextPorts ReadAll port))))
+    (host-guard (e (io-port-error 'get-string-all port))
+      ;; R6RS：没有字符时为文件尾对象（iron-055；原来返回空串）
+      ($port-read-all port)))
 
   (define/contract (get-line port:textual-input-port)
-    (if (clr-is CustomTextReaderWriter port)
-        (get-line (get-input-port port))  
-        (clr-guard (e 
-            [e (io-port-error 'get-line port)])
-          (clr-static-call TextPorts ReadLine port))))
+    (host-guard (e (io-port-error 'get-line port))
+      ($port-read-line port)))
                 
   (define (flush-output-port port)
-    (cond
-      [(clr-is Stream port)
-        (clr-call Stream Flush port)]
-      [(clr-is TextWriter port)
-        (clr-call TextWriter Flush port)]
-      [(clr-is CustomTextReaderWriter port)
-        (flush-output-port (get-output-port port))]
-      [else
-        (assertion-violation 'flush-output-port "not an output port" port)]))
+    ($port-flush port))
         
   (define/contract (output-port-buffer-mode port:output-port)
-    (if (clr-is BufferedStream port)
+    (if ($buffered-port? port)
         'block
         'line)) 
     
@@ -746,12 +590,9 @@ See docs/license.txt. |#
       [()
         (open-bytevector-output-port #f)]
       [(tc)
-        (let ((s (clr-new WriteOnlyMemoryStream)))
+        (let ((s ($open-bytevector-output-port)))
           (values (if tc (transcoded-port s tc) s)
-                  (lambda ()
-                    (let ((r (clr-call MemoryStream ToArray s)))
-                      (clr-call MemoryStream SetLength s (clr-static-call Convert (ToInt64 Int32) 0))
-                      r))))]))   
+                  (lambda () ($bytevector-output-port-extract s))))]))   
                       
   (define/contract call-with-bytevector-output-port
     (case-lambda
@@ -768,7 +609,7 @@ See docs/license.txt. |#
                                       get-pos:proc/false 
                                       set-pos:proc/false 
                                       close:proc/false)
-    (clr-new CustomBinaryOutputStream id write get-pos set-pos close))
+    ($make-custom-binary-output-port id write get-pos set-pos close))
                     
   (define/contract 
       (make-custom-textual-output-port id:string 
@@ -776,20 +617,11 @@ See docs/license.txt. |#
                                        get-pos:proc/false 
                                        set-pos:proc/false 
                                        close:proc/false)
-    (clr-new CustomTextWriter id write get-pos set-pos close))          
-    
-
-  (define (->byte k)
-    (unless (fixnum? k)
-      (assertion-violation #f "not a fixnum" k))
-    (when ($or? ($fx<? k 0) ($fx>? k 255))
-      (assertion-violation #f "too big or small for byte" k))
-    (clr-cast Byte (clr-cast Int32 k)))
+    ($make-custom-textual-output-port id write get-pos set-pos close))          
 
   (define/contract (put-u8 port:binary-output-port byte:fixnum)
-    (let ((byte (->byte byte)))
-      (clr-guard (e [e (io-port-error 'put-u8 port)])
-        (clr-call Stream WriteByte port byte))))
+    (host-guard (e (io-port-error 'put-u8 port))
+      ($port-write-byte port byte)))
             
   (define/contract put-bytevector 
     (case-lambda
@@ -798,20 +630,10 @@ See docs/license.txt. |#
       [(port bv start)
         (put-bytevector port bv start (fx- (bytevector-length bv) start))]
       [(port:binary-output-port bv:bytevector start:fixnum count:fixnum)
-        (clr-call Stream Write port bv start count)]))
+        ($port-write-bytes port bv start count)]))
 
   (define/contract (put-char port:textual-output-port chr:char)
-    (if (clr-is CustomTextReaderWriter port)
-        (put-char (get-output-port port) chr)  
-        (clr-call TextWriter (Write String) port (clr-call Object ToString chr))))
-        
-  (define (->string str)
-    (cond
-      [(clr-is String str) str]
-      [(string? str)            ; SchemeString（iron-055）：UTF-16 形式
-        (clr-call Object ToString str)]
-      [else
-        (assertion-violation '->string "not a string")]))        
+    ($port-write-char port chr))
         
   (define/contract put-string 
     (case-lambda
@@ -820,13 +642,8 @@ See docs/license.txt. |#
       [(port str start)
         (put-string port str start (fx- (string-length str) start))]
       [(port:textual-output-port str:string start:fixnum count:fixnum)
-        (if (clr-is CustomTextReaderWriter port)
-            (put-string (get-output-port port) str start count)  
-            ;; start、count 按码点（iron-055）：先按码点取子串，再交给 .NET
-            (clr-call TextWriter 
-                      (Write String)
-                      port 
-                      (->string (substring str start (fx+ start count)))))]))
+        ;; start、count 按码点（iron-055）：先按码点取子串，再交给宿主
+        ($port-write-string port (substring str start (fx+ start count)))]))
 
   (define/contract 
       (make-custom-binary-input/output-port id:string 
@@ -835,7 +652,7 @@ See docs/license.txt. |#
                                             get-pos:proc/false 
                                             set-pos:proc/false 
                                             close:proc/false)
-    (clr-new CustomBinaryInputOutputStream id read write get-pos set-pos close))
+    ($make-custom-binary-input/output-port id read write get-pos set-pos close))
                     
   (define/contract 
       (make-custom-textual-input/output-port id:string 
@@ -844,13 +661,11 @@ See docs/license.txt. |#
                                              get-pos:proc/false 
                                              set-pos:proc/false 
                                              close:proc/false)
-    (clr-new CustomTextReaderWriter id 
-      (clr-new CustomTextReader id read get-pos set-pos close)
-      (clr-new CustomTextWriter id write get-pos set-pos close)))
+    ($make-custom-textual-input/output-port id read write get-pos set-pos close))
            
   ;; 原生行尾：Windows 为 crlf，其他平台为 lf（iron-054；原来总是 crlf，Linux 上的原生转码器端口因此写出 \r\n）
   (define (native-eol-style)
-    (if (clr-static-call OperatingSystem IsWindows) 'crlf 'lf))
+    ($native-eol-style))
   
   (define (buffer-mode? obj)
     (and (symbol? obj) 
@@ -864,10 +679,10 @@ See docs/license.txt. |#
     (read port))
     
   (define (get-output-string port)
-    (clr-call IronScheme.Core.StringWriter GetBuffer port))
+    ($get-output-string port))
     
   (define (open-output-string)
-    (clr-new IronScheme.Core.StringWriter))
+    ($open-output-string))
   
   (define (open-string-output-port)
     (let ((p (open-output-string)))

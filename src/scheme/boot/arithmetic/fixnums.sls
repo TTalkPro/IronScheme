@@ -58,7 +58,6 @@ See docs/license.txt. |#
     fxsub1)
   (import 
     (ironscheme core)
-    (ironscheme clr)
     (ironscheme typed)
     (ironscheme unsafe)
     (ironscheme integrable)
@@ -167,7 +166,7 @@ See docs/license.txt. |#
 
   (define-syntax fxabs
     (syntax-rules ()
-      [(_ e) (clr-static-call Math (Abs Int32) e)]))
+      [(_ e) ($fxabs e)]))
       
   (define-fx (fxadd1 x)
     ($fx+ x 1))      

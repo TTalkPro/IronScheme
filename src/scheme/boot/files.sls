@@ -16,37 +16,27 @@ See docs/license.txt. |#
     (except (rnrs) file-exists? delete-file)
     (only (ironscheme) typed-lambda)
     (ironscheme contracts)
-    (ironscheme clr))
+    (ironscheme unsafe))
     
-  (clr-using System.IO)
-  (clr-using Oyster.Math)
-  (clr-using IronScheme.Core)
 
-  (define ->string
-    (typed-lambda (str)
-      ((Object) String)    
-      (if (clr-is String str)
-          str
-          (clr-call Object ToString str))))   
-    
+  ;; 文件系统经 $ 原语（IronScheme.Core.HostPrimitives，iron-056）
   (define/contract (file-exists? fn:string)
-    (clr-static-call File Exists (->string fn)))
+    ($file-exists? fn))
     
   (define/contract (delete-file fn:string)
-    (clr-static-call File Delete (->string fn)))
+    ($delete-file fn))
     
   (define/contract (get-directory-name path)
-    (clr-static-call Path GetDirectoryName (->string path)))   
+    ($path-directory-name path))   
     
   (define (get-last-write-time filename)
-    (clr-static-call File GetLastWriteTime (->string filename)))
+    ($file-last-write-time filename))
     
   (define (file-mtime filename)
-    (let ((dt (clr-static-call File (GetLastWriteTime String) filename)))
-      (clr-static-call IntX (Create Int64) (clr-prop-get DateTime Ticks dt))))
+    ($file-mtime filename))
     
   (define (compare-time t1 t2)
-    (clr-call IComparable CompareTo t1 t2))    
+    ($compare-time t1 t2))    
     
   (define/contract (file-newer? file1:string file2:string)
     (let ((r (compare-time (get-last-write-time file1)

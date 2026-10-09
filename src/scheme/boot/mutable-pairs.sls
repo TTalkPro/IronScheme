@@ -11,12 +11,11 @@ See docs/license.txt. |#
   (import 
     (rnrs)
     (ironscheme contracts)
-    (ironscheme clr))
+    (ironscheme unsafe))
 
-  (clr-using IronScheme.Core)
     
   (define/contract (set-car! lst:pair val)
-    (clr-field-set! Cons car lst val))      
+    ($set-car! lst val))      
     
   (define/contract (set-cdr! lst:pair val)
-    (clr-field-set! Cons cdr lst val)))
+    ($set-cdr! lst val)))

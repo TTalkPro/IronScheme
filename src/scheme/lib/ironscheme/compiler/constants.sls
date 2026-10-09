@@ -17,30 +17,28 @@ See docs/license.txt. |#
     (rnrs)
     (rnrs mutable-strings)
     (only (ironscheme) unspecified?)
-    (ironscheme clr))
+    (only (ironscheme unsafe)
+          $compound-condition? $record? $record-rtd $record-fields $rtd? $rcd? $rcd-rtd $rcd-parent $rcd-protocol
+          $annotation? $annotation-expression $annotation-source $annotation-stripped
+          $string-mutable? $eq-hashtable? $string->immutable $plain-string?))
 
+  ;; 常量是编译器自己宿主里的对象，检查它们经 $ 原语（iron-057；原来是 clr-is / clr-field-get）
   ;; 复合条件也是 Record 的子类，但没有记录类型；单独编码为 (cnd 简单条件 …)
-  (define (compound-condition? x) (clr-is IronScheme.Core.CompoundCondition x))
-  (define (record-object? x) (and (clr-is IronScheme.Core.Record x) (not (compound-condition? x))))
-  (define (record-object-rtd x) (clr-field-get IronScheme.Core.Record Rtd x))
-  (define (record-object-fields x) (clr-field-get IronScheme.Core.Record Fields x))
-  (define (rtd? x) (clr-is IronScheme.Core.RecordTypeDescriptor x))
+  (define (compound-condition? x) ($compound-condition? x))
+  (define (record-object? x) ($record? x))
+  (define (record-object-rtd x) ($record-rtd x))
+  (define (record-object-fields x) ($record-fields x))
+  (define (rtd? x) ($rtd? x))
   ;; 记录构造描述符：只支持没有 protocol 的（nanopass 生成的代码把展开时创建的 RCD 作为常量）
-  (define (rcd? x) (clr-is IronScheme.Core.RecordConstructorDescriptor x))
-  (define (rcd-type x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor type x))
-  (define (rcd-parent x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor parent x))
-  (define (rcd-protocol x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor protocol x))
-  (define (annotation? x) (clr-is IronScheme.Core.Annotation x))
+  (define (rcd? x) ($rcd? x))
+  (define (rcd-type x) ($rcd-rtd x))
+  (define (rcd-parent x) ($rcd-parent x))
+  (define (rcd-protocol x) ($rcd-protocol x))
+  (define (annotation? x) ($annotation? x))
   ;; 可变串：SchemeString 的可变串（iron-055），或旧运行时的 StringBuilder（用旧种子构建 boot 时）
-  (define (mutable-string? x)
-    (or (clr-is System.Text.StringBuilder x)
-        (and (clr-is IronScheme.Core.SchemeString x)
-             (clr-field-get IronScheme.Core.SchemeString IsMutable x))))
+  (define (mutable-string? x) ($string-mutable? x))
   ;; 只支持 eq 哈希表（make-eq-hashtable 得到的类型恰为 Hashtable）；展开器的 rib 用它做索引
-  (define (eq-hashtable? x)
-    (and (hashtable? x)
-         (string=? (clr-prop-get System.Type FullName (clr-call System.Object GetType x))
-                   "System.Collections.Hashtable")))
+  (define (eq-hashtable? x) ($eq-hashtable? x))
 
   ;; 有 eq? 身份、可能被共享的对象
   (define (shareable? x)
@@ -87,9 +85,9 @@ See docs/license.txt. |#
               ((eq-hashtable? x)
                (for-each (lambda (e) (loop (car e)) (loop (cdr e))) (sorted-entries x)))))))))
 
-  (define (annotation-expression* x) (clr-field-get IronScheme.Core.Annotation expression x))
-  (define (annotation-source* x) (clr-field-get IronScheme.Core.Annotation source x))
-  (define (annotation-stripped* x) (clr-field-get IronScheme.Core.Annotation stripped x))
+  (define (annotation-expression* x) ($annotation-expression x))
+  (define (annotation-source* x) ($annotation-source x))
+  (define (annotation-stripped* x) ($annotation-stripped x))
 
   (define hex-digits "0123456789ABCDEF")
 
@@ -150,7 +148,7 @@ See docs/license.txt. |#
           ((eof-object? x) '(eof))
           ((number? x) (encode-number x))
           ((char? x) `(chr ,(char->integer x)))
-          ((mutable-string? x) `(mstr ,(clr-call Object ToString x)))
+          ((mutable-string? x) `(mstr ,($string->immutable x)))
           ((string? x) `(str ,x))
           ((symbol? x) `(sym ,(symbol->string x)))
           ((pair? x) (encode-list x))
@@ -216,7 +214,7 @@ See docs/license.txt. |#
 
   ;; 只含可打印 ASCII、且没有 " 与 \ 的字符串整段写出（绝大多数情况）
   (define (plain-string? s)
-    (clr-static-call System.Text.RegularExpressions.Regex (IsMatch String String) s "^[ !#-\\[\\]-~]*\\z"))
+    ($plain-string? s))
 
   (define (escaped-string s port hex)
     (let ((n (string-length s)))

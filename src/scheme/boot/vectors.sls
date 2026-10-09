@@ -10,11 +10,8 @@ See docs/license.txt. |#
     (rnrs)
     (only (ironscheme) void export)
     (ironscheme unsafe)
-    (ironscheme clr)
     (ironscheme typed)
     (ironscheme syntax utils))
-
-  (clr-using IronScheme.Core)
 
   (define-syntax define-vector-type
     (lambda (x)
@@ -40,7 +37,7 @@ See docs/license.txt. |#
                           (syntax-format "~a[]" #'type #'type))]
             #'(begin 
                 (define: (vector? obj -> bool)
-                  (clr-is type[] obj))
+                  ($typed-vector? 'type obj))
 
                 (define: (vector-ref (x : type[]) (n : int) -> type)
                   (when ($fx>? 0 n)
@@ -56,16 +53,16 @@ See docs/license.txt. |#
                 (define: (make-vector (k : int) -> type[])
                   (when ($fx>? 0 k)
                     (assertion-violation 'make-vector "cannot be negative" k))
-                  (clr-new-array type k))
+                  ($make-typed-vector 'type k))
 
                 (define: (vector-length (vec : type[]) -> int)
-                  (clr-prop-get Array Length vec))
+                  ($vector-length vec))
 
                 (define: (vector->list (vec : type[]) -> list)
-                  (clr-static-call Cons FromList vec))
+                  ($vector->list vec))
 
                 (define: (list->vector (lst : list) -> type[])
-                  (clr-static-call Builtins (ListToVector #(type)) lst))
+                  ($list->typed-vector 'type lst))
 
                 (define: (vector-fill! (vec : type[]) (val : type))
                   (let ((len (vector-length vec)))

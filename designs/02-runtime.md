@@ -90,6 +90,7 @@ public abstract class AsyncFrame : IAsyncStateMachine { … }   // async-lambda 
 - 启动时 `PrimitiveRegistry` 用反射找到所有原语，为每个原语创建一个包装 `Procedure`（用 `Delegate.CreateDelegate` 得到 `Func<…>`，不在运行时生成 IL），写进名字符号的值槽。
 - **原语表数据文件**：构建 `IronScheme.Core` 时，一个小工具 `IronScheme.PrimGen`（.NET 控制台程序）反射出全部原语，生成 `src/scheme/boot/primitives.ss`：每项包括名字、所在类型、方法名、参数个数、标志。编译器只读这个文件，不访问运行时（见 03 §4）。
 - 现有 `[Builtin]`（约 82 个）迁移为 `[Primitive]`；现有 56 个 `[InlineEmitter]` 改由编译器的内联 IL 模板实现（03 §6），C# 侧只保留对应的普通方法作为非内联时的后备。
+- **原语表是宿主契约**（iron-056，[11 §1](11-portability.md) D3）：`boot/` 与 `(ironscheme std …)` 不再直接写 `clr-*`，宿主功能全部经 `$` 原语（`Runtime/HostPrimitives.cs`、`R6RS/PortPrimitives.cs`、`Reader/Annotation.cs`：端口、字节向量、数、散列表、字符串与字符、记录描述符、文件与路径、线程与区域，共约 230 个）；宿主侦测 `host-type` / `host-version` / `machine-type` 也是原语。另一个宿主只要提供 `primitives.ss` 里的同名原语。
 
 ## 6. 异常、逃逸续延与钩子
 
@@ -121,6 +122,8 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
 - 错误报告通过钩子 `LexicalError`。
 
 ## 9. CLR 互操作运行时
+
+（编译器一侧自 iron-057 起不再知道 CLR：L0 ~ L3 的互操作节点是 `host-*`，codegen 按 `target` 查 `targets.sls` 得到这里的类型名与 Lcil 指令名，见 03 §7。）
 
 - 编译期能决议的成员调用由发射器直接生成 `call`/`callvirt`（04 §5）。
 - 决议不了的（参数类型只有运行时才知道、重载歧义）发射为对 `Interop.Call(type, name, instance, args)` 等运行时方法的调用：

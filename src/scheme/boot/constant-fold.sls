@@ -16,7 +16,6 @@ See docs/license.txt. |#
   (ironscheme constant-fold)
   (export constant-fold)
   (import
-    (ironscheme clr)
     (only (rnrs) define for-each)
     (only (rnrs) + - * / = < > <= >= negative? positive? zero? exp expt div mod div0 mod0 even? odd? 
                   log abs tan sin cos atan asin acos angle denominator)

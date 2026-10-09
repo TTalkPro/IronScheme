@@ -19,10 +19,11 @@ See docs/license.txt. |#
     compile-core compile-library-dll compile-bootfile
     front-end
     primitive-table-file
-    canonical-gensyms)
+    canonical-gensyms
+    current-compile-target)
   (import
     (rnrs)
-    (only (ironscheme) make-parameter)
+    (only (ironscheme) make-parameter parameterize)
     (ironscheme clr)
     (ironscheme compiler primitives)
     (ironscheme compiler parse)
@@ -31,9 +32,20 @@ See docs/license.txt. |#
     (ironscheme compiler front)
     (ironscheme compiler closures)
     (ironscheme compiler codegen)
-    (ironscheme compiler lcil))
+    (ironscheme compiler targets)
+    (ironscheme compiler lcil)
+    (only (ironscheme unsafe) $set-compile-target!))
 
   (clr-reference IronScheme.Emit)
+
+  ;; 编译目标（designs/11-portability.md §2 D6，iron-057）：符号，现在只有 clr；未知目标报错。
+  ;; 设置时同步给运行时（target-host-type 原语，展开期的 cond-expand 用它）
+  (define current-compile-target
+    (make-parameter 'clr
+      (lambda (t)
+        (let ((name (target-name (target-of t))))
+          ($set-compile-target! name)
+          name))))
 
   ;; 调试：设置环境变量 IRONSCHEME_DUMP_PASSES=前缀 时，把各阶段的中间语言写到 <前缀>.l0 / .la / .l1 / .l2 / .l3
   ;; （.la 是 lower-async 的输出，10 §3.2）
@@ -72,7 +84,8 @@ See docs/license.txt. |#
                             (vector-for-each (lambda (k) (hashtable-set! massigned k #t)) ks))
                           l3))
                       forms)))
-        (generate-unit l3s assembly-name module-name massigned live?))))
+        (parameterize ((current-target (target-of (current-compile-target))))
+          (generate-unit l3s assembly-name module-name massigned live?)))))
 
   (define (compile->lcil-text forms assembly-name module-name)
     (lcil->string (compile-forms->lcil forms assembly-name module-name)))

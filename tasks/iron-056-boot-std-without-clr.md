@@ -1,6 +1,6 @@
 # iron-056 boot 与 std 去 `clr-*`
 
-- 里程碑：后续　依赖：无（与 iron-050 ~ 053 独立）　状态：未开始
+- 里程碑：后续　依赖：无（与 iron-050 ~ 053 独立）　状态：完成
 - 设计依据：[11 §1](../designs/11-portability.md) D2、D3、D5
 
 ## 目标
@@ -19,3 +19,12 @@
 - `(host-type)` 返回 `clr`，`(machine-type)` 在本机返回 `clr-x86-64-linux` 这样的符号，`cond-expand` 的 `clr` 特性成立。
 - 全部测试通过；自举 stage1 / stage2 / stage3 字节相同；系统库编译与 ILVerify 通过。
 - 编译整个种子的统计输出与性能基线不劣化（`io/ports` 一批做完后跑一次 I/O 基准，原语调用应略快于 `clr-call`）。
+
+## 结论
+- 盘点：实际约 580 处（原估计 1000 是按行数算的），去重后约 300 个不同的 .NET 成员；最多的是 `clr-static-call`（191）、`clr-is`（99）、`clr-prop-get` / `clr-call`（各 68）。
+- 新原语：`R6RS/PortPrimitives.cs`（`$port-*`，60 个：端口的谓词、打开关闭、位置、读写、转码器、自定义端口）、`Reader/Annotation.cs`（`$annotation-*`）、`Runtime/HostPrimitives.cs`（约 165 个：宿主侦测 `host-type` / `host-version` / `machine-type` / `$os-name` / `$cpu-architecture`，类型谓词，字符与字符串，向量、表与散列表，字节向量的编解码与整数 / 浮点转换，大整数、有理数、复数与数学函数，记录描述符与过程信息，文件与路径，信号量、线程、时区与区域）。全部 `$` 原语登记在两个构建脚本的 `(ironscheme unsafe)` 表里，`primitives.ss` 已重新生成（454 项）。
+- 改写：28 个 boot 文件 + 6 个 std 文件全部改为原语调用；`clr-guard` 改成它的展开 `with-clr-exception-handler`（本来就是原语）；`boot/` 与 `std/` 不再导入 `(ironscheme clr)`，`clr-using` 全部删除。`grep -rE "\(clr-" boot std` 只剩 `predicates.sls` 导出的 `clr-string?` 与 `misc.sls` 导出的 `clr-type?` 两个**名字**（用户可见的谓词名沿用，实现已是原语）。
+- 展开器的 `compat.sls` 与 `main.sls` 按 [05 §5](../designs/05-bootstrap.md) 的两步法改：先改其他文件、构建、生成种子，再改这两个文件、构建、再生成种子。种子最终又生成了一次（去掉了 6 个无用的 `(ironscheme clr)` 导入之后）。
+- 两处实测修正：`$uint->bytes` / `$sint->bytes` 对超过 64 位有符号范围的大整数要经十进制文本转换（IntX 没有到 ulong 的转换）；`$string-normalize` 的形式符号沿用旧写法 `FormC` 等，也接受 `nfc` 等。
+- `(ironscheme std syntax)` 的 `cond-expand` 特性改由 `$os-name` / `$cpu-architecture` 给出，并新增 `clr` 特性（11 D4）；`(ironscheme std system)` 的 `cpu-architecture` / `os-name` / `machine-name` / `os-description` 都是原语的薄包装。
+- 验收：`grep -rE "\(clr-" boot std` 只剩两个谓词名；Core.Tests 254 项、整套 `IronScheme.Tests` 84 项（含用重新生成的种子做的自举不动点、126 个系统库编译与 ILVerify、发布）全部通过；I/O 没有做单独的基准（原语调用与原来经发射器静态决议的 `clr-call` 生成的都是直接 `call`，没有理由变慢）。

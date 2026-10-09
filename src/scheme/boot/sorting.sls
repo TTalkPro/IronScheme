@@ -13,8 +13,8 @@ See docs/license.txt. |#
     (except (rnrs) list-sort vector-sort vector-sort!)
     (rnrs mutable-pairs)
     (ironscheme unsafe)
-    (ironscheme contracts)
-    (ironscheme clr))
+    (only (ironscheme) with-clr-exception-handler void)
+    (ironscheme contracts))
   
   (define/contract (list-sort less?:procedure seq:list)
     ;; "sort.scm" from SLIB
@@ -94,16 +94,12 @@ See docs/license.txt. |#
     (list-sort! less? (append seq '())))      
                        
   (define/contract (vector-sort! pred?:procedure vec:vector)
-    (clr-guard (e [e (assertion-violation 'vector-sort! (clr-prop-get Exception Message e) pred? vec)])
-      (clr-static-call Array 
-                       (Sort #(Object) Object[] (Comparison Object))
-                       vec                      
-                       (lambda (a b)
-                         (if (eq? a b) 
-                             0
-                             (if (pred? a b)
-                                 -1
-                                 1))))))
+    ;; 比较过程不一致时宿主的排序抛出异常，转为 &assertion
+    (with-clr-exception-handler
+      (lambda (e) (assertion-violation 'vector-sort! ($exception-message e) pred? vec))
+      (lambda ()
+        ($vector-sort! pred? vec)))
+    (void))
 
   (define/contract (vector-sort pred?:procedure vec:vector)
     (list->vector (list-sort pred? (vector->list vec)))))

@@ -61,8 +61,8 @@
 | [iron-051](tasks/iron-051-async-frontend.md) | 异步：展开器、parse-core 与 lower-async | 后续 | iron-050 | 完成 |
 | [iron-052](tasks/iron-052-async-codegen.md) | 异步：codegen 生成状态机 | 后续 | iron-051 | 完成 |
 | [iron-053](tasks/iron-053-async-library-and-tests.md) | 异步：库、测试与文档 | 后续 | iron-052 | 完成 |
-| [iron-056](tasks/iron-056-boot-std-without-clr.md) | boot 与 std 去 `clr-*` | 后续 | 无 | 未开始 |
-| [iron-057](tasks/iron-057-host-neutral-interop-nodes.md) | 互操作节点改 `host-*`，codegen 加 `target` 参数 | 后续 | iron-056 | 未开始 |
+| [iron-056](tasks/iron-056-boot-std-without-clr.md) | boot 与 std 去 `clr-*` | 后续 | 无 | 完成 |
+| [iron-057](tasks/iron-057-host-neutral-interop-nodes.md) | 互操作节点改 `host-*`，codegen 加 `target` 参数 | 后续 | iron-056 | 完成 |
 
 ## 里程碑
 

@@ -1,5 +1,5 @@
 (library (snapshot lib)
-  ((u g$u (clr-using "System.Text"))
+  ((u g$u (host-using "System.Text"))
    (len g$len
         (lambda "len"
           (clause
@@ -24,11 +24,11 @@
          (clause
            (s)
            #f
-           (clr-call
+           (host-call
              "StringBuilder"
              "ToString"
              #f
-             (clr-new "StringBuilder" s)))))
+             (host-new "StringBuilder" s)))))
    (safe
      g$safe
      (lambda "safe"

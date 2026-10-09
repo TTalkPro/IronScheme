@@ -275,21 +275,15 @@ See docs/license.txt. |#
       char->integer
       integer->char)
     (ironscheme contracts)
-    (ironscheme clr)
     (ironscheme typed)
     (ironscheme core)
     (ironscheme unsafe))
     
-  (clr-using System.Text)
-  (clr-using IronScheme.Core)
   
   (define (char->integer chr)
-    (if (clr-is SchemeChar chr)
-        (clr-field-get SchemeChar Value chr)
-        (begin
-          (unless (char? chr)
-            (assertion-violation 'char->integer "not a char" chr))
-          (clr-cast Int32 (clr-cast Char chr)))))
+    (unless (char? chr)
+      (assertion-violation 'char->integer "not a char" chr))
+    ($char->integer chr))
   
   (define/contract (integer->char num:fixnum)
     (let: (((num : Int32) num))
@@ -298,9 +292,7 @@ See docs/license.txt. |#
                   ($and? ($fx>? num #xd7ff)
                          ($fx<? num #xe000)))
         (assertion-violation 'integer->char "not a valid unicode value" num))
-      (if ($fx>? num #xffff)
-          (clr-new SchemeChar num)
-          (string-ref (clr-static-call Char ConvertFromUtf32 num) 0))))
+      ($integer->char num)))
     
 ;; 字符串按码点（iron-055，designs/12-strings.md）：不可变且不含代理码元的串为 System.String，
   ;; 可变串与含 BMP 外字符的串为 SchemeString；基本操作在 C#（Builtins 的 Runtime/Strings.cs）。
@@ -311,18 +303,14 @@ See docs/license.txt. |#
       [(k:fixnum fill:char)
         (when ($fxnegative? k)
           (assertion-violation 'make-string "cannot be negative" k))        
-        (clr-static-call Builtins MakeString k fill)]))
+        ($make-string k fill)]))
 
   (define (string-ref str k)
     (unless (and (fixnum? k) ($fx>=? k 0))
       (assertion-violation 'string-ref "not a non-negative integer" k))        
-    (cond
-      [(clr-string? str) 
-        (clr-prop-get String Chars str k)]
-      [(stringbuilder? str) 
-        (clr-static-call Builtins StringRef str k)]
-      [else
-        (assertion-violation 'string-ref "not a string" str)]))
+    (unless (string? str)
+      (assertion-violation 'string-ref "not a string" str))
+    ($string-ref str k))
           
   (define (string-set! str k val)
     (unless (stringbuilder? str)
@@ -331,41 +319,30 @@ See docs/license.txt. |#
       (assertion-violation 'string-set! "not a non-negative integer" k))
     (unless (char? val)
       (assertion-violation 'string-set! "not a character" val))
-    (clr-static-call Builtins StringSet str k val))
+    ($string-set! str k val))
     
   (define (string-fill! str fill)
     (unless (stringbuilder? str)
       (assertion-violation 'string-fill! "not a mutable string" str))
     (unless (char? fill)
       (assertion-violation 'string-fill! "not a character" fill))
-    (clr-static-call Builtins StringFill str fill))
+    ($string-fill! str fill))
           
   (define (string-length str)
-    (cond
-      [(clr-string? str) 
-        (clr-prop-get String Length str)]
-      [(stringbuilder? str) 
-        (clr-static-call Builtins StringLength str)]
-      [else
-        (assertion-violation 'string-length "not a string" str)]))
+    (unless (string? str)
+      (assertion-violation 'string-length "not a string" str))
+    ($string-length str))
 
-  ;; TODO: rewrite in new typed syntax        
-  (define ->string
-    (typed-lambda (str) ((Object) String)
-      (if (clr-string? str)
-          str
-          (clr-call Object ToString str))))
-        
   (define/contract (string . args:char)
-    (clr-static-call Builtins CharsToString args))
+    ($chars->string args))
         
   (define/contract (string->list str:string)
-    (clr-static-call Builtins StringToList str))
+    ($string->list str))
   
 ;; R6RS：新分配的副本可以 string-set!，所以总是返回可变字符串（iron-054；原来对不可变字符串返回不可变副本）
   (define (string-copy str)
     (if (string? str)
-        (clr-static-call Builtins StringCopy str)
+        ($string-copy str)
         (assertion-violation 'string-copy "not a string" str)))
 
   (define/contract (substring str start:fixnum end:fixnum)
@@ -379,28 +356,28 @@ See docs/license.txt. |#
       (unless ($fx<=? end (string-length str))
         (assertion-violation 'substring "outside string bounds" end))
       (if (string? str)
-          (clr-static-call Builtins Substring str start end)
+          ($substring str start end)
           (assertion-violation 'substring "not a string" str))))
     
   ; probably need to be made faster  
   (define/contract (string-append . args:string)
-    (clr-static-call Builtins StringAppend args))
+    ($string-append args))
                      
   (define/contract (string-format fmt:string . args)
-    (clr-static-call String (Format String Object[]) (->string fmt) (list->vector args)))
+    ($string-format fmt args))
   
   (define/contract (symbol->string sym:symbol)
-    ;; 字段值经互操作的入口规范化：含 BMP 外字符的名字得到宽串（iron-055）
-    (clr-field-get Symbol Name sym))
+    ;; 含 BMP 外字符的名字得到宽串（iron-055）
+    ($symbol-name sym))
     
   (define/contract (string->symbol str:string)
-    (clr-static-call Symbol Intern (->string str)))
+    ($string->symbol str))
 
   (define/contract (list->vector lst:list)
-    (clr-static-call Builtins ListToVector lst))
+    ($list->vector lst))
     
   (define/contract (list->string lst:list)
-    (clr-static-call Builtins CharsToString lst))
+    ($chars->string lst))
     
   (define/contract (vector-ref x:vector n:fixnum)
     (when ($fxnegative? n)
@@ -422,14 +399,14 @@ See docs/license.txt. |#
       [(k:fixnum)
         (when ($fxnegative? k)
           (assertion-violation 'make-vector "cannot be negative" k))
-        (clr-new-array Object k)]
+        ($make-vector k)]
       [(k fill)
         (let ((vec (make-vector k)))
           (vector-fill! vec fill)
           vec)]))
           
   (define/contract (vector-length vec:vector)
-    (clr-prop-get Array Length vec))            
+    ($vector-length vec))            
   
   (define/contract (vector-fill! vec:vector val)
     (let: (((vec : Object[]) vec)
@@ -439,7 +416,7 @@ See docs/license.txt. |#
         ($vector-set! vec i val))))
         
   (define/contract (vector->list vec:vector)
-    (clr-static-call Cons FromList vec))   
+    ($vector->list vec))   
     
   (define/contract (reverse lst:list)
     (let f ((l lst)(a '()))
@@ -512,7 +489,7 @@ See docs/license.txt. |#
     (case-lambda
       [(p:procedure vec:vector)
         ((lambda: ((p : Procedure)(vec : Object[])(len : Int32))
-          (let ((res (clr-cast Object[] (make-vector len '()))))
+          (let ((res (make-vector len '())))
             (do ((i 0 ($fx+ i 1)))
                 (($fx=? i len) res)
               ($vector-set! res i (p ($vector-ref vec i))))))

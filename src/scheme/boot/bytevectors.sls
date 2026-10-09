@@ -82,7 +82,6 @@ See docs/license.txt. |#
   (import 
     (ironscheme integrable)
     (ironscheme unsafe)
-    (ironscheme clr)
     (except (ironscheme) 
       bytevector-u16-ref
       bytevector-s16-ref
@@ -154,67 +153,51 @@ See docs/license.txt. |#
     (ironscheme contracts)
     (ironscheme typed))
   
-  (clr-using IronScheme.Core)
-  (clr-using System.Text)
-  (clr-using Oyster.Math)
      
   (define (native-endianness) 'little)
   
-  (define utf8    (clr-static-prop-get Encoding UTF8))
-  (define utf16le (clr-new UnicodeEncoding #f #f))
-  (define utf16be (clr-new UnicodeEncoding #t #f))
-  (define utf32le (clr-new UTF32Encoding #f #f))
-  (define utf32be (clr-new UTF32Encoding #t #f))
-  
-  (define-syntax $bytevector-length
-    (syntax-rules ()
-      [(_ bv)
-        (clr-prop-get Byte[] Length bv)]))
+  ;; 宿主操作经 $ 原语（IronScheme.Core.HostPrimitives，iron-056）：$bytevector-ref 给出 fixnum，$bytevector-set! 收 fixnum
+  (define utf8    ($utf-8-codec))
+  (define utf16le ($make-utf16-codec #f))
+  (define utf16be ($make-utf16-codec #t))
+  (define utf32le ($make-utf32-codec #f))
+  (define utf32be ($make-utf32-codec #t))
   
   (define (bignum? obj)
-    (clr-is IntX obj))      
+    ($bignum? obj))      
     
-  (define ->bignum 
-    (typed-lambda (ei)
-      ((Object) IntX)
-        (cond
-          [(bignum? ei) ei]
-          [(fixnum? ei) 
-            (clr-static-call IntX (Create Int32) ei)]
-          [else
-            (assertion-violation #f "not a exact integer" ei)])))
+  (define (->bignum ei)
+    (cond
+      [(bignum? ei) ei]
+      [(fixnum? ei) 
+        ($fixnum->bignum ei)]
+      [else
+        (assertion-violation #f "not a exact integer" ei)]))
             
   (define (get-bytes enc str)
-    (clr-call Encoding (GetBytes String) enc str))
+    ($codec-get-bytes enc str))
 
   (define (get-string enc bv)
-    (clr-call Encoding (GetString Byte[]) enc bv))
+    ($codec-get-string enc bv))
   
   (define (byte->sbyte b)
-    (let: (((b : Int32) (->fixnum b)))
-      (if ($fx>? b 127)
-          ($fx- b 256)
-          b)))
+    (if ($fx>? b 127)
+        ($fx- b 256)
+        b))
   
-  (define ->byte
-    (typed-lambda (k)
-      ((Object) Byte)
-      (unless (fixnum? k)
-        (assertion-violation #f "not a fixnum" k))
-      (let: (((k : Int32) k) -> Byte)
-        (when (or ($fx<? k -128) ($fx>? k 255))
-          (assertion-violation #f "too big or small for octect or byte" k))
-        (clr-cast Byte k))))
+  (define (->byte k)
+    (unless (fixnum? k)
+      (assertion-violation #f "not a fixnum" k))
+    (when (or ($fx<? k -128) ($fx>? k 255))
+      (assertion-violation #f "too big or small for octect or byte" k))
+    (if ($fx<? k 0) ($fx+ k 256) k))
     
-  (define ->fixnum
-    (typed-lambda (b)
-      ((Object) Int32)
-      (clr-static-call Convert (ToInt32 Object) b)))
+  (define (->fixnum b) b)
   
   (define/contract make-bytevector
     (case-lambda
       [(k:fixnum)
-        (clr-new-array Byte (clr-cast Int32 k))]
+        ($make-bytevector k)]
       [(k:fixnum fill)
         (let ((bv (make-bytevector k)))
           (bytevector-fill! bv fill)
@@ -256,23 +239,22 @@ See docs/license.txt. |#
             (f ($fx+ i 1)))))))
           
   (define/contract (bytevector-copy! bv1:bytevector s1:fixnum bv2:bytevector s2:fixnum len:fixnum)
-    (clr-static-call Buffer BlockCopy bv1 s1 bv2 s2 len))  
+    ($bytevector-copy! bv1 s1 bv2 s2 len))  
     
   (define/contract (bytevector-copy bv:bytevector)
-    (clr-call Array Clone bv))  
+    ($bytevector-clone bv))  
     
   (define/contract (bytevector-u8-ref bv:bytevector k:fixnum)
     (let: (((bv : Byte[]) bv)((k : Int32) k))
       (unless ($and? ($fx>=? k 0) ($fx<? k ($bytevector-length bv)))
         (assertion-violation 'bytevector-u8-ref "indexer out of bounds" bv k)) 
-      (clr-static-call Convert (ToInt32 Byte) 
-        ($bytevector-ref bv k))))
+      ($bytevector-ref bv k)))
       
   (define/contract (bytevector-u8-set! bv:bytevector k:fixnum value:fixnum)
     (let: (((bv : Byte[]) bv)((k : Int32) k))
       (unless ($and? ($fx>=? k 0) ($fx<? k ($bytevector-length bv)))
         (assertion-violation 'bytevector-u8-set! "indexer out of bounds" bv k)) 
-      ($bytevector-set! bv k (clr-static-call Convert (ToByte Object) value)))) ;TODO: can be ->byte ?
+      ($bytevector-set! bv k (->byte value))))
    
   (define/contract (bytevector-s8-ref bv:bytevector k:fixnum)
     (let: (((bv : Byte[]) bv)((k : Int32) k))
@@ -312,36 +294,16 @@ See docs/license.txt. |#
     (let ((sb (make-bytevector size)))
       (bytevector-copy! bv k sb 0 size)
       (when (eq? end 'big)
-        (clr-static-call Array Reverse sb))
+        ($bytevector-reverse! sb))
       (case size
         [(1)
-          (->fixnum ($bytevector-ref sb 0))]
-        [(2)
-          (->fixnum 
-            (clr-static-call BitConverter 
-                             (ToUInt16 Byte[] Int32)
-                             sb
-                             0))]
-        [(4)
-          (exact (clr-static-call IntX
-                                  (op_Implicit UInt32)
-                                  (clr-static-call BitConverter
-                                                   (ToUInt32 Byte[] Int32)
-                                                   sb
-                                                   0)))]
-        [(8)
-          (exact (clr-static-call IntX
-                                 (op_Implicit UInt64)
-                                 (clr-static-call BitConverter
-                                                  (ToUInt64 Byte[] Int32)
-                                                  sb
-                                                  0)))]
+          ($bytevector-ref sb 0)]
+        [(2 4 8)
+          ($bytes->uint sb size)]
         [else
           (let ((data (make-bytevector (+ size 1))))
             (bytevector-copy! sb 0 data 0 size)
-            (exact (clr-static-call IntX
-                                   (Create Byte[])
-                                   data)))])))
+            ($bytes->bignum data))])))
                                                    
   (define/contract (bytevector-sint-ref bv:bytevector k:fixnum end:symbol size:fixnum)
     (when ($fxnegative? k)
@@ -351,32 +313,14 @@ See docs/license.txt. |#
     (let ((sb (make-bytevector size)))
       (bytevector-copy! bv k sb 0 size)
       (when (eq? end 'big)
-        (clr-static-call Array Reverse sb))
+        ($bytevector-reverse! sb))
       (case size
         [(1)
           (byte->sbyte ($bytevector-ref sb 0))]
-        [(2)
-          (->fixnum 
-            (clr-static-call BitConverter 
-                             (ToInt16 Byte[] Int32)
-                             sb
-                             0))]
-        [(4)
-          (clr-static-call BitConverter
-                           (ToInt32 Byte[] Int32)
-                           sb
-                           0)]
-        [(8)
-          (exact (clr-static-call IntX
-                                 (op_Implicit Int64)
-                                 (clr-static-call BitConverter
-                                                  (ToInt64 Byte[] Int32)
-                                                  sb
-                                                  0)))]
+        [(2 4 8)
+          ($bytes->sint sb size)]
         [else
-          (exact (clr-static-call IntX
-                                 (Create Byte[])
-                                 sb))])))
+          ($bytes->bignum sb)])))
                            
   (define/contract (bytevector-uint-set! bv:bytevector k:fixnum n end:symbol size:fixnum) 
     (when ($fxnegative? k)
@@ -388,44 +332,20 @@ See docs/license.txt. |#
     (case size
       [(1)
         ($bytevector-set! bv k (->byte n))]
-      [(2)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes UInt16)
-                                     (clr-static-call Convert
-                                                      (ToUInt16 Object)
-                                                      n))))
+      [(2 4 8)
+        (let ((data ($uint->bytes n size)))
           (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
-          (bytevector-copy! data 0 bv k size))]
-      [(4)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes UInt32)
-                                     (clr-static-call Convert
-                                                      (ToUInt32 Object)
-                                                      n))))
-          (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
-          (bytevector-copy! data 0 bv k size))]
-      [(8)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes UInt64)
-                                     (clr-static-call Convert
-                                                      (ToUInt64 Object)
-                                                      n))))
-          (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
+            ($bytevector-reverse! data))
           (bytevector-copy! data 0 bv k size))]
       [else
-        (let* ((data (clr-call IntX
-                               ToByteArray
-                               (->bignum n)))
+        (let* ((data ($bignum->bytes (->bignum n)))
                (dl (bytevector-length data)))
           (when (> dl size)
             (assertion-violation 'bytevector-uint-set! "cannot fit number into size" dl size))
           (let ((b (make-bytevector size)))
             (bytevector-copy! data 0 b 0 dl)
             (when (eq? end 'big)
-              (clr-static-call Array Reverse b))
+              ($bytevector-reverse! b))
             (bytevector-copy! b 0 bv k size)))])
     (void))
           
@@ -437,60 +357,25 @@ See docs/license.txt. |#
     (case size
       [(1)
         ($bytevector-set! bv k (->byte n))]
-      [(2)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes Int16)
-                                     (clr-static-call Convert
-                                                      (ToInt16 Object)
-                                                      n))))
+      [(2 4 8)
+        (let ((data ($sint->bytes n size)))
           (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
-          (bytevector-copy! data 0 bv k size))]
-      [(4)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes Int32)
-                                     (clr-static-call Convert
-                                                      (ToInt32 Object)
-                                                      n))))
-          (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
-          (bytevector-copy! data 0 bv k size))]
-      [(8)
-        (let ((data (clr-static-call BitConverter
-                                     (GetBytes Int64)
-                                     (clr-static-call Convert
-                                                      (ToInt64 Object)
-                                                      n))))
-          (when (eq? end 'big)
-            (clr-static-call Array Reverse data))
+            ($bytevector-reverse! data))
           (bytevector-copy! data 0 bv k size))]
       [else
-        (let* ((data (clr-call IntX
-                               ToByteArray
-                               (->bignum n)))
+        (let* ((data ($bignum->bytes (->bignum n)))
                (dl (bytevector-length data)))
           (when (> dl size)
             (assertion-violation 'bytevector-sint-set! "cannot fit number into size" dl size))
           (let ((b (make-bytevector size (if (negative? n) 255 0))))
             (bytevector-copy! data 0 b 0 dl)
             (when (eq? end 'big)
-              (clr-static-call Array Reverse b))
+              ($bytevector-reverse! b))
             (bytevector-copy! b 0 bv k size)))])
     (void))  
     
-  (define (clr-string? obj)
-    (clr-is String obj))  
-
-  (define ->string 
-    (typed-lambda (str)
-      ((Object) String)
-      (if (clr-string? str)
-          str
-          (clr-call Object ToString str))))
-       
-              
   (define/contract (string->utf8 s:string)
-    (get-bytes utf8 (->string s)))
+    (get-bytes utf8 s))
     
   (define/contract string->utf16
     (case-lambda
@@ -498,8 +383,8 @@ See docs/license.txt. |#
         (string->utf16 s 'big)]
       [(s:string end)
         (case end
-          [(big)    (get-bytes utf16be (->string s))]
-          [(little) (get-bytes utf16le (->string s))]
+          [(big)    (get-bytes utf16be s)]
+          [(little) (get-bytes utf16le s)]
           [else
             (assertion-violation 'string->utf16 "unknown endianness" end)])]))
                
@@ -509,8 +394,8 @@ See docs/license.txt. |#
         (string->utf32 s 'big)]
       [(s:string end)
         (case end
-          [(big)    (get-bytes utf32be (->string s))]
-          [(little) (get-bytes utf32le (->string s))]
+          [(big)    (get-bytes utf32be s)]
+          [(little) (get-bytes utf32le s)]
           [else
             (assertion-violation 'string->utf32 "unknown endianness" end)])]))
             
@@ -604,37 +489,30 @@ See docs/license.txt. |#
             a
             (f ($fx- l size) (cons (bytevector-sint-ref bv ($fx- l size) end size) a))))))
           
-  (: single->double (Single -> Object))
-       
-  (define: (single->double s)
-    (clr-static-call Convert (ToDouble Single) s))
-            
   (define (bytevector-ieee-single-ref bv k end)
     (let ((d (make-bytevector 4)))
       (bytevector-copy! bv k d 0 4)
       (when (eq? end 'big)
-        (clr-static-call Array Reverse d))
-      (single->double (clr-static-call BitConverter ToSingle d 0))))
+        ($bytevector-reverse! d))
+      ($bytes->single d)))
 
   (define (bytevector-ieee-double-ref bv k end)
     (let ((d (make-bytevector 8)))
       (bytevector-copy! bv k d 0 8)
       (when (eq? end 'big)
-        (clr-static-call Array Reverse d))
-      (clr-static-call BitConverter ToDouble d 0)))
+        ($bytevector-reverse! d))
+      ($bytes->double d)))
       
   (define (bytevector-ieee-single-set! bv k value end)
-    (let* ((value (clr-static-call Convert (ToSingle Object) value))
-           (data  (clr-static-call BitConverter (GetBytes Single) value)))
+    (let ((data ($single->bytes value)))
       (when (eq? end 'big)
-        (clr-static-call Array Reverse data))
+        ($bytevector-reverse! data))
       (bytevector-copy! data 0 bv k 4)))
       
   (define (bytevector-ieee-double-set! bv k value end)
-    (let* ((value (clr-static-call Convert (ToDouble Object) value))
-           (data  (clr-static-call BitConverter (GetBytes Double) value)))
+    (let ((data ($double->bytes value)))
       (when (eq? end 'big)
-        (clr-static-call Array Reverse data))
+        ($bytevector-reverse! data))
       (bytevector-copy! data 0 bv k 8)))
      
   (define (bytevector-u16-ref bytevector k endianness)

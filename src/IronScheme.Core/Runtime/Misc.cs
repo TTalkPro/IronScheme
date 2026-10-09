@@ -21,6 +21,8 @@ public static class RuntimeOptions
     public static bool LightweightDebugging;
     /// <summary>构建模式：gensym 按"作用域 + 计数"确定性命名（Symbol.cs，iron-014）。</summary>
     public static bool DeterministicGensym;
+    /// <summary>编译目标（符号），由编译器的 current-compile-target 设置；null 为本宿主（iron-057）。</summary>
+    public static Symbol CompileTarget;
 }
 
 /// <summary>从旧 Builtins.cs 移植的杂项原语（iron-008 步骤 G）。</summary>

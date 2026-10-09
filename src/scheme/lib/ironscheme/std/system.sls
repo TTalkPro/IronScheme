@@ -28,7 +28,7 @@ See docs/license.txt. |#
   (import
     (rnrs)
     (only (ironscheme) ironscheme-version)
-    (only (ironscheme clr) clr-static-prop-get clr-static-call)
+    (only (ironscheme unsafe) $cpu-architecture $machine-name $os-description $os-name)
     (only (ironscheme environment) get-environment-variable)
     (rename (only (ironscheme environment) get-environment-variables) (get-environment-variables get-env-vars)))
 
@@ -42,28 +42,13 @@ See docs/license.txt. |#
 
 (define (implementation-version) (ironscheme-version))
 
-(define (clr->string x) (call-with-string-output-port (lambda (p) (display x p))))
+(define (cpu-architecture) ($cpu-architecture))     ; "x86-64"、"i386"、"arm64" …
 
-(define (cpu-architecture)
-  (let ((a (string-downcase
-             (clr->string
-               (clr-static-prop-get System.Runtime.InteropServices.RuntimeInformation ProcessArchitecture)))))
-    (cond ((string=? a "x64") "x86-64")
-          ((string=? a "x86") "i386")
-          (else a))))
+(define (machine-name) ($machine-name))
 
-(define (machine-name)
-  (clr-static-prop-get System.Environment MachineName))
+(define (os-description) ($os-description))
 
-(define (os-description)
-  (clr-static-prop-get System.Runtime.InteropServices.RuntimeInformation OSDescription))
-
-(define (os-name)
-  (cond ((clr-static-call System.OperatingSystem IsWindows) "Windows")
-        ((clr-static-call System.OperatingSystem IsLinux) "Linux")
-        ((clr-static-call System.OperatingSystem IsMacOS) "macOS")
-        ((clr-static-call System.OperatingSystem IsFreeBSD) "FreeBSD")
-        (else (os-description))))
+(define (os-name) ($os-name))                        ; "Windows"、"Linux"、"macOS"、"FreeBSD"，其他系统为描述
 
 (define (os-version)
   (let ((d (os-description)))

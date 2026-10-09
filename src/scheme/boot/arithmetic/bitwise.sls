@@ -32,7 +32,7 @@ See docs/license.txt. |#
     bitwise-reverse-bit-field)
     
   (import 
-    (ironscheme clr)
+    (ironscheme unsafe)
     (ironscheme core)
     (except (ironscheme) 
       bitwise-if 
@@ -53,22 +53,18 @@ See docs/license.txt. |#
       bitwise-reverse-bit-field
       bitwise-arithmetic-shift))
       
-  (clr-using Oyster.Math)
-  (clr-using IronScheme.Core)
       
-  (define ->bignum
-    (typed-lambda (ei) ((Object) IntX)
-      (cond
-        [(bignum? ei) ei]
-        [(fixnum? ei) 
-          (clr-static-call IntX (Create Int32) ei)]
-        [else
-          (assertion-violation #f "not a exact integer" ei)])))
+  ;; 大整数的位运算经 $bignum-* 原语（IronScheme.Core.HostPrimitives，iron-056），结果已规范为 fixnum 或 bignum
+  (define (->bignum ei)
+    (cond
+      [(bignum? ei) ei]
+      [(fixnum? ei) 
+        ($fixnum->bignum ei)]
+      [else
+        (assertion-violation #f "not a exact integer" ei)]))
         
   (define (bitwise-not ei)
-    (exact (clr-static-call IntX 
-                            op_OnesComplement  
-                            (->bignum ei))))
+    ($bignum-not (->bignum ei)))
                             
   (define bitwise-and
     (case-lambda
@@ -79,10 +75,7 @@ See docs/license.txt. |#
         (if (and (fixnum? ei1)
                  (fixnum? ei2))
             (fxand ei1 ei2)
-            (exact (clr-static-call IntX 
-                                    (op_BitwiseAnd IntX IntX)
-                                    (->bignum ei1)
-                                    (->bignum ei2))))]
+            ($bignum-and (->bignum ei1) (->bignum ei2)))]
       [(ei1 ei2 . rest)
         (fold-left bitwise-and ei1 (cons ei2 rest))]))
         
@@ -95,10 +88,7 @@ See docs/license.txt. |#
         (if (and (fixnum? ei1)
                  (fixnum? ei2))
             (fxior ei1 ei2)      
-            (exact (clr-static-call IntX 
-                                    (op_BitwiseOr IntX IntX)
-                                    (->bignum ei1)
-                                    (->bignum ei2))))]
+            ($bignum-ior (->bignum ei1) (->bignum ei2)))]
       [(ei1 ei2 . rest)
         (fold-left bitwise-ior ei1 (cons ei2 rest))]))
 
@@ -111,10 +101,7 @@ See docs/license.txt. |#
         (if (and (fixnum? ei1)
                  (fixnum? ei2))
             (fxxor ei1 ei2)      
-            (exact (clr-static-call IntX 
-                                    (op_ExclusiveOr IntX IntX)  
-                                    (->bignum ei1)
-                                    (->bignum ei2))))]
+            ($bignum-xor (->bignum ei1) (->bignum ei2)))]
       [(ei1 ei2 . rest)
         (fold-left bitwise-xor ei1 (cons ei2 rest))]))
 
@@ -134,12 +121,9 @@ See docs/license.txt. |#
     (if (fixnum? ei)
         (fxlength ei)
         (let ((ei (->bignum ei)))
-          (if (clr-static-call IntX 
-                               (op_LessThan IntX IntX)
-                               ei
-                               (->bignum 0))
+          (if ($bignum-negative? ei)
               (bitwise-length (bitwise-not ei))
-              (clr-prop-get IntX BitLength ei)))))
+              ($bignum-bit-length ei)))))
 
   (define (bitwise-first-bit-set ei)
     (if (fixnum? ei)
@@ -219,19 +203,10 @@ See docs/license.txt. |#
                 [(fx=? k (least-fixnum))
                   (if (negative? ei) -1 0)]
                 [(negative? ei)
-                  (bitwise-not (clr-static-call IntX 
-                                                op_RightShift 
-                                                (->bignum (bitwise-not ei))
-                                                (fx- k)))]
+                  (bitwise-not ($bignum-shift-right (->bignum (bitwise-not ei)) (fx- k)))]
                 [else 
-                  (clr-static-call IntX 
-                                   op_RightShift 
-                                   (->bignum ei) 
-                                   (fx- k))])
-              (clr-static-call IntX 
-                               op_LeftShift 
-                               (->bignum ei) 
-                               k))]
+                  ($bignum-shift-right (->bignum ei) (fx- k))])
+              ($bignum-shift-left (->bignum ei) k))]
         [(negative? ei)
           (if (and (negative? k) (not (fixnum? k)))
               -1

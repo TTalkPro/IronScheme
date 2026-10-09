@@ -26,38 +26,29 @@ See docs/license.txt. |#
             record-type-field-names
             record-field-mutable?)
           (ironscheme contracts)
-          (ironscheme clr))
+          (ironscheme unsafe))
           
-  (clr-using IronScheme.Core)
           
   (define/contract (record-type-name rtd:record-type-descriptor)
-    (string->symbol (clr-prop-get RecordTypeDescriptor Name rtd)))
+    ($rtd-name rtd))
     
   (define/contract (record-type-parent rtd:record-type-descriptor)
-    (let ((p (clr-prop-get RecordTypeDescriptor Parent rtd)))
-      (if (null? p)
-          #f
-          p)))
+    ($rtd-parent rtd))
           
   (define/contract (record-type-uid rtd:record-type-descriptor)
-    (clr-field-get RecordTypeDescriptor uid rtd))
+    ($rtd-uid rtd))
     
   (define/contract (record-type-generative? rtd:record-type-descriptor)
-    (clr-prop-get RecordTypeDescriptor Generative rtd))    
+    ($rtd-generative? rtd))    
     
   (define/contract (record-type-sealed? rtd:record-type-descriptor)
-    (clr-prop-get RecordTypeDescriptor Sealed rtd))    
+    ($rtd-sealed? rtd))    
 
   (define/contract (record-type-opaque? rtd:record-type-descriptor)
-    (clr-prop-get RecordTypeDescriptor Opaque rtd))    
+    ($rtd-opaque? rtd))    
 
   (define/contract (record-type-field-names rtd:record-type-descriptor)
-    (vector-map (lambda (fd)
-                  (string->symbol (clr-prop-get FieldDescriptor Name fd)))
-                (clr-prop-get RecordTypeDescriptor Fields rtd)))
+    ($rtd-field-names rtd))
 
   (define/contract (record-field-mutable? rtd:record-type-descriptor k:fixnum)
-    (clr-prop-get FieldDescriptor 
-                  Mutable 
-                  (vector-ref (clr-prop-get RecordTypeDescriptor Fields rtd) 
-                              k))))
+    ($rtd-field-mutable? rtd k)))

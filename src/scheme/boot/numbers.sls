@@ -153,53 +153,51 @@ See docs/license.txt. |#
       sub1)
     (ironscheme core)
     (ironscheme contracts)
-    (ironscheme unsafe)
-    (ironscheme clr))
+    (ironscheme unsafe))
     
-  (clr-using Oyster.Math)
-  (clr-using IronScheme.Core)
     
+  ;; 数的宿主表示经 $ 原语操作（IronScheme.Core.HostPrimitives，iron-056）
   (define (make-rectnum r1 r2)
-    (clr-static-call ComplexFraction Make r1 r2))
+    ($make-rectnum r1 r2))
     
   (define (rectnum-imag-part c)
-    (clr-prop-get ComplexFraction Imag c))
+    ($rectnum-imag c))
     
   (define (rectnum-real-part c)
-    (clr-prop-get ComplexFraction Real c))    
+    ($rectnum-real c))    
     
   (define (ratnum-denominator rat)
-    (clr-prop-get Fraction Denominator rat))   
+    ($ratnum-denominator rat))   
     
   (define (ratnum-numerator rat)
-    (clr-prop-get Fraction Numerator rat))  
+    ($ratnum-numerator rat))  
   
   (define (make-complexnum r1 r2)
-    (clr-static-call Complex64 Make r1 r2))
+    ($make-complexnum r1 r2))
     
   (define (complexnum-imag-part c)
-    (clr-prop-get Complex64 Imag c))
+    ($complexnum-imag c))
     
   (define (complexnum-real-part c)
-    (clr-prop-get Complex64 Real c))
+    ($complexnum-real c))
     
   (define (bignum/ a b)
-    (clr-static-call IntX op_Division a b))    
+    ($bignum-quotient a b))    
     
   (define (bignum% a b)
-    (clr-static-call IntX op_Modulus a b))
+    ($bignum-remainder a b))
     
   (define (bignum->fixnum b)
-    (clr-call IntX ToInt32 b))
+    ($bignum->fixnum b))
     
   (define (flonum->ratnum f)
-    (clr-static-call Fraction (op_Implicit Double) f))
+    ($flonum->ratnum f))
 
   (define (ratnum->flonum r)
-    (clr-call Fraction (ToDouble IFormatProvider) r '()))
+    ($ratnum->flonum r))
     
   (define (fixnum->bignum f)
-    (clr-static-call IntX (Create Int32) f))   
+    ($fixnum->bignum f))   
     
   (define (real->complexnum num)
     (cond 
@@ -210,15 +208,15 @@ See docs/license.txt. |#
         (make-complexnum (inexact num) 0.0)]))
         
   (define (complexnum->rectnum num)
-    (clr-static-call ComplexFraction (op_Implicit Complex64) num))     
+    ($complexnum->rectnum num))     
     
   (define (rectnum->complexnum num)
-    (clr-call ComplexFraction ToComplex64 num))               
+    ($rectnum->complexnum num))               
         
   (define (->fixnum num)
     (if (fixnum? num)
         num
-        (clr-call IntX ToInt32 num)))
+        ($bignum->fixnum num)))
     
   (define (->ratnum num)
     (cond 
@@ -242,16 +240,16 @@ See docs/license.txt. |#
       [(fixnum? x)
         (fixnum->flonum x)]
       [(bignum? x)
-        (clr-call IntX ToFloat64 x)]
+        ($bignum->flonum x)]
       [(real? x)
-        (clr-static-call Convert (ToDouble Object) x)]
+        ($ratnum->flonum x)]
       [else
         (assertion-violation 'real->flonum "not a real" x)]))
     
   (define (fixnum->flonum x)
     (unless (fixnum? x)
       (assertion-violation 'fixnum->flonum "not a fixnum" x))
-    (clr-cast Double (clr-cast Int32 x)))
+    ($fixnum->flonum x))
         
   (define (nan? num)
     (cond
@@ -456,7 +454,7 @@ See docs/license.txt. |#
             (assertion-violation 'exact "no exact equivalent" num)
             (exact (flonum->ratnum num)))]
       [(bignum? num)
-        (if (clr-prop-get IntX IsInt32 num)
+        (if ($bignum-fits-fixnum? num)
             (bignum->fixnum num)            
             num)]
       [(ratnum? num)
@@ -510,7 +508,7 @@ See docs/license.txt. |#
   (define (fixnum->string num radix)
     (if ($fxnegative? num)
         (string-append "-" (number->string (abs num) radix))
-        (clr-static-call Convert (ToString Int32 Int32) num radix)))
+        ($fixnum->string num radix)))
      
   (define (bignum->string num radix)
     (if (zero? num)
@@ -519,7 +517,7 @@ See docs/license.txt. |#
                (num  (abs num))
                (out  (let f ((num num)(a '()))
                        (if (zero? num)
-                           (clr-call Object ToString (apply string a)) ;; string proc returns a mutable string
+                           ($string->immutable (apply string a)) ;; string proc returns a mutable string
                            (f (div num radix)
                               (cons (hex-char (mod num radix)) a))))))
            (if neg?
@@ -581,12 +579,12 @@ See docs/license.txt. |#
   (define-syntax exact-compare
     (syntax-rules ()
       [(_ x y)
-        (clr-static-call Builtins ExactCompare x y)]))                       
+        ($exact-compare x y)]))                       
 
   (define-syntax inexact-compare
     (syntax-rules ()
       [(_ x y)
-        (clr-static-call Builtins InexactCompare x y)]))    
+        ($inexact-compare x y)]))    
 
   (define-syntax define-comparer 
     (lambda (x)
@@ -751,45 +749,46 @@ See docs/license.txt. |#
       [else 
         (assertion-violation 'imag-part "not a number" num)]))
         
+  ;; 复数版与实数版各一个原语
   (define-syntax define-math-proc
     (syntax-rules ()
-      [(_ name clr-name)
+      [(_ name complex-op real-op)
         (define (name num)
           (cond
             [(rectnum? num)
               (name (rectnum->complexnum num))]
             [(complexnum? num)
-              (clr-static-call Complex64 clr-name num)]
+              (complex-op num)]
             [(real? num)
-              (clr-static-call Math clr-name (inexact num))]
+              (real-op (inexact num))]
             [else
               (assertion-violation 'name "not a number" num)]))]))
               
   (define-syntax define-math-proc*
     (syntax-rules ()
-      [(_ name clr-name)
+      [(_ name complex-op real-op)
         (define (name num)
           (cond
             [(rectnum? num)
               (name (rectnum->complexnum num))]
             [(complexnum? num)
-              (clr-static-call Complex64 clr-name num)]
+              (complex-op num)]
             [(real? num)
               (if (> (abs num) 1)
                 (name (make-rectangular num 0.0))
-                (clr-static-call Math clr-name (inexact num)))]
+                (real-op (inexact num)))]
             [else
               (assertion-violation 'name "not a number" num)]))]))              
               
-  (define-math-proc exp Exp)
-  (define-math-proc sin Sin)
-  (define-math-proc* asin Asin)
-  (define-math-proc* sinh Sinh)
-  (define-math-proc cos Cos)
-  (define-math-proc* acos Acos)
-  (define-math-proc* cosh Cosh)
-  (define-math-proc tan Tan)
-  (define-math-proc* tanh Tanh)
+  (define-math-proc exp $complex-exp $flexp)
+  (define-math-proc sin $complex-sin $flsin)
+  (define-math-proc* asin $complex-asin $flasin)
+  (define-math-proc* sinh $complex-sinh $flsinh)
+  (define-math-proc cos $complex-cos $flcos)
+  (define-math-proc* acos $complex-acos $flacos)
+  (define-math-proc* cosh $complex-cosh $flcosh)
+  (define-math-proc tan $complex-tan $fltan)
+  (define-math-proc* tanh $complex-tanh $fltanh)
   
   (define atan
     (case-lambda
@@ -798,9 +797,9 @@ See docs/license.txt. |#
           [(rectnum? num)
               (atan (rectnum->complexnum num))]
           [(complexnum? num)
-            (clr-static-call Complex64 Atan num)]
+            ($complex-atan num)]
           [(real? num)
-            (clr-static-call Math Atan (inexact num))]
+            ($flatan (inexact num))]
           [else
             (assertion-violation 'atan "not a number" num)])]
       [(num1 num2)
@@ -808,7 +807,7 @@ See docs/license.txt. |#
           (assertion-violation 'atan "not a real" num1))
         (unless (real? num2)
           (assertion-violation 'atan "not a real" num2))
-        (clr-static-call Math Atan2 (inexact num1) (inexact num2))]))
+        ($flatan2 (inexact num1) (inexact num2))]))
             
   (define log
     (case-lambda
@@ -819,11 +818,9 @@ See docs/license.txt. |#
           [(rectnum? num)
               (log (rectnum->complexnum num))]
           [(complexnum? num) 
-            (clr-static-call Complex64 Log num)]
+            ($complex-log num)]
           [(negative? num) 
-            (clr-static-call Complex64 
-                             Log 
-                             (make-complexnum (inexact num) 0.0))]
+            ($complex-log (make-complexnum (inexact num) 0.0))]
           [(zero? num)
             (if (exact? num)
               (assertion-violation 'log "not possible" num)
@@ -833,7 +830,7 @@ See docs/license.txt. |#
               (make-complexnum (inexact (abs num)) 0)
               num)]
           [else
-            (clr-static-call Math Log (inexact num))])]
+            ($fllog (inexact num))])]
       [(num1 num2)
         (/ (log num1) (log num2))]))
         
@@ -856,7 +853,7 @@ See docs/license.txt. |#
         (let ((r (bignum/ (ratnum-numerator x) (ratnum-denominator x))))
           (exact (if (negative? x) (- r 1) r)))]
       [else
-        (clr-static-call Math (Floor Double) (inexact x))]))
+        ($flfloor (inexact x))]))
              
   (define/contract (ceiling x:real)
     (cond
@@ -865,7 +862,7 @@ See docs/license.txt. |#
         (let ((r (bignum/ (ratnum-numerator x) (ratnum-denominator x))))
           (exact (if (positive? x) (+ r 1) r)))]
       [else
-        (clr-static-call Math (Ceiling Double) (inexact x))]))
+        ($flceiling (inexact x))]))
 
   (define/contract (truncate x:real)
     (cond
@@ -874,7 +871,7 @@ See docs/license.txt. |#
         (let ((r (bignum/ (ratnum-numerator x) (ratnum-denominator x))))
           (exact r))]      
       [else
-        (let ((r (clr-static-call Math (Truncate Double) (inexact x))))
+        (let ((r ($fltruncate (inexact x))))
           (if (exact? x)
               (exact r)
               r))]))
@@ -901,21 +898,21 @@ See docs/license.txt. |#
                  (- n)
                  n)))]
       [else
-        (clr-static-call Math (Round Double) (inexact x))]))
+        ($flround (inexact x))]))
         
   (define/contract (sqrt num:number)
     (cond
       [(rectnum? num)
         (sqrt (rectnum->complexnum num))]
       [(complexnum? num)
-        (clr-static-call Complex64 Sqrt num)]
+        ($complex-sqrt num)]
       [(negative? num)
         (make-rectangular 0 (sqrt (- num)))]
       [(bignum? num)
         (bignum-sqrt num)]
       [(infinite? num) num]
       [else
-        (let ((r (clr-static-call Math Sqrt (inexact num))))
+        (let ((r ($flsqrt (inexact num))))
           (if (exact? num)
               (exact r)
               r))]))
@@ -1038,10 +1035,8 @@ See docs/license.txt. |#
            (and (negative? obj1) 
                 (not (and (real? obj1)
                           (integer? obj2)))))
-        (let ((r (clr-static-call Complex64 
-                                  Pow 
-                                  (real->complexnum obj1)
-                                  (real->complexnum obj2))))
+        (let ((r ($complex-expt (real->complexnum obj1)
+                                (real->complexnum obj2))))
            (if (zero? (imag-part r))
                (real-part r)
                r))]
@@ -1062,10 +1057,7 @@ See docs/license.txt. |#
                 (cond
                   [(and e (integer? obj1) (integer? obj2))
                     (let* ((a (->bignum obj1))
-                           (r (clr-call IntX
-                                        Power
-                                        a
-                                        (->fixnum obj2))))
+                           (r ($bignum-expt a (->fixnum obj2))))
                        (if neg? 
                            (if (zero? r)
                                (raise (make-restriction-violation))
@@ -1077,7 +1069,7 @@ See docs/license.txt. |#
                            (/ (expt (denominator f) obj2) (expt (numerator f) obj2))
                            (/ (expt (numerator f) obj2) (expt (denominator f) obj2))))]
                   [(and (real? obj1) (real? obj2))
-                    (let ((r (clr-static-call Math Pow (inexact obj1) (inexact obj2))))
+                    (let ((r ($flexpt (inexact obj1) (inexact obj2))))
                       (if neg? 
                           (/ 1 r)
                           r))]

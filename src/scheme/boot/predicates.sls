@@ -38,38 +38,32 @@ See docs/license.txt. |#
       boolean?
       procedure?
       condition?)
-    (ironscheme unsafe)
-    (ironscheme clr))
+    (ironscheme unsafe))
     
-  (clr-using IronScheme.Core)
-  (clr-using Oyster.Math)
-  (clr-using System.Text)
   
   (define (valuetype-vector? obj)
-    (and (clr-is Array obj)
-         (let ((t (clr-call Type GetElementType (clr-call Object GetType obj))))
-          (clr-prop-get Type IsValueType t))))
+    ($valuetype-vector? obj))
   
   (define (condition? obj)
-    (clr-is IronScheme.Core.Condition obj))
+    ($condition? obj))
     
   (define (fixnum? obj)
-    (clr-is Int32 obj))
+    ($fixnum? obj))
     
   (define (flonum? obj)
-    (clr-is Double obj))
+    ($flonum? obj))
 
   (define (bignum? obj)
-    (clr-is IntX obj))
+    ($bignum? obj))
     
   (define (rectnum? obj)
-    (clr-is ComplexFraction obj)) 
+    ($rectnum? obj)) 
   
   (define (ratnum? obj)
-    (clr-is Fraction obj))
+    ($ratnum? obj))
   
   (define (complexnum? obj)
-    (clr-is Complex64 obj))
+    ($complexnum? obj))
     
   (define (number? obj)
     ($or? (fixnum? obj)
@@ -79,34 +73,33 @@ See docs/license.txt. |#
           (complexnum? obj)
           (rectnum? obj))) 
 
+  ;; 宿主的不可变字符串对象（名字沿用；iron-056 起经原语判断）
   (define (clr-string? obj)
-    (clr-is String obj))
+    ($immutable-string? obj))
 
   ;; 不是 System.String 的 Scheme 字符串：SchemeString（可变串与含 BMP 外字符的不可变串，iron-055）；
   ;; 旧种子过渡期也认 StringBuilder。名字沿用旧称。
   (define (stringbuilder? obj)
-    (or (clr-is SchemeString obj)
-        (clr-is StringBuilder obj)))
+    ($mutable-string? obj))
     
   (define (string? obj)
     (or (clr-string? obj) 
         (stringbuilder? obj)))
 
   (define (char? obj)
-    (or (clr-is Char obj)
-        (clr-is SchemeChar obj)))
+    ($char? obj))
 
   (define (vector? obj)
-    (clr-is Object[] obj))
+    ($vector? obj))
 
   (define (bytevector? obj)
-    (clr-is Byte[] obj))
+    ($bytevector? obj))
 
   (define (symbol? obj)
-    (clr-is Symbol obj))
+    ($symbol? obj))
     
   (define (boolean? obj)
-    (clr-is Boolean obj))
+    ($boolean? obj))
    
   (define (procedure? obj)
-    (clr-is Procedure obj)))
+    ($procedure? obj)))

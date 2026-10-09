@@ -10,10 +10,10 @@
 
 | 层 | 用到 `clr-*` 的文件 | 说明 |
 |---|---|---|
-| boot 源码 `boot/` | **28 个**，约 1000 处 `clr-call` / `clr-new` / `clr-is` / `clr-static-call`，集中在 `io/ports`（145）、`bytevectors`（63）、`numbers`（43）、`hashtables`（31）、`base`（28） | 语言核心直接耦合宿主 |
+| boot 源码 `boot/` | **0 个**（iron-056 前 28 个、约 580 处，集中在 `io/ports`、`bytevectors`、`numbers`、`hashtables`、`base`）；现在全部经 `$` 原语（02 §5），只剩 `clr-string?` / `clr-type?` 两个导出的谓词名 | 语言核心不再耦合宿主 |
 | 平台库 `lib/ironscheme/*.sls` | 29 个（files、threading、process、datetime、web、regex …） | 本来就是宿主功能的包装 |
-| 标准库 `lib/ironscheme/std/` | 6 个（time、system、localization、generators、syntax、private/hashtables-126） | 应收敛 |
-| 编译器 `lib/ironscheme/compiler/` | 6 个：L0 有 `clr-call` 等互操作节点（[03 §7](03-compiler.md)） | 前端带着 CLR 形状 |
+| 标准库 `lib/ironscheme/std/` | **0 个**（iron-056 前 6 个：time、system、localization、generators、syntax、private/hashtables-126） | 已收敛到原语 |
+| 编译器 `lib/ironscheme/compiler/` | **0 个**（iron-057）：L0 ~ L3 的节点是 `host-call` 等，运行时类名与互操作指令名都在 `targets.sls` 的 `clr` 表项里；`parse.sls` 里只剩 `clr-*-internal` → `host-*` 的映射 | 前端宿主中性 |
 
 **管线的目标相关程度**（[03](03-compiler.md)、[04](04-lcil-and-emitter.md)）
 - parse-core → analyze → simplify-letrec → cp0-lite → convert-assignments → uncover-free（L0 ~ L3）：除互操作节点外与目标无关。

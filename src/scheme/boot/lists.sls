@@ -45,7 +45,6 @@ See docs/license.txt. |#
     list)
   (import 
     (ironscheme core)
-    (ironscheme clr)
     (ironscheme unsafe)
     (only (rnrs mutable-pairs) set-cdr!) 
     (ironscheme integrable)
@@ -345,14 +344,12 @@ See docs/license.txt. |#
               (cons a (f (car rest) (cdr rest)))))]))
 
   (define (list-copy lst)
-    (clr-static-call IronScheme.Core.Cons 
-                     FromList 
-                     lst))
+    ($list-copy lst))
 
   (define (append-fast! a b)
     (let ((c ($cdr a)))
       (if (null? c)
-          (clr-field-set! IronScheme.Core.Cons cdr a b)
+          ($set-cdr! a b)
           (append-fast! c b))))
 
   (define (append! a b)

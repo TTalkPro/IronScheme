@@ -30,9 +30,7 @@ See docs/license.txt. |#
   (import
     (rnrs)
     (only (ironscheme) make-list)
-    (ironscheme clr))
-
-(clr-using System.Threading)
+    (ironscheme unsafe))
 
 ;; ———————————————— 改写自 srfi/%3a158/srfi-158-impl.scm ————————————————
 
@@ -139,33 +137,32 @@ See docs/license.txt. |#
 ;; 改为：proc 在一个后台线程中运行，与调用方用两个信号量严格交替（任一时刻只有一方在运行）；
 ;; proc 中引发的条件在调用方重新引发。未耗尽就丢弃的生成器，其线程停在 yield 处，不阻止进程退出。
 (define (make-coroutine-generator proc)
-  (define to-generator (clr-new SemaphoreSlim 0))
-  (define to-caller (clr-new SemaphoreSlim 0))
+  (define to-generator ($make-semaphore 0))
+  (define to-caller ($make-semaphore 0))
   (define slot #f)
   (define failure #f)
   (define state 'new)
   (define (yield value)
     (set! slot value)
-    (clr-call SemaphoreSlim Release to-caller)
-    (clr-call SemaphoreSlim (Wait) to-generator)
+    ($semaphore-release! to-caller)
+    ($semaphore-wait! to-generator)
     (if #f #f))
   (define (run)
     (guard (e (#t (set! failure (list e))))
       (proc yield))
     (set! state 'done)
     (set! slot (eof-object))
-    (clr-call SemaphoreSlim Release to-caller))
+    ($semaphore-release! to-caller))
   (lambda ()
     (if (eq? state 'done)
         (eof-object)
         (begin
           (if (eq? state 'new)
-              (let ((thread (clr-new Thread (clr-cast ThreadStart run))))
+              (begin
                 (set! state 'running)
-                (clr-prop-set! Thread IsBackground thread #t)
-                (clr-call Thread Start thread))
-              (clr-call SemaphoreSlim Release to-generator))
-          (clr-call SemaphoreSlim (Wait) to-caller)
+                ($start-thread run))
+              ($semaphore-release! to-generator))
+          ($semaphore-wait! to-caller)
           (if failure
               (let ((e (car failure)))
                 (set! failure #f)

@@ -11,7 +11,6 @@ See docs/license.txt. |#
   (import 
     (ironscheme)
     (ironscheme contracts)
-    (ironscheme clr)
     (except (ironscheme core) make-traced-macro make-traced-procedure ))
     
   (define/contract make-traced-procedure 

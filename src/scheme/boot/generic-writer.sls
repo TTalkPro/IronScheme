@@ -19,7 +19,6 @@ See docs/license.txt. |#
     (except (ironscheme) write-char write display generic-write initialize-default-printers textual-output-port? writeln displayln shorthand-syntax-output)
     (ironscheme contracts)
     (ironscheme unsafe)
-    (ironscheme clr)
     (ironscheme typed))
 
   (define shorthand-syntax-output
@@ -131,7 +130,7 @@ See docs/license.txt. |#
     (put-string port "#<hashtable>"))        
         
   (define (get-clr-type-name obj)
-    (clr-prop-get Type FullName (typeof obj)))
+    ($type-name obj))
         
   (define (write-procedure proc port readable?)
     (let ((pn (procedure-name proc)))
@@ -144,7 +143,7 @@ See docs/license.txt. |#
         
         
   (define (multiple-values? obj)
-    (clr-is IronScheme.Core.MultipleValues obj))
+    ($multiple-values? obj))
     
   (define (write-mv obj port readable?)
     (let f ((vals (call-with-values (lambda () obj) list)))
@@ -370,8 +369,8 @@ See docs/license.txt. |#
     (or (write-custom-printers record-printers rec port readable?)
         (write-record-generic)))
         
-  (define (clr-exception-message ex)
-    (clr-call Exception ToString ex))
+  (define (exception-text ex)
+    ($exception->string ex))
         
   (define (display-condition e port)
     (for-each 
@@ -425,8 +424,8 @@ See docs/license.txt. |#
       
   (define (write/type obj port)
     (let ((name (get-clr-type-name obj)))
-      (if (clr-is Exception obj)
-          (let ((msg  (clr-exception-message obj)))
+      (if ($exception? obj)
+          (let ((msg  (exception-text obj)))
              (put-string port "CLR Exception: ")
              (put-string port name)
              (put-string port "\n")
@@ -435,7 +434,7 @@ See docs/license.txt. |#
           (begin
             (put-string port "#<clr-type ")
             (put-string port name)
-            (let ((s (clr-call Object ToString obj)))
+            (let ((s ($object->string obj)))
               (unless (string=? s name)
                 (put-string port " ")
                 (write-string s port #t)))

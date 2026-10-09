@@ -27,13 +27,12 @@ See docs/license.txt. |#
             (hashtable-update! rnrs:hashtable-update!) (hashtable-copy rnrs:hashtable-copy)
             (hashtable-clear! rnrs:hashtable-clear!))
     (only (ironscheme random) make-random next-fixnum)
-    (only (ironscheme clr) clr-static-call))
+    (only (ironscheme unsafe) $get-environment-variable))
 
 ;; ———————————————— helpers（原 (srfi :126 helpers helpers) 的通用版本）————————————————
 (define (random-integer n) (next-fixnum (make-random) n))
 (define (get-environment-variable name)
-  (let ((v (clr-static-call System.Environment (GetEnvironmentVariable System.String) name)))
-    (and (string? v) v)))
+  ($get-environment-variable name))
 (define (make-weak-eq-hashtable-procedure weakness)
   (error 'make-weak-eq-hashtable "weak eq hashtables not supported"))
 

@@ -22,31 +22,24 @@ See docs/license.txt. |#
 ;;;   SRFI 61 cond 的 guard 子句 => → R6RS cond 已有
 (library (ironscheme std syntax)
   (export cond-expand and-let* receive fluid-let rec assume)
-  (import (rnrs) (only (ironscheme clr) clr-static-prop-get clr-static-call))
+  (import (rnrs) (only (ironscheme unsafe) $os-name $cpu-architecture))
 
   ;; ———————————————— cond-expand ————————————————
 
   (define-syntax cond-expand
     (lambda (stx)
+      ;; 宿主特性由原语给出（11 §1 D5）：os-name 是 "Windows" / "Linux" / "macOS" …，cpu-architecture 是 "x86-64" / "i386" / "arm64" …
       (define (os-features)
-        (let ((windows? (clr-static-call System.OperatingSystem IsWindows))
-              (linux? (clr-static-call System.OperatingSystem IsLinux))
-              (osx? (clr-static-call System.OperatingSystem IsMacOS)))
-          (append (if windows? '(windows) '(posix))
-                  (if linux? '(linux) '())
-                  (if osx? '(osx darwin) '()))))
+        (let ((os ($os-name)))
+          (append (if (string=? os "Windows") '(windows) '(posix))
+                  (if (string=? os "Linux") '(linux) '())
+                  (if (string=? os "macOS") '(osx darwin) '()))))
       (define (arch-features)
-        (let ((a (string->symbol
-                   (string-downcase
-                     (clr-call-to-string
-                       (clr-static-prop-get System.Runtime.InteropServices.RuntimeInformation OSArchitecture))))))
+        (let ((a (string->symbol ($cpu-architecture))))
           (case a
-            ((x64) '(x86-64))
-            ((x86) '(i386))
             ((arm64) '(arm64 aarch64))
             (else (list a)))))
-      (define (clr-call-to-string x) (call-with-string-output-port (lambda (p) (display x p))))
-      (define features (append '(r6rs ironscheme) (os-features) (arch-features)))
+      (define features (append '(r6rs ironscheme clr) (os-features) (arch-features)))
       (define (fulfilled? req)
         (syntax-case req (and or not)
           ((and r ...) (for-all fulfilled? #'(r ...)))

@@ -24,29 +24,23 @@ See docs/license.txt. |#
   (import
     (rnrs)
     (only (ironscheme) open-output-string get-output-string)
-    (only (ironscheme clr) clr-static-prop-get clr-prop-get clr-new))
+    (only (ironscheme unsafe) $culture-name $culture-language $culture-country))
 
-;; ———————————————— 当前区域（取自 .NET） ————————————————
-(define (current-culture) (clr-static-prop-get System.Globalization.CultureInfo CurrentCulture))
-
+;; ———————————————— 当前区域（取自宿主） ————————————————
 ;; 不变区域（未设置 LANG 等时）没有语言与国家，退回 SRFI 29 参照实现的缺省值 en / us
 (define (invariant-culture?)
-  (string=? "" (clr-prop-get System.Globalization.CultureInfo Name (current-culture))))
+  (string=? "" ($culture-name)))
 
 (define (culture-language)
   (if (invariant-culture?)
       'en
-      (string->symbol
-        (string-downcase (clr-prop-get System.Globalization.CultureInfo TwoLetterISOLanguageName (current-culture))))))
+      (string->symbol (string-downcase ($culture-language)))))
 
 (define (culture-country)
-  (if (invariant-culture?)
-      'us
-      (let ((name (clr-prop-get System.Globalization.CultureInfo Name (current-culture))))
-        (string->symbol
-          (string-downcase
-            (clr-prop-get System.Globalization.RegionInfo TwoLetterISORegionName
-              (clr-new System.Globalization.RegionInfo name)))))))
+  (let ((c (and (not (invariant-culture?)) ($culture-country))))
+    (if c
+        (string->symbol (string-downcase c))
+        'us)))
 
 ;; SRFI 29：其余区域细节（编码等），符号的表。IronScheme 的字符串与端口按 Unicode 处理，没有区域编码可报，
 ;; 缺省为空表；与 current-language 一样可以设置

@@ -23,8 +23,7 @@
   (import 
     (rnrs) 
     (boot expander compat) 
-    (only (ironscheme) pretty-print serialize-port valuetype-vector?)
-    (only (ironscheme clr) clr-is))
+    (only (ironscheme) pretty-print serialize-port valuetype-vector?))
   
   (define current-primitive-locations
     (make-parameter 

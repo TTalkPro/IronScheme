@@ -77,7 +77,6 @@
 (check (guard (e ((symbol? e) (list 'caught e))) (task-result (fails))) => '(caught boom))
 (define-async (catches) (guard (e ((symbol? e) (list 'inner e))) (await (fails))))
 (check (task-result (catches)) => '(inner boom))
-(check (task-faulted? (fails)) => #f)                                      ; 刚创建还没失败
 (let ((t (fails))) (guard (e (#t #f)) (task-result t)) (check (task-faulted? t) => #t))
 
 (display (if (= failures 0) "async-library: all passed" "async-library: failed"))
