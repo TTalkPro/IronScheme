@@ -27,8 +27,16 @@ namespace IronScheme.Core
 
     #region 读
 
-    /// <summary>常量表：发射器把 base64 编码的 fasl 写进模块类型初始化器。</summary>
+    /// <summary>常量表（旧格式）：base64 编码的 fasl。iron-037 之前生成的程序集使用。</summary>
     public static object[] ReadTable(string base64) => (object[])Read(Convert.FromBase64String(base64));
+
+    /// <summary>常量表：发射器把 Deflate 压缩的 fasl 作为初始化数据嵌入程序集，类型初始化器取出后调用本方法。</summary>
+    public static object[] ReadPackedTable(byte[] packed)
+    {
+      using var z = new System.IO.Compression.DeflateStream(new MemoryStream(packed), System.IO.Compression.CompressionMode.Decompress);
+      using var r = new BinaryReader(z);
+      return (object[])Read(r);
+    }
 
     public static object Read(byte[] data)
     {

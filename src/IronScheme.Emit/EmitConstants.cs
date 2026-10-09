@@ -1,12 +1,16 @@
 using System;
+using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 
 namespace IronScheme.Emit
 {
-  // 常量表（04 §3）：编码成 fasl 后以 base64 字符串放进类型 "$Constants" 的类型初始化器，
-  // 运行时 IronScheme.Core.Fasl.ReadTable 读回 object[] 存入静态字段 c；ldconst k 即 c[k]。
-  // 用字符串而不是托管资源：内存模式（eval）的程序集不能带资源，两种模式因此一致。
+  // 常量表（04 §3）：编码成 fasl、用 Deflate 压缩后作为 "$Constants" 类型的初始化数据（RVA 静态数据）嵌入程序集，
+  // 类型初始化器把它复制到 byte[]（RuntimeHelpers.InitializeArray），由 IronScheme.Core.Fasl.ReadPackedTable 解压读回
+  // object[] 存入静态字段 c；ldconst k 即 c[k]。原先以 base64 字符串存放（UTF-16，约为原始字节的 2.7 倍，iron-037 改）。
+  // 不用托管资源：内存模式（eval）的程序集不能带资源；初始化数据两种模式都可用。
   public sealed partial class LcilEmitter
   {
     public const string ConstantsTypeName = "$Constants";
@@ -32,12 +36,25 @@ namespace IronScheme.Emit
       }
       else
       {
-        var bytes = FaslEncoder.EncodeTable(asm.Constants, asm.File);
-        il.Emit(OpCodes.Ldstr, Convert.ToBase64String(bytes));
-        il.Emit(OpCodes.Call, core.GetType("IronScheme.Core.Fasl", true).GetMethod("ReadTable", new[] { typeof(string) }));
+        var packed = Deflate(FaslEncoder.EncodeTable(asm.Constants, asm.File));
+        var data = constantsType.DefineInitializedData("data", packed, FieldAttributes.Private | FieldAttributes.Static);
+        il.Emit(OpCodes.Ldc_I4, packed.Length);
+        il.Emit(OpCodes.Newarr, typeof(byte));
+        il.Emit(OpCodes.Dup);
+        il.Emit(OpCodes.Ldtoken, data);
+        il.Emit(OpCodes.Call, typeof(RuntimeHelpers).GetMethod(nameof(RuntimeHelpers.InitializeArray), new[] { typeof(Array), typeof(RuntimeFieldHandle) }));
+        il.Emit(OpCodes.Call, core.GetType("IronScheme.Core.Fasl", true).GetMethod("ReadPackedTable", new[] { typeof(byte[]) }));
       }
       il.Emit(OpCodes.Stsfld, constantsField);
       il.Emit(OpCodes.Ret);
+    }
+
+    /// <summary>固定压缩级别：同一运行时版本下输出确定（自举不动点比较 dll 字节）。</summary>
+    static byte[] Deflate(byte[] bytes)
+    {
+      var ms = new MemoryStream();
+      using (var z = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true)) z.Write(bytes, 0, bytes.Length);
+      return ms.ToArray();
     }
   }
 }

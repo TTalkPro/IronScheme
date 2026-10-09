@@ -9,14 +9,14 @@ See docs/license.txt. |#
 ;;;   (compile-forms->lcil forms 程序集名 模块类型名) → Lcil 的 S 表达式
 ;;;   (compile->lcil-text forms 程序集名 模块类型名)  → Lcil 文本
 ;;;   (compile-core e)            eval：发射到内存，返回执行它的无参过程
-;;;   (compile-library 文件 e)    e 求值得到 13 元素的库描述列表；生成库 dll，入口返回该列表
+;;;   (compile-library-dll 文件 e) e 求值得到 13 元素的库描述列表；生成库 dll，入口返回该列表
 ;;;   (compile-bootfile forms [文件]) 核心形式列表 → boot 镜像 dll（入口 #Module::Initialize）
 ;;;
 ;;; 编译器只读 Lcore 与原语表，不读运行时状态（03 §1）。发射器（IronScheme.Emit）在同一进程中以库 API 调用。
 (library (ironscheme compiler)
   (export
     compile-forms->lcil compile->lcil-text compile->lcil-text-from-sexpr
-    compile-core compile-library compile-bootfile
+    compile-core compile-library-dll compile-bootfile
     front-end
     primitive-table-file
     canonical-gensyms)
@@ -106,7 +106,7 @@ See docs/license.txt. |#
     (let* ((f (clr-static-call System.IO.Path GetFileNameWithoutExtension filename)))
       f))
 
-  (define (compile-library filename e)
+  (define (compile-library-dll filename e)
     ;; Lcil 的 S 表达式直接交给发射器，不经文本（iron-033）
     (let ((lcil (compile-forms->lcil (list e) (assembly-name-of filename) "#Module")))
       (clr-static-call IronScheme.Emit.LcilEmitter (SaveData Object String String Boolean) lcil filename filename #f)

@@ -50,7 +50,8 @@
         (clr-static-prop-set! Environment CurrentDirectory path)]))
     
   (define (compiled-library-filename? filename) 
-    (string=? (clr-static-call System.IO.Path GetExtension filename) ".dll"))    
+    (let ((ext (clr-static-call System.IO.Path GetExtension filename)))
+      (or (string=? ext ".dll") (string=? ext ".fasl"))))    
 
   (define (eval-core expr)
     ((compile-core expr)))

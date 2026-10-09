@@ -24,7 +24,8 @@
     find-library-by-name install-library library-spec invoke-library compiled-library-exists?
     current-library-expander uninstall-library file-locator library-name->file-name library-name->dll-name
     current-library-collection library-path library-extensions alternative-file-locator
-    serialize-all current-precompiled-library-loader allow-library-redefinition)
+    serialize-all current-precompiled-library-loader allow-library-redefinition
+    library-content source-libraries)
   (import (rnrs) (psyntax compat) (rnrs r5rs) (only (ironscheme) format printf))
   
   (define (make-collection)
@@ -239,34 +240,53 @@
                 (exists (lambda (s) (assq s e)) s*))))
         imp*)))
 
+  (define (library-desc x) 
+    (list (library-id x) (library-name x)))
+
+  ;; 一个已安装的源码库 → 13 元素的库描述列表（编译产物的入口返回它，try-load-from-file 据此安装）
+  (define (library-record-content x compile)
+    (for-each (lambda (x) (invoke-library (find-library-by-name (library-name x))))
+      (library-inv* x))
+    (let* ((env (library-env x))
+           (subst (library-subst x))
+           (prune? (can-prune? subst env))
+           (imp* (library-imp* x)))
+      (list (library-id x) 
+            (library-name x)
+            (library-version x) 
+            (map library-desc (if prune? (prune-imp* imp* subst) imp*))
+            (if prune? '() (map library-desc (library-vis* x)))
+            (map library-desc (library-inv* x))
+            subst
+            (if prune? (prune-env env) env)
+            (if prune? #f (compile (library-visit-code x)))
+            (compile (library-invoke-code x))
+            (compile (library-guard-code x))
+            (map library-desc (library-guard-req* x))
+            (library-visible? x))))
+
   (define (serialize-all serialize compile)
-    (define (library-desc x) 
-      (list (library-id x) (library-name x)))
     (for-each 
       (lambda (x)
         (when (library-source-file-name x) 
-          (for-each (lambda (x) (invoke-library (find-library-by-name (library-name x))))
-            (library-inv* x))
-          (let* ((env (library-env x))
-                 (subst (library-subst x))
-                 (prune? (can-prune? subst env))
-                 (imp* (library-imp* x)))
-            (serialize 
-              (library-name x)
-              (list (library-id x) 
-                    (library-name x)
-                    (library-version x) 
-                    (map library-desc (if prune? (prune-imp* imp* subst) imp*))
-                    (if prune? '() (map library-desc (library-vis* x)))
-                    (map library-desc (library-inv* x))
-                    subst
-                    (if prune? (prune-env env) env)
-                    (if prune? #f (compile (library-visit-code x)))
-                    (compile (library-invoke-code x))
-                    (compile (library-guard-code x))
-                    (map library-desc (library-guard-req* x))
-                    (library-visible? x))))))
+          (serialize (library-name x) (library-record-content x compile))))
       (reverse ((current-library-collection)))))
+
+  ;; compile-library / compile-program（psyntax main，iron-037）：按名字取已安装库的描述列表
+  (define (library-content name compile)
+    (let ((lib (find-library-by-name name)))
+      (unless (library-source-file-name lib)
+        (assertion-violation 'library-content "library was not loaded from source" name))
+      (library-record-content lib compile)))
+
+  ;; 从源码加载的库：((名字 . 源文件) …)，按安装顺序（依赖在前）
+  (define (source-libraries)
+    (let f ((ls (reverse ((current-library-collection)))))
+      (cond
+        ((null? ls) '())
+        ((library-source-file-name (car ls))
+         (cons (cons (library-name (car ls)) (library-source-file-name (car ls))) (f (cdr ls))))
+        (else (f (cdr ls))))))
 
   (define current-precompiled-library-loader
     (make-parameter (lambda (libname filename sk) #f)))

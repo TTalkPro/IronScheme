@@ -209,6 +209,8 @@
     (overload "IronScheme.Core.Builtins" "List" 3 #f () #f)
     (overload "IronScheme.Core.Builtins" "List" 4 #f () #f)
     (overload "IronScheme.Core.Builtins" "List" 5 #f () #f))
+  (primitive load-fasl
+    (overload "IronScheme.Core.ModuleLoader" "LoadFasl" 1 #f () #f))
   (primitive load-library-dll
     (overload "IronScheme.Core.ModuleLoader" "LoadLibraryDll" 1 #f () #f))
   (primitive lw-debug-mode?

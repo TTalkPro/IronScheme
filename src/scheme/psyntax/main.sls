@@ -35,7 +35,12 @@
     display-stacktrace
     compile
     compile-system-libraries
-    compile->closure)
+    compile->closure
+    compile-file
+    compile-library
+    compile-program
+    compile-whole-program
+    compile-imported-libraries)
   (import 
     (rnrs base)
     (rnrs exceptions)
@@ -51,7 +56,7 @@
     (psyntax internal)
     (psyntax library-manager)
     (psyntax expander)
-    (only (ironscheme core) get-command-line format compile-library load-library-dll compress-constants? constant-fold)
+    (only (ironscheme core) get-command-line format compile-library-dll load-library-dll load-fasl compress-constants? constant-fold)
     (ironscheme enums)
     (ironscheme files)
     (ironscheme clr)
@@ -106,7 +111,7 @@
         (load/unsafe filename))))
     
   (define (ironscheme-test)
-    ;; 先找当前目录（新宿主在 IronScheme.Host/bin 下，测试在 IronScheme.Console 中），再找宿主所在目录
+    ;; 先找当前目录（新宿主在 IronScheme.Host/bin 下，测试在 src/scheme 中），再找宿主所在目录
     (let ((path (if (file-exists? "tests/r6rs/run.sps")
                     "tests/r6rs/run.sps"
                     (string-append (application-directory) "/tests/r6rs/run.sps"))))
@@ -224,6 +229,16 @@
             ((compile-r6rs-top-level x*)))))))
     
   (define (load-r6rs-top-level filename how . args)
+    (if (fasl-file? filename)
+        (case how
+          ((load)
+            (parameterize ([library-path (local-library-path filename)]
+                           [command-line (cons filename (map (lambda (x) (format "~a" x)) args))])
+              (load-fasl-file filename)))
+          (else (assertion-violation how "a compiled .fasl file cannot be compiled again" filename)))
+        (apply load-r6rs-top-level/source filename how args)))
+
+  (define (load-r6rs-top-level/source filename how . args)
     (parameterize ([library-path (local-library-path filename)])
       (let ((x* 
              (call-with-input-file filename
@@ -244,7 +259,11 @@
 
   (define fo (make-enumeration '(no-fail no-create no-truncate append)))
  
-  (define (load-library-from-dll libname filename sk)        
+  (define (load-library-from-dll libname filename sk)
+    (or (load-library-from-fasl libname filename sk)
+        (load-library-from-dll* libname filename sk)))
+
+  (define (load-library-from-dll* libname filename sk)
     (let ((dll-filename (compiled-library-exists? libname)))
       (if dll-filename
           (if (or (not (file-exists? filename))
@@ -262,11 +281,8 @@
                 #f))
           #f)))
           
-  (define (compile-dll libname content)
-    (let ((filename (library-name->dll-name libname)))
-      (display "compiling ")
-      (display (get-filename filename))
-      (newline)
+  ;; 13 元素的库描述列表 → 编译产物入口中重建它的表达式（代码部分包成无参 lambda）
+  (define (library-content->expr content)
       (let ((v (list->vector content)))
         (vector-set! v 0 `',(vector-ref v 0)) ; id
         (vector-set! v 1 `',(vector-ref v 1)) ; name
@@ -281,11 +297,304 @@
         (vector-set! v 10 `(lambda () ,(vector-ref v 10))) ; guard-code
         (vector-set! v 11 `',(vector-ref v 11)) ; guard-req*
         (vector-set! v 12 `',(vector-ref v 12)) ; visible?
-        (if (compile-library filename (cons 'list (vector->list v)))
-            (parameterize ((allow-library-redefinition #t))
-              (try-load-from-file libname filename))
-            #f))))
+        (cons 'list (vector->list v))))
+
+  (define (compile-dll libname content)
+    (let ((filename (library-name->dll-name libname)))
+      (display "compiling ")
+      (display (get-filename filename))
+      (newline)
+      (if (compile-library-dll filename (library-content->expr content))
+          (parameterize ((allow-library-redefinition #t))
+            (try-load-from-file libname filename))
+          #f)))
+
+  ;;; ———————————————— compile-file / compile-library / compile-program（iron-037，designs/07-tooling-and-embedding.md §2）————————————————
+  ;;; 编译产物 .fasl 是一个程序集（与库 dll 同一格式），入口返回
+  ;;;   (ironscheme-fasl 1 libraries (库描述 …))         库文件：加载时逐个安装
+  ;;;   (ironscheme-fasl 1 program ((id 名字) …) thunk)   顶层程序：核对依赖库的编译实例后调用 thunk
+  ;;; 依赖库按 id 核对（与 try-load-from-file 一致）：库若重新展开（例如从源码重新加载），其位置与 id 都会变，编译产物不能再用。
+
+  ;; 为真时，编译期间从源码加载的库也编译为各自源文件旁的 .fasl（Chez 的 compile-imported-libraries）
+  (define compile-imported-libraries (make-parameter #f))
+
+  (define (fasl-file-name filename)
+    (clr-static-call System.IO.Path (ChangeExtension String String) filename ".fasl"))
+
+  (define (fasl-file? filename)
+    (string=? (clr-call String ToLowerInvariant (clr-static-call System.IO.Path (GetExtension String) filename)) ".fasl"))
+
+  (define (strip x) (if (annotation? x) (annotation-stripped x) x))
+
+  (define (read-source-forms filename)
+    (call-with-input-file filename
+      (lambda (p)
+        (let f ()
+          (let ((x (read-annotated p)))
+            (if (eof-object? x) '() (cons x (f))))))))
+
+  (define (library-form? x)
+    (let ((x (strip x)))
+      (and (pair? x) (eq? (strip (car x)) 'library))))
+
+  (define (fasl-content? x kind)
+    (and (pair? x) (eq? (car x) 'ironscheme-fasl) (pair? (cdr x)) (eqv? (cadr x) 1)
+         (pair? (cddr x)) (eq? (caddr x) kind)))
+
+  (define (write-fasl out expr)
+    (when (file-exists? out) (delete-file out))
+    (compile-library-dll out expr))
+
+  ;; 编译期间从源码加载、且没有不旧于源文件的 .fasl 的库 → 各自源文件旁的 .fasl
+  (define (compile-source-libraries! except)
+    (for-each
+      (lambda (p)
+        (let* ((name (car p)) (src (cdr p)) (out (fasl-file-name src)))
+          (unless (or (member name except)
+                      (fasl-file? src)
+                      (and (file-exists? out) (file-newer? out src)))
+            (write-fasl out `(list 'ironscheme-fasl 1 'libraries
+                                   (list ,(library-content->expr (library-content name compile-core-expr))))))))
+      (source-libraries)))
+
+  (define compile-library
+    (case-lambda
+      [(filename) (compile-library filename (fasl-file-name filename))]
+      [(filename out)
+        (parameterize ([library-path (local-library-path filename)])
+          (let ((forms (read-source-forms filename)))
+            (when (null? forms) (assertion-violation 'compile-library "no library in file" filename))
+            (let ((names
+                   (map (lambda (x)
+                          (unless (library-form? x)
+                            (assertion-violation 'compile-library "not a library form" (strip x) filename))
+                          (let ((name #f))
+                            (parameterize ((allow-library-redefinition #t))
+                              ((current-library-expander) x filename (lambda (n) (set! name n))))
+                            name))
+                        forms)))
+              (when (compile-imported-libraries) (compile-source-libraries! names))
+              (write-fasl out `(list 'ironscheme-fasl 1 'libraries
+                                     (list ,@(map (lambda (n) (library-content->expr (library-content n compile-core-expr))) names))))
+              out)))]))
+
+  (define compile-program
+    (case-lambda
+      [(filename) (compile-program filename (fasl-file-name filename))]
+      [(filename out)
+        (parameterize ([library-path (local-library-path filename)])
+          (let-values (((lib* invoke-code macro* export-subst export-env)
+                        (top-level-expander (read-source-forms filename))))
+            (when (compile-imported-libraries) (compile-source-libraries! '()))
+            (write-fasl out `(list 'ironscheme-fasl 1 'program
+                                   ',(map (lambda (lib) (let ((s (library-spec lib))) (list (car s) (cadr s)))) lib*)
+                                   (lambda () ,(compile-core-expr invoke-code))))
+            out))]))
+
+  ;; 文件以 library 形式开头时按库文件编译，否则按顶层程序编译（与 load 对源文件的处理一致）
+  (define compile-file
+    (case-lambda
+      [(filename) (compile-file filename (fasl-file-name filename))]
+      [(filename out)
+        (let ((forms (read-source-forms filename)))
+          (if (and (pair? forms) (library-form? (car forms)))
+              (compile-library filename out)
+              (compile-program filename out)))]))
+
+  ;; (load "x.fasl")：顶层程序运行；库安装（已安装的同名库被替换）
+  (define (load-fasl-file filename)
+    (load-fasl-content (load-fasl filename) filename))
+
+  ;; 已加载的编译产物入口返回值 → 安装其中的库或运行程序（宿主运行嵌入的应用时经钩子调用，iron-036）
+  (define (load-fasl-content content filename)
+      (cond
+        ((fasl-content? content 'program)
+          (let ((deps (cadddr content)) (thunk (car (cddddr content))))
+            (for-each
+              (lambda (d)
+                (let ((lib (find-library-by-name (cadr d))))
+                  (unless (eq? (car (library-spec lib)) (car d))
+                    (assertion-violation 'load
+                      "compiled program requires a different compilation of a library; recompile the program (and the library)"
+                      filename (cadr d)))
+                  (invoke-library lib)))
+              deps)
+            (thunk)))
+        ((fasl-content? content 'libraries)
+          (for-each
+            (lambda (desc)
+              (unless (install-library-content (cadr desc) filename desc)
+                (assertion-violation 'load "compiled library is out of date with its dependencies; recompile it" filename (cadr desc))))
+            (cadddr content)))
+        (else (assertion-violation 'load "not an IronScheme compiled file" filename))))
+
+  ;; 整个程序编译到 out-dir（自包含发布，iron-036）：程序展开期间从源码加载的每个库一个 libN.fasl（按安装顺序，
+  ;; 依赖在前），程序本身 program.fasl，清单 ironscheme.app 每行 "library 文件" 或 "program 文件"。
+  ;; 展开时不使用已有的编译产物（.fasl、库 dll），保证每个库都从源码展开、都能序列化。
+  (define (compile-whole-program filename out-dir)
+    (define (out name) (clr-static-call System.IO.Path (Combine String String) out-dir name))
+    (clr-static-call System.IO.Directory (CreateDirectory String) out-dir)
+    (parameterize ([library-path (local-library-path filename)]
+                   [current-precompiled-library-loader (lambda (libname filename sk) #f)])
+      (let-values (((lib* invoke-code macro* export-subst export-env)
+                    (top-level-expander (read-source-forms filename))))
+        (let loop ((libs (source-libraries)) (i 0) (manifest '()))
+          (if (pair? libs)
+              (let ((file (string-append "lib" (number->string i) ".fasl")))
+                (write-fasl (out file) `(list 'ironscheme-fasl 1 'libraries
+                                              (list ,(library-content->expr (library-content (caar libs) compile-core-expr)))))
+                (loop (cdr libs) (+ i 1) (cons (string-append "library " file) manifest)))
+              (begin
+                (write-fasl (out "program.fasl")
+                            `(list 'ironscheme-fasl 1 'program
+                                   ',(map (lambda (lib) (let ((s (library-spec lib))) (list (car s) (cadr s)))) lib*)
+                                   (lambda () ,(compile-core-expr invoke-code))))
+                (let ((m (out "ironscheme.app")))
+                  (when (file-exists? m) (delete-file m))
+                  (call-with-output-file m
+                    (lambda (p)
+                      (for-each (lambda (line) (display line p) (newline p)) (reverse (cons "program program.fasl" manifest))))))
+                out-dir))))))
+
+  (define (install-library-content name filename desc)
+    (parameterize ((allow-library-redefinition #t)
+                   (current-precompiled-library-loader (lambda (libname fn sk) (apply sk desc))))
+      (try-load-from-file name filename)))
+
+  ;; 导入库时：源文件旁有不旧于它的 .fasl 就加载它（Chez 的编译产物查找）；依赖不符时返回 #f，退回源码
+  (define (load-library-from-fasl libname filename sk)
+    (let ((fasl (and (not (fasl-file? filename)) (fasl-file-name filename))))
+      (and fasl
+           (file-exists? fasl)
+           (file-newer? fasl filename)
+           (let ((content (clr-guard [e (e (display (format "WARNING: compiled library ~a could not load. ~s\n" fasl (clr-prop-get Exception Message e))
+                                                    (current-error-port))
+                                           #f)]
+                            (load-fasl fasl))))
+             (and (fasl-content? content 'libraries)
+                  (let ((desc (find (lambda (d) (equal? (cadr d) libname)) (cadddr content))))
+                    (and desc (apply sk desc))))))))
       
+  ;;; ———————————————— REPL 的补全与提示（iron-038，designs/07-tooling-and-embedding.md §4）————————————————
+  ;;; 宿主的行编辑器经符号 repl-complete、repl-describe 调用。
+
+  (define (string-prefix? p s)
+    (and (<= (string-length p) (string-length s))
+         (string=? p (substring s 0 (string-length p)))))
+
+  (define (library-name->string name)
+    (call-with-string-output-port
+      (lambda (p)
+        (put-char p #\()
+        (let f ((xs name) (first? #t))
+          (unless (null? xs)
+            (unless first? (put-char p #\space))
+            (display (car xs) p)
+            (f (cdr xs) #f)))
+        (put-char p #\)))))
+
+  ;; 库搜索路径下的 .sls 文件 → 库名（按 library-name->file-name 的规则反解：目录分隔为空格，%XX 解码）
+  (define library-file-names #f)
+
+  (define (decode-component s)
+    (let ((n (string-length s)))
+      (let f ((i 0) (acc '()))
+        (cond
+          ((= i n) (list->string (reverse acc)))
+          ((and (char=? (string-ref s i) #\%) (< (+ i 2) n))
+           (let ((code (string->number (substring s (+ i 1) (+ i 3)) 16)))
+             (if code
+                 (f (+ i 3) (cons (integer->char code) acc))
+                 (f (+ i 1) (cons #\% acc)))))
+          (else (f (+ i 1) (cons (string-ref s i) acc)))))))
+
+  (define (scan-library-files)
+    (unless library-file-names
+      (set! library-file-names
+        (apply append
+          (map
+            (lambda (dir)
+              (if (clr-static-call System.IO.Directory (Exists String) dir)
+                  (let ((full (clr-static-call System.IO.Path (TrimEndingDirectorySeparator String)
+                                               (clr-static-call System.IO.Path (GetFullPath String) dir))))
+                    (map
+                      (lambda (file)
+                        (let* ((rel (substring file (+ (string-length full) 1) (string-length file)))
+                               (rel (clr-call String (Replace String String) rel "\\" "/"))
+                               (base (cond
+                                       ((string-suffix? ".ironscheme.sls" rel) (substring rel 0 (- (string-length rel) 15)))
+                                       (else (substring rel 0 (- (string-length rel) 4))))))
+                          (library-name->string
+                            (map (lambda (c) (string->symbol (decode-component c)))
+                                 (split-path base)))))
+                      (vector->list
+                        (clr-static-call System.IO.Directory (GetFiles String String System.IO.SearchOption)
+                                         full "*.sls" 'AllDirectories))))
+                  '()))
+            (library-path)))))
+    library-file-names)
+
+  (define (string-suffix? x s)
+    (and (<= (string-length x) (string-length s))
+         (string=? x (substring s (- (string-length s) (string-length x)) (string-length s)))))
+
+  (define (split-path s)
+    (let f ((i 0) (start 0) (acc '()))
+      (cond
+        ((= i (string-length s)) (reverse (cons (substring s start i) acc)))
+        ((char=? (string-ref s i) #\/) (f (+ i 1) (+ i 1) (cons (substring s start i) acc)))
+        (else (f (+ i 1) start acc)))))
+
+  ;; prefix 开头的名字（交互环境中的绑定）；library? 为真时是写成 "(a b c)" 的库名
+  (define (repl-complete prefix library?)
+    (if library?
+        (filter (lambda (s) (string-prefix? prefix s))
+                (append (map library-name->string (installed-libraries #t)) (scan-library-files)))
+        (filter (lambda (s) (string-prefix? prefix s))
+                (map symbol->string (interaction-environment-symbols)))))
+
+  ;; 名字的提示：过程 → 各子句的形参（编译器生成的 Form，或按参数个数）；语法关键字与其他值为 #f
+  (define (repl-describe name)
+    (let ((sym (string->symbol name)))
+      (and (memq sym (interaction-environment-symbols))
+           (call/cc
+             (lambda (k)
+               (with-exception-handler
+                 (lambda (e) (k #f))
+                 (lambda ()
+                   (let ((v (eval sym (interaction-environment))))
+                     (and (procedure? v) (procedure-hint sym v))))))))))
+
+  (define (procedure-hint sym p)
+    (define (show x) (call-with-string-output-port (lambda (o) (display x o))))
+    (define (placeholders n rest?)
+      (let f ((i 0))
+        (cond
+          ((< i n) (cons '_ (f (+ i 1))))
+          (rest? '_)
+          (else '()))))
+    (let ((form (clr-prop-get IronScheme.Core.Procedure Form p)))
+      (if (pair? form)
+          (join-hints (map (lambda (f) (show (cons sym (cdr f)))) form))
+          (let ((arity (clr-prop-get IronScheme.Core.Procedure Arity p)))
+            (define (one a)
+              (cond
+                ((and (integer? a) (exact? a)) (show (cons sym (placeholders a #f))))
+                ((real? a) (show (cons sym (placeholders (exact (floor a)) #t))))
+                (else #f)))
+            (cond
+              ((pair? arity) (join-hints (filter values (map one arity))))
+              ((null? arity) #f)
+              (else (one arity)))))))
+
+  ;; 多个子句以 " | " 连接；超过两个时只显示首尾两个，中间写 "…"
+  (define (join-hints xs)
+    (cond
+      ((null? xs) #f)
+      ((null? (cdr xs)) (car xs))
+      ((null? (cddr xs)) (string-append (car xs) " | " (cadr xs)))
+      (else (string-append (car xs) " | … | " (let f ((l xs)) (if (null? (cdr l)) (car l) (f (cdr l))))))))
+
   (current-precompiled-library-loader load-library-from-dll)
   
   (initialize-default-printers)
@@ -300,6 +609,9 @@
   (set-symbol-value! 'eval-r6rs eval-top-level)
   (set-symbol-value! 'eval-embedded eval-embedded)
   (set-symbol-value! 'int-env-syms interaction-environment-symbols)
+  (set-symbol-value! 'repl-complete repl-complete)
+  (set-symbol-value! 'load-fasl-content load-fasl-content)
+  (set-symbol-value! 'repl-describe repl-describe)
   (set-symbol-value! 'expanded2core expanded->core)
   
   (set-symbol-value! 'trace-printer trace-printer)

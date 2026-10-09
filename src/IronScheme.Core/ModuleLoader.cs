@@ -79,6 +79,14 @@ namespace IronScheme.Core
 
     public static object LoadModule(string path, bool inMemory = false) => Run(LoadAssembly(path, inMemory));
 
+    /// <summary>
+    /// (load-fasl 文件名) → compile-file / compile-library / compile-program 产物（.fasl）入口的返回值（iron-037）。
+    /// 按字节加载：不锁文件（同一进程中可重新编译后再加载），每次加载在独立的加载上下文中，同名不冲突。
+    /// </summary>
+    [Primitive("load-fasl")]
+    public static object LoadFasl(object filename) =>
+      LoadModule(Errors.RequiresType<string>(filename is System.Text.StringBuilder sb ? sb.ToString() : filename, "load-fasl"), inMemory: true);
+
     /// <summary>(load-library-dll 文件名) → 库 dll 入口返回的库描述列表（psyntax/main.sls 的 load-library-from-dll）。</summary>
     [Primitive("load-library-dll")]
     public static object LoadLibraryDll(object filename) =>
