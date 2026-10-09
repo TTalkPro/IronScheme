@@ -51,7 +51,30 @@
 - `typed-lambda` 利用类型说明：等 D4 的类型标注有了再做，强类型子句方法是 D4 的自然延伸。
 - 序列点：调试信息，不属于性能，另开任务。
 
-**D7 顺序与取舍**：iron-034a 基准 → 034b D2（最便宜，复用现成 pass）→ 034c D4（收益最直观）→ 034d D3（先量类型加载占比）→ 034e D5（最大、最后）。每一步单独可交付；任何一步基准不劣化、测试全过才合入。
+**D8 通用算术与比较在调用处内联**（iron-059 转来，仿 Chez）。
+- 现状：用户代码里的 `+ - * = < <= > >=` 是 boot 中用 Scheme 定义的过程（`boot/primitive-numbers.sls`、`boot/numbers.sls`），不在原语表里，codegen 走 `cg-primcall` 的"没有重载"分支 `cg-call-prim-value`：`ldconst` 符号 → `Calls.Global` → `Calls.Proc` → `callvirt Invoke2`。iron-059 已在这些过程内部加了 fixnum / flonum 快速路径，但调用本身省不掉。2026-10-10 实测（Release，100 万次计数循环 `(if (= i n) … (loop (+ i 1)))`）：
+  - 用通用的 `=` 与 `+` 为 49ms；
+  - 只用 `$fx=?`、`$fx+` 为 5ms；
+  - 其中跨库调用每次约 8–15ns，`+` 内的 `define/contract` 检查约 10ns，其余是装箱与命名 let 的进入开销（D2）。
+- Chez 的做法（`s/cpprim.ss:4546` 起，`define-inline 2 +`、`=`、`define-relop-inline`）：
+  - 在调用处展开为"两个操作数都是 fixnum → 机器指令（加法带溢出检查），否则 `build-libcall` 调库函数"；
+  - 库函数（`s/library.ss:749`，"The generic comparison entries assume the fixnum case is inlined"）只处理其余类型；
+  - `primdata.ss` 为这些名字声明签名与 `pure` / `mifoldable` 等标志。
+- 做法：
+  - **登记**：PrimGen 的 `s_specials` 加 `+ - * = < <= > >=`，种类 `generic-arith` / `generic-compare`，说明写"在 Scheme 中定义；两参数时内联 fixnum 快速路径，否则经值槽调用"。先例是 `values`：在 Scheme 中定义，又作为 special 由编译器处理。
+  - **识别**：先核实这些名字在用户代码中是否以原语形式（primref）到达 codegen。现在它们走 `cg-primcall` 的 `(not o)` 分支，说明是；boot 库自身定义它们时是库变量，不受影响。
+  - **codegen**（两参数；其余参数个数仍走值槽调用）：
+    - 两个操作数求值到临时变量，各做 `isinst Int32`；fixnum 常量操作数（`fixnum-constant`）不检查、直接 `ldc.i4`。
+    - 比较：`unbox.any int32` 后用 `emit-compare!`，在测试上下文里直接 `brtrue`，不经布尔对象。
+    - `+ - *`：调用 `RT` 中新增的静态助手（如 `RT.AddFixnums(int, int) → object`：`long` 运算，在 int 范围内时装箱，否则转大整数），由 JIT 内联。不在 IL 里手写溢出分支。
+    - 任一操作数不是 fixnum 时，跳到慢路径：对 `pr` 做与现在相同的 `cg-call-prim-value`，位于尾位置时照样加 `tail.`。错误信息与 who 不变，因为都由原过程报出。
+    - 第二步再考虑两个 flonum 的快速路径（`isinst Double`），量过 `fl-loop` 再定。
+  - **与 D4 的关系**：D4 的类型来源原来只有 `$fx…` / `$fl…` 原语，而用户代码很少直接写它们。D8 之后，操作数已知为 int32 的局部变量可以连 `isinst` 一起省掉，结果保持不装箱。D4 的 `infer-types` 应把 `+ - *`（fixnum 结果）与比较（bool）作为类型来源；`+` 可能溢出成大整数，结果类型只能是"fixnum 或 bignum"，除非范围已知。
+  - **代价**：每个调用点的 IL 变长（约 20–30 字节）。要量 boot 镜像的大小与 `boot-load`，必要时只在循环体内展开，或设展开次数上限。
+  - **语义**：词法遮蔽的 `+` 是词法变量，不受影响。R6RS 不允许对导入的名字 `set!`；REPL 里重定义 `+` 的旧习惯不再影响已编译的调用点，与 D5 一样在文档中写明（Chez 相同）。
+- 预期：计数循环由 49ms 降到 15ms 以下（只剩装箱与 D2 的开销）；D2、D4 完成后应接近 `$fx` 版本的 5ms。
+
+**D7 顺序与取舍**：iron-034a 基准 → 034b D2（最便宜，复用现成 pass）→ 034c D4（收益最直观）→ 034d D3（先量类型加载占比）→ 034e D5（最大、最后）。034f D8 与其余各步独立，可紧接 034a 做（改动集中在 codegen 一处，收益面最广）；若先于 034c 做，D4 的类型来源要把通用算术算进去。每一步单独可交付；任何一步基准不劣化、测试全过才合入。
 
 ## 工作内容
 1. **iron-034a 基准**：`tests/perf/` 六个脚本与一个 `run-all.sps`（打印表格），任务书记录当前数字。
@@ -59,13 +82,22 @@
 3. **iron-034c 拆箱**：原语表结果类型（PrimGen）；`infer-types` pass；codegen 带类型的局部变量；快照测试；`fib` / `fl-loop` 基准。
 4. **iron-034d 共享类**：`StaticProcedure`；codegen 改无自由变量过程的生成；`boot-load` 基准；ILVerify。
 5. **iron-034e 跨库直接调用**：`.ifc` 的写出与读取、`collect-known!` 扩展、nano 构建脚本写 boot 的 `.ifc`、失效检查的测试。
-6. 每项更新 [03](../designs/03-compiler.md) 的 pass 表与 §5 / §6，必要时 [02 §4](../designs/02-runtime.md)。
+6. **iron-034f 通用算术与比较内联**（D8）：
+   - PrimGen 的 `s_specials` 加八个名字；
+   - codegen 的两参数 fixnum 快速路径与值槽慢路径，以及 `RT.AddFixnums` / `SubtractFixnums` / `MultiplyFixnums`；
+   - 快照测试：常量操作数、测试上下文、尾位置的慢路径、三参数不展开；
+   - 基准新增 `arith-loop`，即 iron-059 的计数循环：`=` 与 `+`、`<` 与 `-`，各 100 万次。
+7. 每项更新 [03](../designs/03-compiler.md) 的 pass 表与 §5 / §6，必要时 [02 §4](../designs/02-runtime.md)。
 
 ## 验收标准
 - 每个子任务：自举不动点不变（stage1 / stage2 / stage3 字节相同）；全部测试通过；ILVerify 通过；`tests/perf` 的六项基准没有一项劣化超过 5%，目标项有记录在案的改善。
 - 034b：`slow-compile-seed.sps` 的类数减少约 150，命名 let 的快照里没有新类。
 - 034c：`fib` 至少快 2 倍，`fl-loop` 至少快 2 倍；`(fixnum? x)` 分支外的变量仍按 `object` 处理（快照验证）。
+- 034f：`arith-loop` 至少快 3 倍；`tests/base-library.sps` 的比较组（K 组）、`tests/bignums.sps` 与 R6RS 测试全过，fixnum 溢出到大整数、非数参数的报错（who 与消息）不变；boot 镜像增大不超过 5%，`boot-load` 不劣化超过 5%。
 - 034e：跨库调用 `Calls.Global` 的次数在用户库里显著下降（用 `wordcount` 的 Lcil 计数）；库重新编译后旧程序按现有机制报"需要重新编译"。
+
+## 从 iron-059 转来
+- D8（上文）。另外，通用路径的现状供 D8 参考：iron-059 已在比较过程内部加了 fixnum、flonum、fixnum 与 flonum 混合的快速路径，其余实数一次 `$real-compare`。数据见 [iron-059](iron-059-system-numerics-bignum.md) 结论的"数的比较的快速路径"一节。
 
 ## 从 iron-033 转来
 - 剩余的运行时互操作决议点（boot 中 31 处，多为 `clr-new` 的重载构造函数，如 `make-hashtable`、`string`、编解码器）可按 `values` 的做法加 `clr-cast` 提示——iron-056 之后这些都变成了原语调用，此项已无对象。

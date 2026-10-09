@@ -102,6 +102,24 @@
 (check (all-compares (expt 2 31) 2147483647) => '(#f #f #f #t #t))
 (check (all-compares 1/3 0.3333333333333333) => '(#f #f #f #t #t))   ; 精确比较
 (check (all-compares 9007199254740993 9007199254740992.0) => '(#f #f #f #t #t))
+;; 通用路径（$real-compare）：超出 double 范围的精确数与 ±inf.0 比较（原来先转为 flonum，得 ∞，结果全反）
+(check (all-compares (expt 2 2000) +inf.0) => '(#f #t #t #f #f))
+(check (all-compares (- (expt 2 2000)) -inf.0) => '(#f #f #f #t #t))
+(check (all-compares -inf.0 (/ (expt 2 2000) 3)) => '(#f #t #t #f #f))
+(check (all-compares (expt 2 2000) +nan.0) => '(#f #f #f #f #f))
+(check (all-compares 1/3 +nan.0) => '(#f #f #f #f #f))
+(check (all-compares (expt 2 2000) 1e308) => '(#f #f #f #t #t))
+(check (all-compares (exact 1e308) 1e308) => '(#t #f #t #f #t))
+(check (all-compares 1/2 0.5) => '(#t #f #t #f #t))
+(check (all-compares 0.1 1/10) => '(#f #f #f #t #t))                  ; 0.1 略大于 1/10
+(check (all-compares (expt 2 70) 1180591620717411303424.0) => '(#t #f #t #f #t))
+(check (all-compares (expt 2 32) 4294967296.5) => '(#f #t #t #f #f))          ; 大整数与带小数的 flonum
+(check (all-compares (- (expt 2 32)) -4294967296.5) => '(#f #f #f #t #t))
+(check (all-compares (+ (expt 2 32) 1) 4294967296.5) => '(#f #f #f #t #t))
+(check (all-compares (expt 2 32) 4294967296.0) => '(#t #f #t #f #t))
+(check (all-compares (- (expt 2 2000)) -1e308) => '(#f #t #t #f #f))
+(check (all-compares 1/3 2/5) => '(#f #t #t #f #f))
+(check (all-compares (expt 10 30) (+ (expt 10 30) 1)) => '(#f #t #t #f #f))
 (check (= 1+2i 1+2i) => #t)
 (check (< 1 2 3 3) => #f)
 (check (<= 1 2 3 3) => #t)

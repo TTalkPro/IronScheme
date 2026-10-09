@@ -568,6 +568,8 @@
     (overload "IronScheme.Core.HostPrimitives" "RcdRtd" 1 #f (pure unsafe) #f))
   (primitive $rcd?
     (overload "IronScheme.Core.HostPrimitives" "IsRcd" 1 #f (pure unsafe) #f))
+  (primitive $real-compare
+    (overload "IronScheme.Core.HostPrimitives" "RealCompare" 2 #f (pure unsafe) #f))
   (primitive $record-fields
     (overload "IronScheme.Core.HostPrimitives" "RecordFields" 1 #f (pure unsafe) #f))
   (primitive $record-rtd

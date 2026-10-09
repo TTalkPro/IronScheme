@@ -563,16 +563,6 @@ See docs/license.txt. |#
           [else
             (assertion-violation 'number->string "not a number" num)])]))  
 
-  (define-syntax exact-compare
-    (syntax-rules ()
-      [(_ x y)
-        ($exact-compare x y)]))                       
-
-  (define-syntax inexact-compare
-    (syntax-rules ()
-      [(_ x y)
-        ($inexact-compare x y)]))    
-
   (define-syntax fixnum-or-flonum->flonum
     (syntax-rules ()
       [(_ x) (let ((v x)) (if (fixnum? v) ($fixnum->flonum v) v))]))
@@ -604,26 +594,24 @@ See docs/license.txt. |#
                   [(a b)
                     (cond 
                       ;; 快速路径（iron-059）：同为 fixnum 或同为 flonum 时直接比较。
-                      ;; 下面的通用路径对两个 fixnum 也要调用 real?、finite?、nan?、exact 与 $exact-compare，每次约 160ns。
+                      ;; 原来两个 fixnum 也要调用 real?、finite?、nan?、exact 与 $exact-compare，每次约 160ns。
                       ;; flonum 的 IEEE 比较与通用路径一致：有 NaN 为 #f，无穷正常比较，-0.0 与 0.0 相等。
                       ;; fixnum 与 flonum 混合时把 fixnum 转为 flonum：32 位整数转换精确，比较结果与精确比较相同。
                       [(and (fixnum? a) (fixnum? b)) (uname a b)]
                       [(and (flonum? a) (flonum? b)) (flname a b)]
                       [(and (or (fixnum? a) (flonum? a)) (or (fixnum? b) (flonum? b)))
                         (flname (fixnum-or-flonum->flonum a) (fixnum-or-flonum->flonum b))]
-                      [(and (real? a)
-                            (real? b)
-                            (finite? a)
-                            (finite? b)
-                            (not (nan? a))
-                            (not (nan? b)))
-                        (uname (exact-compare (exact a) (exact b)) 0)]
-                      [(or (and (real? a) (nan? a)) 
-                           (and (real? b) (nan? b))) #f]
-                      [(and (number? a) (number? b))
-                        (inexact=? (inexact a) (inexact b))]
                       [else
-                        (assertion-violation 'name "not number arguments" a b)])]
+                        ;; 其余实数一次比较完（iron-059）：-1 / 0 / 1，有 NaN 为 2，有非实数为 #f。
+                        ;; 原来先调 real?、finite?、nan?、exact，有 ±∞ 时两边都转为 flonum，
+                        ;; 超出 double 范围的精确数变成 ∞，(= (expt 2 2000) +inf.0) 得 #t。
+                        (let ((c ($real-compare a b)))
+                          (cond
+                            [c (and (not ($fx=? c 2)) (uname c 0))]
+                            [(and (number? a) (number? b))
+                              (inexact=? (inexact a) (inexact b))]
+                            [else
+                              (assertion-violation 'name "not number arguments" a b)]))])]
                   [(x1 x2 . rest)
                     (let f ((a x1)(b (cons x2 rest)))
                       (cond 
@@ -659,20 +647,12 @@ See docs/license.txt. |#
                       [(and (flonum? a) (flonum? b)) (flname a b)]
                       [(and (or (fixnum? a) (flonum? a)) (or (fixnum? b) (flonum? b)))
                         (flname (fixnum-or-flonum->flonum a) (fixnum-or-flonum->flonum b))]
-                      [(and (real? a) 
-                            (real? b)
-                            (finite? a)
-                            (finite? b)
-                            (not (nan? a))
-                            (not (nan? b)))
-                        (uname (exact-compare (exact a) (exact b)) 0)]
-                      [(or (and (real? a) (nan? a)) 
-                           (and (real? b) (nan? b))) #f]
-                      [(and (real? a)
-                            (real? b))
-                        (uname (inexact-compare (inexact a) (inexact b)) 0)]                                                
                       [else
-                        (assertion-violation 'name "not real arguments" a b)])]
+                        ;; 其余实数一次比较完（iron-059），同 define-comparer
+                        (let ((c ($real-compare a b)))
+                          (if c
+                              (and (not ($fx=? c 2)) (uname c 0))
+                              (assertion-violation 'name "not real arguments" a b)))])]
                   [(x1 x2 . rest)
                     (let f ((a x1)(b (cons x2 rest)))
                       (cond 

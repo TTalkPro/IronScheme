@@ -56,7 +56,9 @@ public partial class Builtins
             case NumberClass.BigInteger:
                 return ConvertToBigInteger(a).CompareTo(ConvertToBigInteger(b));
             case NumberClass.Rational:
-                return ConvertToRational(a).CompareTo(ConvertToRational(b));
+                RationalParts(a, out var n1, out var d1);
+                RationalParts(b, out var n2, out var d2);
+                return CompareRationals(n1, d1, n2, d2);
 
             default:
                 AssertionViolation("exact-compare", "not exact", a, b);
@@ -81,6 +83,126 @@ public partial class Builtins
                 // never reached
                 return 0;
         }
+    }
+
+    /// <summary>精确有理数的分子与分母（分母为正）；整数的分母为 1，不构造 Fraction（构造要求最大公约数）。</summary>
+    private static void RationalParts(object o, out BigInteger n, out BigInteger d)
+    {
+        switch (o)
+        {
+            case int i: n = i; d = BigInteger.One; return;
+            case BigInteger b: n = b; d = BigInteger.One; return;
+            case Fraction f: n = f.Numerator; d = f.Denominator; return;
+            default: throw new InvalidCastException("not an exact rational: " + o);
+        }
+    }
+
+    /// <summary>
+    /// n1/d1 与 n2/d2（分母为正）比较，-1 / 0 / 1（iron-059）。符号不同、分母相同时不必相乘，否则交叉相乘。
+    /// 试过先按位数估计、在 63 位内用 Int128 相乘：小分数时 GetBitLength 每次约 8ns，四次比交叉相乘（约 20ns）还贵，没有采用。
+    /// </summary>
+    public static int CompareRationals(BigInteger n1, BigInteger d1, BigInteger n2, BigInteger d2)
+    {
+        int s1 = n1.Sign, s2 = n2.Sign;
+        if (s1 != s2) return s1 < s2 ? -1 : 1;
+        if (s1 == 0) return 0;
+        if (d1 == d2) return n1.CompareTo(n2);
+        return (n1 * d2).CompareTo(n2 * d1);
+    }
+
+    /// <summary>RealCompare 的结果：a、b 有 NaN，无法比较。</summary>
+    public const int Unordered = 2;
+    /// <summary>RealCompare 的结果：a 或 b 不是实数。</summary>
+    public const int NotReal = 3;
+
+    /// <summary>
+    /// 两个实数的比较（iron-059，数的比较的通用路径）：-1 / 0 / 1；有 NaN 为 <see cref="Unordered"/>，有非实数为 <see cref="NotReal"/>。
+    /// 精确数与 flonum：±∞ 大于 / 小于一切精确数；有限的 flonum 精确转换为分数后比较。
+    /// 原来先把两边都转为 flonum，超出 double 范围的精确数变成 ∞，(&lt; (expt 2 2000) +inf.0) 得 #f。
+    /// </summary>
+    public static int RealCompare(object a, object b)
+    {
+        if (a is double x)
+        {
+            if (b is double y) return double.IsNaN(x) || double.IsNaN(y) ? Unordered : x.CompareTo(y);
+            if (!IsExactReal(b)) return NotReal;
+            int c = CompareExactWithDouble(b, x);
+            return c == Unordered ? c : -c;
+        }
+        if (b is double d) return IsExactReal(a) ? CompareExactWithDouble(a, d) : NotReal;
+        // 精确数之间按类型直接比较，不经 ExactCompare（其中的类型分派比比较本身还贵）
+        switch (a)
+        {
+            case int i:
+                switch (b)
+                {
+                    case int j: return i.CompareTo(j);
+                    case BigInteger y: return -y.CompareTo((long)i);
+                    case Fraction g: return -CompareFractionWithInteger(g, i);
+                }
+                break;
+            case BigInteger z:
+                switch (b)
+                {
+                    case int j: return z.CompareTo((long)j);
+                    case BigInteger y: return z.CompareTo(y);
+                    case Fraction g: return -CompareFractionWithInteger(g, z);
+                }
+                break;
+            case Fraction f:
+                switch (b)
+                {
+                    case int j: return CompareFractionWithInteger(f, j);
+                    case BigInteger y: return CompareFractionWithInteger(f, y);
+                    case Fraction g: return CompareRationals(f.Numerator, f.Denominator, g.Numerator, g.Denominator);
+                }
+                break;
+        }
+        return NotReal;
+    }
+
+    /// <summary>n/den 与整数 x 比较：比较 n 与 x·den（den &gt; 0）。</summary>
+    private static int CompareFractionWithInteger(Fraction f, BigInteger x) => f.Numerator.CompareTo(x * f.Denominator);
+
+    private static bool IsExactReal(object o) => o is int || o is BigInteger || o is Fraction;
+
+    private static int CompareExactWithDouble(object e, double d)
+    {
+        if (double.IsNaN(d)) return Unordered;
+        if (double.IsPositiveInfinity(d)) return -1;
+        if (double.IsNegativeInfinity(d)) return 1;
+        if (e is int i) return ((double)i).CompareTo(d);   // int 转 double 精确
+        if (e is BigInteger b)
+        {
+            // 与 ⌊d⌋ 比较（double 转 BigInteger 对整数值精确），不经分数：分数要构造大分子并求最大公约数
+            double fl = Math.Floor(d);
+            int c = b.CompareTo(new BigInteger(fl));
+            if (c != 0) return c;
+            return fl == d ? 0 : -1;   // b = ⌊d⌋ < d
+        }
+        if (e is Fraction f) return CompareFractionWithDouble(f.Numerator, f.Denominator, d);
+        return Math.Sign(ExactCompare(e, (Fraction)d));
+    }
+
+    /// <summary>
+    /// n/den（den &gt; 0）与有限的 d 比较，不构造分数（原来经 (Fraction)d：GetComponents 加求最大公约数）。
+    /// 先比近似值：n、den 都在 53 位内时 n/den 的 IEEE 除法是正确舍入的，舍入保序，结果 ≠ d 即可定序；
+    /// 否则或相等时精确比较：d = m·2^k，比较 n·2^(-k) 与 m·den。
+    /// </summary>
+    private static int CompareFractionWithDouble(BigInteger n, BigInteger den, double d)
+    {
+        if (n.GetBitLength() <= 53 && den.GetBitLength() <= 53)
+        {
+            double r = (double)n / (double)den;
+            if (r != d) return r < d ? -1 : 1;
+        }
+        long bits = BitConverter.DoubleToInt64Bits(d);
+        int exp = (int)((bits >> 52) & 0x7FF);
+        long frac = bits & 0xFFFFFFFFFFFFFL;
+        BigInteger m = exp == 0 ? frac : frac | (1L << 52);
+        if (bits < 0) m = -m;
+        int k = (exp == 0 ? 1 : exp) - 1075;
+        return k >= 0 ? n.CompareTo((m * den) << k) : (n << -k).CompareTo(m * den);
     }
 
     private static bool IsExact(object obj)

@@ -39,7 +39,7 @@
 - **修正**：IntX 的 `ToFloat64` 逐个 32 位块累加，有多次舍入，超出范围时得 NaN；分数原来分别转换分子分母再相除。
   - 现在由 `RationalToDouble` 统一实现：就近舍入、平局取偶，含次正规数，溢出为 ±∞。
   - 因此修好了 `(inexact (expt 2 1100))` 得 `+nan.0`、调和级数 2000 项得 `+nan.0` 这两个错误。
-  - 新增测试：`NumbersTests.RationalToDoubleIsCorrectlyRounded`（3000 组随机数，用精确有理数比较相邻的 double，另含上溢、次正规数和平局的边界）、`BignumToDoubleOutsideRange`、`BignumRadixConversionRoundTrips`、`LargeDecimalOutputMatchesBcl`（分治结果与 BCL 逐字相同：随机的 1000–29000 位数、10 的幂及其邻数、低半全为 0 的值；第二轮使用缓存的幂表）。
+  - 新增测试：`NumbersTests.RationalToDoubleIsCorrectlyRounded`（3000 组随机数，用精确有理数比较相邻的 double，另含上溢、次正规数和平局的边界）、`BignumToDoubleOutsideRange`、`BignumRadixConversionRoundTrips`、`RealCompareMatchesExactComparison`（2000 组随机分数，每组与约 17 个 double 正反比较，以"flonum 精确转为分数再比"作参照；double 包括恰好相等的值、相邻的 double、次正规数和很大的指数）、`LargeDecimalOutputMatchesBcl`（分治结果与 BCL 逐字相同：随机的 1000–29000 位数、10 的幂及其邻数、低半全为 0 的值；第二轮使用缓存的幂表）。
 - **大数与字符串的转换**：
   - 新原语 `$bignum->string`（`HostPrimitives`）已登记在两个构建脚本的 `(ironscheme unsafe)` 表中，`primitives.ss` 已重新生成（467 项）。`boot/numbers.sls` 的 `bignum->string` 改为调用它，删掉了原来逐位 div/mod 的写法和 `hex-char`。
   - 十进制：BCL 的 `BigInteger.ToString` 耗时随位数平方增长（77338 位约 130ms，143137 位约 440ms），而它的除法是次平方的。所以超过约 1000 位时改为分治（`BigIntegers.ToDecimalString`，用户追加）：按 10^(256·2^k) 拆成高低两半递归，低半左补 0，叶子交给 BCL。纯 .NET 下这两个数分别只要约 14ms、37ms。10 的幂表缓存到约 126 万位（512KB），更大的每次现算。Fasl 与 `Fraction.ToString` 也改用它。
@@ -73,9 +73,27 @@
   - 效果：
     - 计数循环（`=` 加 `+`）从 184ms 降到 49ms；`=` 每次从约 160ns 降到约 24ns。
     - 混合比较 `(< 1 2.0)` 每次从约 570ns 降到约 100ns。
-    - 其余混合（大整数、分数、复数）仍走通用路径，每次数百 ns。
-  - 回归测试：`tests/base-library.sps` 新增 K 组 27 项，覆盖五个比较在 fixnum、flonum、NaN、±inf、-0.0、fixnum 边界、混合类型、多参数和非数参数下的结果。
+  - 通用路径（用户追加）：其余实数改为一次 `$real-compare`（新原语，C# `Builtins.RealCompare`）。它返回 -1 / 0 / 1；有 NaN 时返回 2，有非实数时返回 #f，再交给复数的 `inexact=?` 或报错。
+    - 精确数与 flonum：正无穷大于、负无穷小于一切精确数；大整数与有限 flonum 比较时，与 ⌊d⌋ 转成的 BigInteger 比，相等时再看有没有小数部分。分数 n/den 与 flonum 比较时不构造分数（用户追加）：
+      - 分子、分母都在 53 位内时，先算 `(double)n/(double)den`。IEEE 除法是正确舍入的，舍入不改变大小顺序，所以结果不等于 d 就能直接判定。
+      - 否则（或恰好相等时）做精确比较：d = m·2^k，比较整数 n·2^(-k) 与 m·den。
+    - 精确数之间（用户追加）：`RealCompare` 直接按两个参数的类型分派，不再经 `ExactCompare`。在 C# 里测，后者的 `GetNumberClass` 分派加取分子分母约 50ns，比比较本身还贵。
+      - 整数与分数比较时，比较 n 与 x·den，不再先把整数包成 Fraction（构造时要求最大公约数）。
+      - 分数与分数比较用 `CompareRationals`：符号不同、分母相同时不必相乘，否则交叉相乘。
+      - 试过先按位数估计（l = len(n1)+len(d2)，两边相差 2 以上即可定序）、在 63 位内用 Int128 相乘，都没有采用：小分数时 `GetBitLength` 每次约 8ns，四次就比交叉相乘（约 20ns）还贵。
+      - C# 中的耗时：`RealCompare(1/3, 2/5)` 92 → 41ns，`(1/3, 1)` 92 → 31ns，`(5, 2^100)` 52 → 24ns。
+      - 新增 C# 测试 `RationalComparisonMatchesCrossMultiplication`：3000 组随机分数，两边位数之和相差 -2 到 2；另有 int、BigInteger、分数两两混合的情况。
+    - 修正了原有的错误：原来有 ±∞ 时两边都先转为 flonum，超出 double 范围的精确数变成 ∞，结果全反。例如 `(< (expt 2 2000) +inf.0)` 得 #f，`(= (expt 2 2000) +inf.0)` 得 #t。
+    - `numbers.sls` 中不再用到的 `exact-compare` / `inexact-compare` 宏已删除。
+    - 速度（100 万次的循环，含循环本身约 100ms）：
+      - fixnum 与大整数、分数与 fixnum、分数与分数：143–166ms；改为直接按类型分派后为 126–139ms（分数与分数 152 → 127）；
+      - 大整数与 flonum：最初 771ms，改为取整比较后 148ms；
+      - 分数与 flonum：282ms，改为不构造分数后 134ms，再改为直接按类型分派后 128ms；
+      - 大整数与 `+inf.0`：129ms。
+      - 原来的通用路径每次约 570ns（以 `(< 1 2.0)` 测）。
+  - 回归测试：`tests/base-library.sps` 新增 K 组 44 项，覆盖五个比较在 fixnum、flonum、NaN、±inf、-0.0、fixnum 边界、混合类型、多参数和非数参数下的结果；还覆盖超出 double 范围的精确数与 ±inf、大整数与带小数的 flonum、`0.1` 与 `1/10`。
   - `+` 的 `define/contract` 检查只占约 10ns。剩下的开销是跨库调用、装箱和命名 let 新建对象，属于 iron-034 的 D2、D4、D5。
+  - 对照 Chez：它把这些运算当作编译器认识的原语，在调用处内联 fixnum 快速路径（`s/cpprim.ss`），库函数只处理其余类型。仿照它在调用处内联，已写入 [iron-034](iron-034-compiler-optimizations.md) 的 D8（子任务 034f）。
 - **引用清理**：解决方案、Core 项目引用、Hosting 的 `BootImageInput`、`tools/build.cs` 与 Bootstrap 测试的 ilverify 引用、Emit 的 Lcil 数据转换（改按 `BigInteger` 识别）、`.editorconfig` 的第三方节、`.gitignore`、`Directory.Build.props` 的 `SYSLIB0050/0051`（只有 IntX 需要）、`docs/license.txt` 的 IntX 许可，以及设计 02、07、09。
 - **基准**：脚本为 `src/scheme/tests/bignum-bench.sps`，不在测试中运行，需手动运行，说明见文件头。每项先热身 2 轮，再计时 5 轮，取中位数。IntX 一列是改动前的单次运行，未热身。单位 ms，Release 构建。
 

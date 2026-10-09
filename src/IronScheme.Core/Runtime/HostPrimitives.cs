@@ -760,6 +760,14 @@ public static class HostPrimitives
     [Primitive("$fixnum->string", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object FixnumToString(object n, object radix) => Convert.ToString((int)n, (int)radix);
 
+    /// <summary>两个实数的比较：-1 / 0 / 1，有 NaN 为 2，有非实数为 #f（见 Builtins.RealCompare）。</summary>
+    [Primitive("$real-compare", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object RealCompare(object a, object b)
+    {
+        int c = Builtins.RealCompare(a, b);
+        return c == Builtins.NotReal ? RT.False : RT.Box(c);
+    }
+
     [Primitive("$exact-compare", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object ExactCompare(object a, object b) => RT.Box(Builtins.ExactCompare(a, b));
 

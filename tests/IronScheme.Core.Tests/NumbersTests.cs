@@ -228,4 +228,88 @@ public class NumbersTests
         foreach (var v in cases)
             Assert.That(BigIntegers.ToString(v, 10), Is.EqualTo(v.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
+
+    [Test]
+    public void RealCompareMatchesExactComparison()
+    {
+        // 参照：把 flonum 精确转为分数后比较（原来的做法）
+        static int Reference(object e, double d) => System.Math.Sign(Builtins.ExactCompare(e, (Fraction)d));
+        var rnd = new System.Random(59);
+        BigInteger Random(int bits)
+        {
+            var bytes = new byte[bits / 8 + 2];
+            rnd.NextBytes(bytes);
+            bytes[^1] = 0;
+            return new BigInteger(bytes) >> (bytes.Length * 8 - 8 - bits);
+        }
+        var doubles = new System.Collections.Generic.List<double> { 0.0, -0.0, 0.5, -0.5, 1.0 / 3, 0.1, 1e300, -1e300, 1e-300, double.Epsilon, -double.Epsilon, double.MaxValue, 4294967296.5 };
+        for (int i = 0; i < 2000; i++)
+        {
+            var n = Random(rnd.Next(1, 300)) * (rnd.Next(2) == 0 ? 1 : -1);
+            var den = Random(rnd.Next(1, 300)) + 1;
+            object e = Builtins.Divide(n, den);   // 结果已规范化：可能是整数
+            double near = Builtins.ToInexact(e) is double x ? x : 0.0;
+            var ds = new System.Collections.Generic.List<double>(doubles) { near, System.Math.BitIncrement(near), System.Math.BitDecrement(near), rnd.NextDouble() * System.Math.Pow(2, rnd.Next(-1100, 1000)) };
+            foreach (double d in ds)
+            {
+                if (double.IsInfinity(d)) continue;
+                Assert.That(Builtins.RealCompare(e, d), Is.EqualTo(Reference(e, d)), $"{e} vs {d:R}");
+                Assert.That(Builtins.RealCompare(d, e), Is.EqualTo(-Reference(e, d)), $"{d:R} vs {e}");
+            }
+        }
+        // 恰好相等：分数等于 double 的精确值
+        foreach (double d in new[] { 0.5, 0.375, 1e-300, double.Epsilon, 3.0 / 1024 })
+            Assert.That(Builtins.RealCompare((Fraction)d, d), Is.EqualTo(0));
+        Assert.That(Builtins.RealCompare(new Fraction(1, 3), double.NaN), Is.EqualTo(Builtins.Unordered));
+        Assert.That(Builtins.RealCompare(new Fraction(1, 3), double.PositiveInfinity), Is.EqualTo(-1));
+        Assert.That(Builtins.RealCompare(double.NegativeInfinity, new Fraction(-1, 3)), Is.EqualTo(-1));
+        Assert.That(Builtins.RealCompare("x", 1.0), Is.EqualTo(Builtins.NotReal));
+    }
+
+    [Test]
+    public void RationalComparisonMatchesCrossMultiplication()
+    {
+        // 参照：直接交叉相乘
+        static int Reference(BigInteger n1, BigInteger d1, BigInteger n2, BigInteger d2) => (n1 * d2).CompareTo(n2 * d1);
+        var rnd = new System.Random(59);
+        BigInteger Random(int bits)
+        {
+            var bytes = new byte[bits / 8 + 2];
+            rnd.NextBytes(bytes);
+            bytes[^1] = 0;
+            return new BigInteger(bytes) >> (bytes.Length * 8 - 8 - bits);
+        }
+        var cases = new System.Collections.Generic.List<(BigInteger, BigInteger, BigInteger, BigInteger)>();
+        for (int i = 0; i < 3000; i++)
+        {
+            int b1 = rnd.Next(1, 140), b2 = rnd.Next(1, 140), b3 = rnd.Next(1, 140);
+            // 让两边的位数之和接近：第四个数的位数取 b1+b2-b3 附近（差 -2..2），覆盖位数估计的边界
+            int b4 = System.Math.Max(1, b1 + b2 - b3 + rnd.Next(-2, 3));
+            var n1 = Random(b1) | (BigInteger.One << (b1 - 1));
+            var d2 = Random(b2) | (BigInteger.One << (b2 - 1));
+            var n2 = Random(b3) | (BigInteger.One << (b3 - 1));
+            var d1 = Random(b4) | (BigInteger.One << (b4 - 1));
+            if (rnd.Next(4) == 0) { n1 = -n1; n2 = -n2; }
+            if (rnd.Next(8) == 0) n2 = -n2;
+            cases.Add((n1, d1, n2, d2));
+        }
+        cases.Add((1, 3, 1, 3)); cases.Add((2, 6, 1, 3)); cases.Add((0, 1, 0, 5)); cases.Add((-1, 2, 1, 2));
+        cases.Add((BigInteger.One << 62, 3, (BigInteger.One << 62) + 1, 3));   // 分母相同
+        cases.Add((3, 4, 1, 1)); cases.Add((4, 3, 1, 1)); cases.Add((7, 8, 3, 4));   // 位数之和差 1 但大小相反
+        foreach (var (n1, d1, n2, d2) in cases)
+        {
+            Assert.That(Builtins.CompareRationals(n1, d1, n2, d2), Is.EqualTo(Reference(n1, d1, n2, d2)), $"{n1}/{d1} vs {n2}/{d2}");
+            Assert.That(Builtins.CompareRationals(n2, d2, n1, d1), Is.EqualTo(-Reference(n1, d1, n2, d2)));
+        }
+        // 经 ExactCompare：int、BigInteger、分数混合
+        object[] values = { 0, 1, -1, 7, int.MaxValue, int.MinValue, BigInteger.Pow(2, 40), -BigInteger.Pow(3, 50),
+            new Fraction(1, 3), new Fraction(-7, 2), new Fraction(BigInteger.Pow(2, 100) + 1, BigInteger.Pow(2, 100)), new Fraction(1, BigInteger.Pow(10, 30)) };
+        foreach (var a in values)
+            foreach (var b in values)
+            {
+                var fa = a is Fraction x ? x : a is int i ? (Fraction)i : new Fraction((BigInteger)a, 1);
+                var fb = b is Fraction y ? y : b is int j ? (Fraction)j : new Fraction((BigInteger)b, 1);
+                Assert.That(System.Math.Sign(Builtins.ExactCompare(a, b)), Is.EqualTo(Reference(fa.Numerator, fa.Denominator, fb.Numerator, fb.Denominator)), $"{a} vs {b}");
+            }
+    }
 }

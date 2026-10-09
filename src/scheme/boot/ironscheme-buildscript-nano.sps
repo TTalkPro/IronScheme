@@ -701,6 +701,7 @@
     ($ratnum-denominator                         iu)
     ($ratnum-numerator                           iu)
     ($ratnum?                                    iu)
+    ($real-compare                               iu)
     ($rcd?                                       iu)
     ($rectnum->complexnum                        iu)
     ($rectnum-imag                               iu)

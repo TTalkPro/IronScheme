@@ -38,7 +38,7 @@
 | [iron-031](tasks/iron-031-r6rs-and-system-libraries.md) | R6RS 测试与系统库编译达标 | M6 | iron-030 | 完成 |
 | [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 完成 |
 | [iron-033](tasks/iron-033-performance.md) | 性能优化（后续） | M7 | iron-031 | 完成 |
-| [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化（034a 基准 → 034b 循环降级 → 034c 拆箱 → 034d 共享类 → 034e 跨库直接调用） | 后续 | iron-033、iron-057 | 未开始，设计已定 |
+| [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化（034a 基准 → 034b 循环降级 → 034c 拆箱 → 034d 共享类 → 034e 跨库直接调用；034f 通用算术与比较内联，可紧接 034a） | 后续 | iron-033、iron-057 | 未开始，设计已定 |
 | [iron-035](tasks/iron-035-repository-layout.md) | 目录结构调整 | M8 | iron-032 | 完成 |
 | [iron-036](tasks/iron-036-self-contained-publish.md) | 自包含发布 | M8 | iron-037 | 完成 |
 | [iron-037](tasks/iron-037-compile-file.md) | compile-file 与 .fasl | M8 | iron-035 | 完成 |
