@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- 新系统的集成测试（iron-030、iron-031）：以进程方式运行 IronScheme.Host（及自举时的 stage0）。
-       工作目录为 src/scheme；boot 镜像默认 src/scheme/build/ironscheme.boot.dll。 -->
+       工作目录为 src/scheme；boot 镜像默认 src/scheme/boot/ironscheme.boot.dll。 -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>disable</Nullable>

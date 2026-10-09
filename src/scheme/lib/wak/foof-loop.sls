@@ -59,8 +59,8 @@
   (import
     (rnrs)
     (only (rnrs mutable-pairs) set-cdr!)
-    (srfi :8 receive)
-    (srfi :45 lazy)
+    (only (ironscheme std syntax) receive)
+    (ironscheme std lazy)
     (wak syn-param)
     (wak private include))
 

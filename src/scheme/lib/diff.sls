@@ -34,8 +34,8 @@
   (import 
     (ironscheme)
     (only (ironscheme core) reverse!)
-    (only (srfi :1) split-at fold)
-    (srfi :8))
+    (only (ironscheme std lists) split-at fold)
+    (only (ironscheme std syntax) receive))
   
   ;; helpers      
   (define-syntax let1

@@ -1,0 +1,86 @@
+;;; (ironscheme std streams) 的测试（designs/08-std-library.md D8）。chez-srfi 没有 SRFI 41 的测试，
+;;; 按 SRFI 41 的文本（含其中的例子）编写，每个导出名至少一项。
+(import (rnrs) (only (ironscheme) include) (ironscheme std streams))
+(include "tests/std/check.ss")
+
+(define (s->l s) (stream->list s))
+
+;;; ———————————————— primitive ————————————————
+(check (stream? stream-null) => #t)
+(check (stream-null? stream-null) => #t)
+(check (stream-pair? stream-null) => #f)
+(check (stream-pair? (stream-cons 1 stream-null)) => #t)
+(check (stream-car (stream-cons 1 stream-null)) => 1)
+(check (stream-null? (stream-cdr (stream-cons 1 stream-null))) => #t)
+(check (stream? '(1 2)) => #f)
+(check-raises error? (stream-car stream-null))               ; 参照实现用 R6RS error（&error）
+;; stream-cons 的两个部分都不求值，直到需要时
+(check (let ((n 0))
+         (let ((s (stream-cons (begin (set! n (+ n 1)) 'a) stream-null)))
+           (list n (stream-car s) (stream-car s) n)))
+       => '(0 a a 1))
+(define strm123 (stream-cons 1 (stream-cons 2 (stream-cons 3 stream-null))))
+(check (stream-car (stream-cdr strm123)) => 2)
+(define iter
+  (stream-lambda (f x)
+    (stream-cons x (iter f (f x)))))
+(check (stream-car (stream-cdr (stream-cdr (iter (lambda (x) (* x 2)) 1)))) => 4)
+
+;;; ———————————————— derived ————————————————
+(define-stream (nat-from n) (stream-cons n (nat-from (+ n 1))))
+(define nats (nat-from 0))
+(check (s->l (stream-take 3 nats)) => '(0 1 2))
+(check (s->l (list->stream '(a b c))) => '(a b c))
+(check (s->l (port->stream (open-string-input-port "abc"))) => '(#\a #\b #\c))
+(check (s->l (stream 1 2 3)) => '(1 2 3))
+(check (stream->list 4 nats) => '(0 1 2 3))          ; SRFI 41：个数在前
+(check (s->l (stream-append (stream 1 2) (stream 3) stream-null)) => '(1 2 3))
+(check (s->l (stream-concat (stream (stream 1 2) (stream 3)))) => '(1 2 3))
+(check (stream->list 5 (stream-constant 1 2)) => '(1 2 1 2 1))
+(check (s->l (stream-drop 2 (stream 1 2 3 4))) => '(3 4))
+(check (s->l (stream-drop-while odd? (stream 1 3 4 5))) => '(4 5))
+(check (s->l (stream-filter odd? (stream-take 10 nats))) => '(1 3 5 7 9))
+(check (stream-fold + 0 (stream-take 5 nats)) => 10)
+(check (let ((acc '())) (stream-for-each (lambda (x) (set! acc (cons x acc))) (stream 1 2 3)) acc) => '(3 2 1))
+(check (stream->list 3 (stream-from 10 5)) => '(10 15 20))
+(check (stream->list 5 (stream-iterate (lambda (x) (* x 2)) 1)) => '(1 2 4 8 16))
+(check (stream-length (stream 1 2 3)) => 3)
+(check (stream-car (stream-let loop ((s (stream 1 2 3)) (acc 0))
+                     (if (stream-null? s) (stream acc) (loop (stream-cdr s) (+ acc (stream-car s))))))
+       => 6)
+(check (s->l (stream-map + (stream 1 2 3) (stream 10 20 30))) => '(11 22 33))
+(define (len s)
+  (stream-match s
+    (() 0)
+    ((_ . rest) (+ 1 (len rest)))))
+(check (len (stream 1 2 3)) => 3)
+(check (stream-match (stream 1 2) ((x y) (list x y))) => '(1 2))
+(check (stream-match (stream 5) ((x) (> x 3) 'big) ((x) 'small)) => 'big)
+(check (s->l (stream-of (* x x) (x in (stream-range 0 5)) (even? x))) => '(0 4 16))
+(check (s->l (stream-of (list a b) (a in (stream 1 2)) (b in (stream 'x 'y)))) => '((1 x) (1 y) (2 x) (2 y)))
+(check (s->l (stream-of y (x in (stream 1 2)) (y is (* x 10)))) => '(10 20))
+(check (s->l (stream-range 0 5)) => '(0 1 2 3 4))
+(check (s->l (stream-range 0 10 3)) => '(0 3 6 9))
+(check (s->l (stream-range 5 0 -2)) => '(5 3 1))
+(check (stream-ref (stream 'a 'b 'c) 1) => 'b)
+(check (stream-ref nats 100000) => 100000)                ; 长的流不增长栈
+(check (s->l (stream-reverse (stream 1 2 3))) => '(3 2 1))
+(check (s->l (stream-scan + 0 (stream 1 2 3))) => '(0 1 3 6))
+(check (s->l (stream-take-while (lambda (x) (< x 3)) nats)) => '(0 1 2))
+(check (s->l (stream-unfold (lambda (x) (* x x)) (lambda (x) (< x 4)) (lambda (x) (+ x 1)) 0)) => '(0 1 4 9))
+(check (call-with-values
+         (lambda ()
+           (stream-unfolds
+             (lambda (s)
+               (if (stream-null? s)
+                   (values s '() '())
+                   (let ((a (stream-car s)) (d (stream-cdr s)))
+                     (if (odd? a)
+                         (values d (list a) #f)
+                         (values d #f (list a))))))
+             (stream 1 2 3 4 5)))
+         (lambda (odds evens) (list (s->l odds) (s->l evens))))
+       => '((1 3 5) (2 4)))
+(check (s->l (stream-zip (stream 1 2 3) (stream 'a 'b))) => '((1 a) (2 b)))
+
+(check-report "std streams")

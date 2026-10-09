@@ -1,0 +1,22 @@
+#| License
+Copyright (c) 2007-2016 Llewellyn Pritchard
+All rights reserved.
+This source code is subject to terms and conditions of the BSD License.
+See docs/license.txt. |#
+
+(library (boot mutable-pairs)
+  (export
+    set-car!
+    set-cdr!)
+  (import 
+    (rnrs)
+    (ironscheme contracts)
+    (ironscheme clr))
+
+  (clr-using IronScheme.Core)
+    
+  (define/contract (set-car! lst:pair val)
+    (clr-field-set! Cons car lst val))      
+    
+  (define/contract (set-cdr! lst:pair val)
+    (clr-field-set! Cons cdr lst val)))

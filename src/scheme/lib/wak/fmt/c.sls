@@ -38,13 +38,14 @@
          (rnrs io simple)
          (rename (only (rnrs lists) remove memq member)
                  (remove remp))
-         (only (srfi :1 lists)
+         (only (rnrs lists) filter)
+         (only (ironscheme std lists)
                fold
                length+
-               filter
                every)
-         (srfi :6)
-         (only (srfi :13)
+         (only (ironscheme) open-output-string get-output-string)
+         (ironscheme std ports)
+         (only (ironscheme std strings)
                 substring/shared
                 string-index
                 string-index-right

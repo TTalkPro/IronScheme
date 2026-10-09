@@ -29,7 +29,7 @@
     test-debug-errors?  with-test-debug-errors? set-test-debug-errors?!
     )
   (import (rnrs)
-          (srfi :39 parameters)
+          (only (ironscheme) make-parameter parameterize)
           (wak trc-testing limited-write)
           (wak trc-testing display-condition)
           (wak trc-testing port-tracker)

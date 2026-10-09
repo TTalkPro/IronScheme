@@ -29,28 +29,34 @@
           make-string-fmt-transformer
           make-space make-nl-space display-to-string write-to-string
           fmt-columns columnar tabular line-numbers)
-  (import (except (rnrs base)
-                  error
-                  string-copy string->list string-for-each
-                  for-each map)
+  (import (except (rnrs base) error)
           (rename (only (rnrs base) error)
                   (error rnrs:error))
-          (except (rnrs unicode) string-titlecase string-upcase string-downcase)
+          (rnrs unicode)
           (rnrs control)
-          (only (rnrs lists) assq)
+          (except (rnrs lists) remove)
+          ;; fmt 按 SRFI 1 使用谓词版 remove（iron-046：SRFI 1 的 remove 即 R6RS 的 remp）
+          (rename (only (rnrs lists) remp) (remp remove))
+          (only (ironscheme) make-list)
           (rnrs arithmetic bitwise)
           (rnrs io simple)
           (rnrs io ports)
           (rnrs mutable-pairs)
           (rnrs r5rs)
-          (srfi :6 basic-string-ports)
-          (srfi :69 basic-hash-tables)
-          (srfi :1 lists)
-          (except (srfi :13 strings) string-hash)
+          (rnrs hashtables)
+          (only (ironscheme) open-output-string get-output-string)
+          (ironscheme std lists)
+          (ironscheme std strings)
           (wak private let-optionals)
           (wak private include))
 
-  (define (make-eq?-table) (make-hash-table eq?))
+  ;; 原用 SRFI 69 的散列表（iron-046 改为 R6RS 散列表；SRFI 69 的名字在 std hashtables 中已废弃）
+  (define (make-eq?-table) (make-eq-hashtable))
+  (define (hash-table-ref/default table key default) (hashtable-ref table key default))
+  (define (hash-table-set! table key value) (hashtable-set! table key value))
+  (define (hash-table-walk table proc)
+    (let-values (((keys values) (hashtable-entries table)))
+      (vector-for-each proc keys values)))
   
   (define (error . args)
     (apply rnrs:error "fmt" args))

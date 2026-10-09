@@ -31,8 +31,12 @@ See docs/license.txt. |#
   (define (rcd-parent x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor parent x))
   (define (rcd-protocol x) (clr-field-get IronScheme.Core.RecordConstructorDescriptor protocol x))
   (define (annotation? x) (clr-is IronScheme.Core.Annotation x))
-  (define (mutable-string? x) (clr-is System.Text.StringBuilder x))
-  ;; 只支持 eq 哈希表（make-eq-hashtable 得到的类型恰为 Hashtable）；psyntax 的 rib 用它做索引
+  ;; 可变串：SchemeString 的可变串（iron-055），或旧运行时的 StringBuilder（用旧种子构建 boot 时）
+  (define (mutable-string? x)
+    (or (clr-is System.Text.StringBuilder x)
+        (and (clr-is IronScheme.Core.SchemeString x)
+             (clr-field-get IronScheme.Core.SchemeString IsMutable x))))
+  ;; 只支持 eq 哈希表（make-eq-hashtable 得到的类型恰为 Hashtable）；展开器的 rib 用它做索引
   (define (eq-hashtable? x)
     (and (hashtable? x)
          (string=? (clr-prop-get System.Type FullName (clr-call System.Object GetType x))

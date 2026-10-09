@@ -35,8 +35,7 @@
           default-setup-thunk default-teardown-thunk
           )
   (import (rnrs)
-          (srfi parameters)
-          (srfi format)
+          (only (ironscheme) make-parameter parameterize format)
           )
   
 ;==============================================================;

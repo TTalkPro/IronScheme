@@ -1,0 +1,12 @@
+;;; (ironscheme std boxes) 的测试
+(import (rnrs) (only (ironscheme) include) (ironscheme std boxes))
+(include "tests/std/check.ss")
+(define b (box 1))
+(check (box? b) => #t)
+(check (box? 1) => #f)
+(check (unbox b) => 1)
+(set-box! b 2)
+(check (unbox b) => 2)
+(check (eq? (box 1) (box 1)) => #f)
+(check-raises assertion-violation? (unbox 1))
+(check-report "std boxes")

@@ -26,7 +26,8 @@
           
           in-stream)
   (import (rnrs)
-          (srfi :45 lazy)
+          (only (rnrs r5rs) delay force)
+          (ironscheme std lazy)
           (wak private include))
 
   (include-file/downcase ((wak riastreams private) stream)))

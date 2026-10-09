@@ -29,8 +29,8 @@
    with-restarter-invoker-hook
    )
   (import (rnrs)
-          (srfi :8 receive)
-          (srfi :39 parameters))
+          (only (ironscheme std syntax) receive)
+          (only (ironscheme) make-parameter parameterize))
 
 (define-record-type restarter
   (fields tag description invoker interactor)

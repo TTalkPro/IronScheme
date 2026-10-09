@@ -34,22 +34,18 @@
 ;;;                             <expected-expression> <expected-datum>
 ;;;                             <actual-expression> <actual-datum>)
 
-(define-record-type <test-suite>
-    (%make-test-suite name description tests)
-    test-suite?
-  (name test-suite/name)
-  (description test-suite/description)
-  (tests test-suite/tests set-test-suite/tests!))
+(define-record-type (<test-suite> %make-test-suite test-suite?)
+  (fields (immutable name test-suite/name)
+          (immutable description test-suite/description)
+          (mutable tests test-suite/tests set-test-suite/tests!)))
 
 (define (make-test-suite name description)
   (%make-test-suite name description '()))
 
-(define-record-type <test-case>
-    (make-test-case name description constructor)
-    test-case?
-  (name test-case/name)
-  (description test-case/description)
-  (constructor test-case/constructor))
+(define-record-type (<test-case> make-test-case test-case?)
+  (fields (immutable name test-case/name)
+          (immutable description test-case/description)
+          (immutable constructor test-case/constructor)))
 
 (define (add-test! suite name test)
   (let ((tests (test-suite/tests suite)))

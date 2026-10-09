@@ -4,7 +4,7 @@ All rights reserved.
 This source code is subject to terms and conditions of the BSD License.
 See docs/license.txt. |#
 
-;;; pass 1 parse-core：Lcore（psyntax rewrite 的输出，designs/03-compiler.md §2）→ L0。
+;;; pass 1 parse-core：Lcore（展开器 rewrite 的输出，designs/03-compiler.md §2）→ L0。
 ;;; - 只接受固定文法，其余报错；
 ;;; - 符号三分类（§3）：被外层绑定的是词法变量（library-letrec* 绑定的是库变量）；
 ;;;   否则在原语表中的是原语；其余是全局位置（符号值槽）。不查运行时；
@@ -22,7 +22,7 @@ See docs/license.txt. |#
   (define (bad-form who x)
     (syntax-violation 'parse-core (string-append "invalid " who) x))
 
-  ;; psyntax 的 gensym 名字 g$名字$… → 名字（过程名用）
+  ;; 展开器的 gensym 名字 g$名字$… → 名字（过程名用）
   (define (pretty-name x)
     (let* ((s (symbol->string x))
            (n (string-length s)))

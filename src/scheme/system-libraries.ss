@@ -20,7 +20,7 @@ See docs/license.txt. |#
 ;  #f)
 
 (let () 
-  (include "system-libraries.srfi.ss")
+  (include "system-libraries.std.ss")
   #f)
   
 (let ()
@@ -37,20 +37,6 @@ See docs/license.txt. |#
     )
   #f)
       
-
-(let () 
-  (import 
-    (pfds bbtrees)
-    (pfds deques)
-    (pfds sets)
-    (pfds dlists)
-    (pfds psqs)
-    (pfds queues)
-    (pfds fingertrees)
-    (pfds sequences)
-    (pfds heaps)
-    (pfds hamts))
-  #f)
 
 (let () 
   (import 

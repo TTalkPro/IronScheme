@@ -4,10 +4,10 @@ All rights reserved.
 This source code is subject to terms and conditions of the BSD License.
 See docs/license.txt. |#
 
-;;; 原语表（designs/03-compiler.md §6）：编译器关于原语的全部知识都来自 compiler/primitives.ss，
+;;; 原语表（designs/03-compiler.md §6）：编译器关于原语的全部知识都来自 boot/primitives.ss，
 ;;; 不查运行时（03 §1）。
 ;;;
-;;;   (primitive-table-file [路径])     原语表文件，默认 "compiler/primitives.ss"（相对当前目录）
+;;;   (primitive-table-file [路径])     原语表文件，默认 "boot/primitives.ss"（相对当前目录）
 ;;;   (primitive-info 名字)             → primitive 记录或 #f
 ;;;   (primitive-overload 信息 实参个数) → 匹配的重载或 #f
 (library (ironscheme compiler primitives)
@@ -41,15 +41,15 @@ See docs/license.txt. |#
         ((k)
          (datum->syntax #'k
            (list 'quote
-                 (and (file-exists? "compiler/primitives.ss")
-                      (call-with-input-file "compiler/primitives.ss" read))))))))
+                 (and (file-exists? "boot/primitives.ss")
+                      (call-with-input-file "boot/primitives.ss" read))))))))
 
   (define baked (baked-primitive-table))
 
   ;; 设置后改为从该文件读取（转换函数在创建参数时也会被调用一次，那次不算）
   (define converter-calls 0)
   (define primitive-table-file
-    (make-parameter "compiler/primitives.ss"
+    (make-parameter "boot/primitives.ss"
       (lambda (f)
         (set! converter-calls (+ converter-calls 1))
         (when (> converter-calls 1)

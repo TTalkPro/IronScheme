@@ -283,11 +283,12 @@ See docs/license.txt. |#
       ((unspecified? d) (emit! mc `(ldsfld "IronScheme.Core.Unspecified" "Instance")))
       ((and (char? d) (< (char->integer d) #x10000))
        (emit! mc `(ldc.i4 ,(char->integer d)) '(box "System.Char")))
-      ((and (string? d) (string-immutable? d) (bmp-safe-string? d)) (emit! mc `(ldstr ,d)))
+      ((and (clr-string? d) (bmp-safe-string? d)) (emit! mc `(ldstr ,d)))
       (else (emit! mc `(ldconst ,(constant-index! (mctx-unit mc) d))))))
 
-  ;; 字面字符串是不可变的 .NET string；可变字符串（StringBuilder）进常量表
-  (define (string-immutable? s) (not (clr-is System.Text.StringBuilder s)))
+  ;; 只有 System.String（不可变、不含代理码元）用 ldstr；SchemeString（可变串、含 BMP 外字符的串，iron-055）
+  ;; 与旧的可变串 StringBuilder 进常量表，加载时经 Fasl 还原为正确的表示
+  (define (clr-string? s) (clr-is System.String s))
 
   (define (load-symbol! mc s) (emit! mc `(ldconst ,(constant-index! (mctx-unit mc) s))))
 
@@ -749,7 +750,7 @@ See docs/license.txt. |#
     (string-append (sanitize (unit-module u)) "$" (number->string (next-id! u))
                    (if nm (string-append "$" (sanitize nm)) "")))
 
-  ;; 子句的 (名字 . 形参)：形参是 psyntax 生成的 gensym（g$名字$序号$后缀），还原为源码中的名字
+  ;; 子句的 (名字 . 形参)：形参是展开器生成的 gensym（g$名字$序号$后缀），还原为源码中的名字
   (define (clause-form nm cl)
     (define (source-name x)
       (let* ((s (symbol->string x)) (n (string-length s)))

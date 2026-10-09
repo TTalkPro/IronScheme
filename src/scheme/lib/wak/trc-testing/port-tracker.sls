@@ -10,19 +10,19 @@
   (import (rnrs base)
           (rnrs control)
           (rnrs io ports)
-          (srfi :9 records)
-          (only (srfi :13 strings) string-count string-index-right))
+          (rnrs records syntactic)
+          (only (ironscheme std strings) string-count string-index-right))
 
 
 ;;; Port tracker
 
-  (define-record-type port-tracker
-    (really-make-port-tracker %port %row %column)
-    port-tracker?
-    (port port-tracker-port port-tracker-set-port!)
-    (%port %port-tracker-port)
-    (%row %port-tracker-row %port-tracker-set-row!)
-    (%column %port-tracker-column %port-tracker-set-column!))
+  ;; 原为 SRFI 9 形式（iron-046 改写为 R6RS）；port 字段不在构造器参数中，初值为 #f
+  (define-record-type (port-tracker really-make-port-tracker port-tracker?)
+    (fields (mutable port port-tracker-port port-tracker-set-port!)
+            (immutable %port %port-tracker-port)
+            (mutable %row %port-tracker-row %port-tracker-set-row!)
+            (mutable %column %port-tracker-column %port-tracker-set-column!))
+    (protocol (lambda (p) (lambda (%port %row %column) (p #f %port %row %column)))))
 
   (define (%port-tracker-sync tracker)
     (flush-output-port (port-tracker-port tracker)))

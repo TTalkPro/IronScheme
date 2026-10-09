@@ -10,7 +10,7 @@ See docs/license.txt. |#
     prefix-syntax)
   (import 
     (rnrs)
-    (only (psyntax system $bootstrap) gensym))
+    (only (boot system bootstrap) gensym))
   
   (define (symbol->syntax s n)
     (datum->syntax s (gensym n)))
