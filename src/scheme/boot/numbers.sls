@@ -502,27 +502,14 @@ See docs/license.txt. |#
   (define/contract (sub1 x:number)
     (- x 1))
         
-  (define (hex-char num)
-    (integer->char ($fx+ num (char->integer (if ($fx<? num 10) #\0 #\W)))))
-        
   (define (fixnum->string num radix)
     (if ($fxnegative? num)
         (string-append "-" (number->string (abs num) radix))
         ($fixnum->string num radix)))
      
+  ;; 宿主原语（iron-059）：原来在这里逐位 div/mod，O(n²)
   (define (bignum->string num radix)
-    (if (zero? num)
-        "0"
-        (let* ((neg? (negative? num))
-               (num  (abs num))
-               (out  (let f ((num num)(a '()))
-                       (if (zero? num)
-                           ($string->immutable (apply string a)) ;; string proc returns a mutable string
-                           (f (div num radix)
-                              (cons (hex-char (mod num radix)) a))))))
-           (if neg?
-               (string-append "-" out)
-               out))))
+    ($bignum->string num radix))
         
   (define number->string
     (case-lambda
@@ -586,17 +573,28 @@ See docs/license.txt. |#
       [(_ x y)
         ($inexact-compare x y)]))    
 
+  (define-syntax fixnum-or-flonum->flonum
+    (syntax-rules ()
+      [(_ x) (let ((v x)) (if (fixnum? v) ($fixnum->flonum v) v))]))
+
   (define-syntax define-comparer 
     (lambda (x)
       (syntax-case x ()
         [(_ name)
           (with-syntax ((uname 
-              (datum->syntax #'name
-                (string->symbol
-                  (string-append 
-                    "$fx"
-                    (symbol->string (syntax->datum #'name))
-                    "?")))))
+                          (datum->syntax #'name
+                            (string->symbol
+                              (string-append 
+                                "$fx"
+                                (symbol->string (syntax->datum #'name))
+                                "?"))))
+                        (flname
+                          (datum->syntax #'name
+                            (string->symbol
+                              (string-append
+                                "$fl"
+                                (symbol->string (syntax->datum #'name))
+                                "?")))))
             #'(define name
                 (case-lambda
                   [(a) 
@@ -605,6 +603,14 @@ See docs/license.txt. |#
                         (assertion-violation 'name "not a number" a))]
                   [(a b)
                     (cond 
+                      ;; 快速路径（iron-059）：同为 fixnum 或同为 flonum 时直接比较。
+                      ;; 下面的通用路径对两个 fixnum 也要调用 real?、finite?、nan?、exact 与 $exact-compare，每次约 160ns。
+                      ;; flonum 的 IEEE 比较与通用路径一致：有 NaN 为 #f，无穷正常比较，-0.0 与 0.0 相等。
+                      ;; fixnum 与 flonum 混合时把 fixnum 转为 flonum：32 位整数转换精确，比较结果与精确比较相同。
+                      [(and (fixnum? a) (fixnum? b)) (uname a b)]
+                      [(and (flonum? a) (flonum? b)) (flname a b)]
+                      [(and (or (fixnum? a) (flonum? a)) (or (fixnum? b) (flonum? b)))
+                        (flname (fixnum-or-flonum->flonum a) (fixnum-or-flonum->flonum b))]
                       [(and (real? a)
                             (real? b)
                             (finite? a)
@@ -631,16 +637,28 @@ See docs/license.txt. |#
       (syntax-case x ()
         [(_ name)
           (with-syntax ((uname 
-              (datum->syntax #'name
-                (string->symbol
-                  (string-append 
-                    "$fx"
-                    (symbol->string (syntax->datum #'name))
-                    "?")))))
+                          (datum->syntax #'name
+                            (string->symbol
+                              (string-append 
+                                "$fx"
+                                (symbol->string (syntax->datum #'name))
+                                "?"))))
+                        (flname
+                          (datum->syntax #'name
+                            (string->symbol
+                              (string-append
+                                "$fl"
+                                (symbol->string (syntax->datum #'name))
+                                "?")))))
             #'(define name
                 (case-lambda
                   [(a b)
                     (cond 
+                      ;; 快速路径（iron-059），同 define-comparer
+                      [(and (fixnum? a) (fixnum? b)) (uname a b)]
+                      [(and (flonum? a) (flonum? b)) (flname a b)]
+                      [(and (or (fixnum? a) (flonum? a)) (or (fixnum? b) (flonum? b)))
+                        (flname (fixnum-or-flonum->flonum a) (fixnum-or-flonum->flonum b))]
                       [(and (real? a) 
                             (real? b)
                             (finite? a)

@@ -89,7 +89,6 @@ public class Bootstrap : TestRunner
         {
     "-r", Path.Combine(runtimeDir, "*.dll"),
     "-r", Path.Combine(core, "IronScheme.Core.dll"),
-    "-r", Path.Combine(core, "Oyster.IntX.dll"),
     "-r", Paths.Emit,
   }).ToArray();
         return RunProcess(tool, args, null, Paths.SchemeDir, checkExitCode: false);

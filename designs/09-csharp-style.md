@@ -4,7 +4,7 @@
 > 依据：微软《C# 编码约定》（Common C# code conventions）与《C# 标识符命名规则和约定》（learn.microsoft.com，.NET 文档）、
 > 《框架设计准则》（Framework Design Guidelines）、`.editorconfig` 的 .NET 代码样式规则（IDExxxx）与代码分析规则（CAxxxx）。
 
-## §0 现状（2026-10-09 统计，99 个自有 C# 文件，约 1.7 万行；不含第三方的 `src/Oyster.IntX`）
+## §0 现状（2026-10-09 统计，99 个自有 C# 文件，约 1.7 万行；不含当时还在的第三方 `src/Oyster.IntX`，它已由 iron-059 删除）
 
 | 项 | 现状 |
 |---|---|
@@ -60,7 +60,7 @@
 | 20 | 文件格式 | UTF-8、LF（跨平台仓库） | 3 个 BOM | `charset = utf-8`、`end_of_line = lf`、`insert_final_newline = true` | 3 个文件去 BOM，1 个补末尾换行 |
 | 21 | 可空引用类型 | 新项目建议启用 | 8 个项目关闭 | **暂不启用**：运行时以 `object` 表示 Scheme 值，`null` 即空表 `'()`，启用要逐个成员标注，属于单独的改造 | 另立任务 |
 | 22 | 隐式 `using` | 模板默认启用 | 关闭 | 保持关闭：库与运行时显式列出依赖，便于审阅；示例项目保持模板默认 | 无 |
-| 23 | 第三方代码 | 保持原样 | `Oyster.IntX` | `generated_code = true` 排除在样式检查之外 | 无 |
+| 23 | 第三方代码 | 保持原样 | `Oyster.IntX` | `generated_code = true` 排除在样式检查之外；iron-059 删除该库后此节一并去掉 | 无 |
 | 24 | 非 C# 文件 | — | 同一份缩进设置 | Scheme 源码（`.sls` `.ss` `.sps` `.scm`）与 Lcil、种子保持 2 空格（Lisp 惯例）；项目文件与 JSON/YAML 2 空格 | 无 |
 
 ## §2 建议的 `.editorconfig`
@@ -87,10 +87,6 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
-
-# 第三方代码：不做样式检查
-[src/Oyster.IntX/**.cs]
-generated_code = true
 
 # ———————— C# ————————
 [*.cs]

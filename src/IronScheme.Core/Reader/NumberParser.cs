@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -153,26 +153,16 @@ public partial class Builtins
         return ParseUInteger(s, radix);
     }
 
-    private static object ParseUInteger(string s, int radix)
-    {
-        if (s.Length == 0) return null;
-        BigInteger acc = 0;
-        foreach (char c in s)
-        {
-            int d = c >= '0' && c <= '9' ? c - '0' : (c | 0x20) >= 'a' && (c | 0x20) <= 'f' ? (c | 0x20) - 'a' + 10 : 99;
-            if (d >= radix) return null;
-            acc = acc * radix + d;
-        }
-        return ToIntegerIfPossible(acc);
-    }
+    private static object ParseUInteger(string s, int radix) =>
+      BigIntegers.TryParse(s, radix, out var v) ? ToIntegerIfPossible(v) : null;
 
     /// <summary>十进制字符串的精确值：整数部分与小数部分拼成整数，乘以 10^(exp - 小数位数)。</summary>
     private static object ExactDecimal(string intPart, string fracPart, int exp)
     {
         BigInteger digits = BigInteger.Parse((intPart + fracPart).TrimStart('0') is { Length: > 0 } t ? t : "0");
         int scale = exp - fracPart.Length;
-        if (scale >= 0) return ToIntegerIfPossible(digits * BigInteger.Pow(10, (uint)scale));
-        var f = new Fraction(digits, BigInteger.Pow(10, (uint)(-scale)));
+        if (scale >= 0) return ToIntegerIfPossible(digits * BigInteger.Pow(10, scale));
+        var f = new Fraction(digits, BigInteger.Pow(10, -scale));
         return f.Denominator == 1 ? ToIntegerIfPossible(f.Numerator) : (object)f;
     }
 
@@ -201,8 +191,8 @@ public partial class Builtins
         e -= 1075;
         BigInteger num = mantissa;
         if (negative) num = -num;
-        if (e >= 0) return ToIntegerIfPossible(num * BigInteger.Pow(2, (uint)e));
-        var f = new Fraction(num, BigInteger.Pow(2, (uint)(-e)));
+        if (e >= 0) return ToIntegerIfPossible(num * BigInteger.Pow(2, e));
+        var f = new Fraction(num, BigInteger.Pow(2, -e));
         return f.Denominator == 1 ? ToIntegerIfPossible(f.Numerator) : (object)f;
     }
 

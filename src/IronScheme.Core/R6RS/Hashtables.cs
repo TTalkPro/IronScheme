@@ -123,7 +123,7 @@ public sealed class HashComparer : IEqualityComparer
         {
             return (int)h;
         }
-        return Builtins.ConvertToBigInteger(h).ToInt32();
+        return unchecked((int)(uint)(Builtins.ConvertToBigInteger(h) & uint.MaxValue));   // 取低 32 位
     }
 }
 

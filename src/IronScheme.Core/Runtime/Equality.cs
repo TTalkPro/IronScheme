@@ -8,7 +8,6 @@
 using System;
 using System.Reflection;
 using System.Text;
-using Oyster.Math;
 
 namespace IronScheme.Core;
 

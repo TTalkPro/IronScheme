@@ -8,7 +8,7 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading.Tasks;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -374,7 +374,7 @@ public static class Interop
                 case TypeCode.UInt64: return (ulong)b;
                 case TypeCode.Double: return b.ToFloat64();
                 case TypeCode.Single: return (float)b.ToFloat64();
-                case TypeCode.Decimal: return decimal.Parse(b.ToString(), CultureInfo.InvariantCulture);
+                case TypeCode.Decimal: return (decimal)b;
                 default: return System.Convert.ChangeType((long)b, t, CultureInfo.InvariantCulture);
             }
         }

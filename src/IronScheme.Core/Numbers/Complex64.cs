@@ -145,14 +145,8 @@ public struct Complex64
         return MakeReal(d);
     }
 
-    public static implicit operator Complex64(Oyster.Math.IntX i)
+    public static implicit operator Complex64(System.Numerics.BigInteger i)
     {
-        if (object.ReferenceEquals(i, null))
-        {
-            throw new ArgumentException("invalid argument", "i");
-        }
-
-        // throws an overflow exception if we can't handle the value.
         return MakeReal(i.ToFloat64());
     }
 

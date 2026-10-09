@@ -22,12 +22,20 @@
     (overload "IronScheme.Core.HostPrimitives" "BignumToFixnum" 1 #f (pure unsafe) #f))
   (primitive $bignum->flonum
     (overload "IronScheme.Core.HostPrimitives" "BignumToFlonum" 1 #f (pure unsafe) #f))
+  (primitive $bignum->string
+    (overload "IronScheme.Core.HostPrimitives" "BignumToString" 2 #f (pure unsafe) #f))
   (primitive $bignum-and
     (overload "IronScheme.Core.HostPrimitives" "BignumAnd" 2 #f (pure unsafe) #f))
+  (primitive $bignum-bit-count
+    (overload "IronScheme.Core.HostPrimitives" "BignumBitCount" 1 #f (pure unsafe) #f))
   (primitive $bignum-bit-length
     (overload "IronScheme.Core.HostPrimitives" "BignumBitLength" 1 #f (pure unsafe) #f))
+  (primitive $bignum-bit-set?
+    (overload "IronScheme.Core.HostPrimitives" "IsBignumBitSet" 2 #f (pure unsafe) #f))
   (primitive $bignum-expt
     (overload "IronScheme.Core.HostPrimitives" "BignumExpt" 2 #f (pure unsafe) #f))
+  (primitive $bignum-first-bit-set
+    (overload "IronScheme.Core.HostPrimitives" "BignumFirstBitSet" 1 #f (pure unsafe) #f))
   (primitive $bignum-fits-fixnum?
     (overload "IronScheme.Core.HostPrimitives" "BignumFitsFixnum" 1 #f (pure unsafe) #f))
   (primitive $bignum-ior
@@ -40,6 +48,8 @@
     (overload "IronScheme.Core.HostPrimitives" "BignumQuotient" 2 #f (pure unsafe) #f))
   (primitive $bignum-remainder
     (overload "IronScheme.Core.HostPrimitives" "BignumRemainder" 2 #f (pure unsafe) #f))
+  (primitive $bignum-reverse-bits
+    (overload "IronScheme.Core.HostPrimitives" "BignumReverseBits" 2 #f (pure unsafe) #f))
   (primitive $bignum-shift-left
     (overload "IronScheme.Core.HostPrimitives" "BignumShiftLeft" 2 #f (pure unsafe) #f))
   (primitive $bignum-shift-right

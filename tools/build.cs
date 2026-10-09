@@ -114,7 +114,6 @@ void ILVerify(string dll)
     Run(tool, [dll,
              "-r", Path.Combine(runtimeDir, "*.dll"),
              "-r", Bin("IronScheme.Core", "IronScheme.Core.dll"),
-             "-r", Bin("IronScheme.Core", "Oyster.IntX.dll"),
              "-r", Bin("IronScheme.Emit", "IronScheme.Emit.dll")]);
 }
 

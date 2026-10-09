@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using IronScheme.Emit;
 using NUnit.Framework;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core.Tests;
 

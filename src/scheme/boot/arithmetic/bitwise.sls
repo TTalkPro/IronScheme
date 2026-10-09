@@ -105,36 +105,21 @@ See docs/license.txt. |#
       [(ei1 ei2 . rest)
         (fold-left bitwise-xor ei1 (cons ei2 rest))]))
 
-  ; can be made faster : http://stackoverflow.com/q/15370250/15541        
+  ;; bit-count、length、first-bit-set 的大整数情形由宿主一次算出（iron-059；原来逐位右移，O(n²)）
   (define (bitwise-bit-count ei)
     (if (fixnum? ei)
         (fxbit-count ei)
-        (if (not (negative? ei))
-            (let f ((c 0)(ei (->bignum ei)))
-              (if (positive? ei)
-                  (f (+ c (bitwise-and ei 1))
-                     (bitwise-arithmetic-shift-right ei 1))
-                  c))
-            (bitwise-not (bitwise-bit-count (bitwise-not ei))))))
+        ($bignum-bit-count (->bignum ei))))
         
   (define (bitwise-length ei)
     (if (fixnum? ei)
         (fxlength ei)
-        (let ((ei (->bignum ei)))
-          (if ($bignum-negative? ei)
-              (bitwise-length (bitwise-not ei))
-              ($bignum-bit-length ei)))))
+        ($bignum-bit-length (->bignum ei))))
 
   (define (bitwise-first-bit-set ei)
     (if (fixnum? ei)
         (fxfirst-bit-set ei)
-        (let ((ei (->bignum ei)))
-          (if (zero? ei)
-              -1
-              (let f ((c 0)(ei ei))
-                (if (= 1 (bitwise-and ei 1))
-                    c
-                    (f (+ c 1) (bitwise-arithmetic-shift-right ei 1))))))))
+        ($bignum-first-bit-set (->bignum ei))))
 
   (define (bitwise-bit-set? ei k)
     (cond
@@ -142,11 +127,12 @@ See docs/license.txt. |#
       [(and (fixnum? ei) (< -1 k 32))
         (fxbit-set? ei k)]
       [else
-        (let ((ei (->bignum ei))
-              (k (->bignum k)))
+        (let ((ei (->bignum ei)))
           (when (negative? k)
             (assertion-violation 'bitwise-bit-set? "cannot be negative" k))
-          (= 1 (bitwise-and 1 (bitwise-arithmetic-shift-right ei k))))]))
+          (if (fixnum? k)
+              ($bignum-bit-set? ei k)
+              (negative? ei)))]))   ; 下标超出 fixnum：只剩符号位
   
   (define (bitwise-if ei1 ei2 ei3)
     (bitwise-ior (bitwise-and ei1 ei2)
@@ -194,45 +180,46 @@ See docs/license.txt. |#
           (bitwise-arithmetic-shift-left from start)
           to)))
           
+  ;; 移位量为 fixnum 时直接调用宿主原语（iron-059）：原来先经通用的 negative? 检查，
+  ;; 再进入外面套着 exact 的 cond，小整数移位每次约 350ns，原语本身约 25ns。
+  ;; 宿主的右移是算术右移（向下取整），负数无须经 bitwise-not。
   (define (bitwise-arithmetic-shift ei k)
-    (exact
-      (cond 
-        [(fixnum? k)
-          (if (fxnegative? k)
-              (cond
-                [(fx=? k (least-fixnum))
-                  (if (negative? ei) -1 0)]
-                [(negative? ei)
-                  (bitwise-not ($bignum-shift-right (->bignum (bitwise-not ei)) (fx- k)))]
-                [else 
-                  ($bignum-shift-right (->bignum ei) (fx- k))])
-              ($bignum-shift-left (->bignum ei) k))]
-        [(negative? ei)
-          (if (and (negative? k) (not (fixnum? k)))
-              -1
-              (floor (* ei (expt 2 k))))]                               
-        ;; handle bignum right shifts
-        [(negative? k) 
-          (if (negative? ei)
-              -1
-              0)]
-        [else ;; else &implementation-restriction
-          (raise
-            (condition
-              (make-implementation-restriction-violation)
-              (make-who-condition 'bitwise-arithmetic-shift)
-              (make-message-condition "bignum left shift not supported")
-              (make-irritants-condition (list ei k))))])))
+    (if (fixnum? k)
+        (cond
+          [($fx>=? k 0) ($bignum-shift-left (->bignum ei) k)]
+          [($fx=? k (least-fixnum)) (if (negative? ei) -1 0)]
+          [else ($bignum-shift-right (->bignum ei) ($fx- k))])
+        (exact
+          (cond
+            [(negative? ei)
+              (if (negative? k)
+                  -1
+                  (floor (* ei (expt 2 k))))]
+            ;; handle bignum right shifts
+            [(negative? k) 0]
+            [else ;; else &implementation-restriction
+              (raise
+                (condition
+                  (make-implementation-restriction-violation)
+                  (make-who-condition 'bitwise-arithmetic-shift)
+                  (make-message-condition "bignum left shift not supported")
+                  (make-irritants-condition (list ei k))))]))))
                   
   (define (bitwise-arithmetic-shift-left ei1 ei2)
-    (when (negative? ei2)
-      (assertion-violation 'bitwise-arithmetic-shift-left "cannot be negative" ei2))
-    (bitwise-arithmetic-shift ei1 ei2))            
+    (if (and (fixnum? ei2) ($fx>=? ei2 0))
+        ($bignum-shift-left (->bignum ei1) ei2)
+        (begin
+          (when (negative? ei2)
+            (assertion-violation 'bitwise-arithmetic-shift-left "cannot be negative" ei2))
+          (bitwise-arithmetic-shift ei1 ei2))))
     
   (define (bitwise-arithmetic-shift-right ei1 ei2)
-    (when (negative? ei2)
-      (assertion-violation 'bitwise-arithmetic-shift-right "cannot be negative" ei2))
-    (bitwise-arithmetic-shift ei1 (- ei2)))            
+    (if (and (fixnum? ei2) ($fx>=? ei2 0))
+        ($bignum-shift-right (->bignum ei1) ei2)
+        (begin
+          (when (negative? ei2)
+            (assertion-violation 'bitwise-arithmetic-shift-right "cannot be negative" ei2))
+          (bitwise-arithmetic-shift ei1 (- ei2)))))
     
   (define (bitwise-rotate-bit-field n start end count)
     (when (negative? start)
@@ -260,11 +247,6 @@ See docs/license.txt. |#
       (assertion-violation 'bitwise-reverse-bit-field "cannot be negative" end))  
     (unless (<= start end)
       (assertion-violation 'bitwise-reverse-bit-field "start must be less than or equal to end" start end))
-    (do ((width (- end start) (- width 1))
-         (bits  (bitwise-bit-field x1 start end)
-                (bitwise-arithmetic-shift-right bits 1))
-         (rbits 0
-                (bitwise-ior (bitwise-arithmetic-shift-left rbits 1)
-                             (bitwise-and bits 1))))
-        ((= width 0)
-         (bitwise-copy-bit-field x1 start end rbits)))))
+    ;; 逆序由宿主一次完成（iron-059；原来逐位拼接，O(n²)）
+    (bitwise-copy-bit-field x1 start end
+      ($bignum-reverse-bits (->bignum (bitwise-bit-field x1 start end)) (- end start)))))

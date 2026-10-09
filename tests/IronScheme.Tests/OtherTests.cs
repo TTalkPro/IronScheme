@@ -26,6 +26,15 @@ public class Other : TestRunner
     }
 
     [Test]
+    public void Bignums()
+    {
+        // 大整数：位运算、进制转换、到 flonum 的舍入（iron-059）
+        var r = RunIronSchemeTest(@"tests\bignums.sps");
+        Assert.That(r.Output, Does.Contain("bignums: all passed"));
+        AssertError(r);
+    }
+
+    [Test]
     public void UnicodeStrings()
     {
         // 字符串按码点（iron-055）

@@ -8,7 +8,7 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 
 namespace IronScheme.Core;
@@ -317,12 +317,16 @@ public partial class Builtins
         return null;
     }
 
-    /// <summary>(- x)：fixnum 与 flonum 直接取负（(- 0.0) 为 -0.0），其余按 (* -1 x)（iron-033）。</summary>
+    /// <summary>
+    /// (- x)：fixnum、flonum、bignum 直接取负（(- 0.0) 为 -0.0；bignum 取负只翻转符号、共享数位，iron-059），
+    /// 其余按 (* -1 x)（iron-033）。
+    /// </summary>
     [Primitive("generic-negate", Flags = PrimitiveFlags.Pure)]
     public static object Negate(object x) => x switch
     {
         int i when i != int.MinValue => RT.Box(-i),
         double d => -d,
+        BigInteger b => ToIntegerIfPossible(-b),
         _ => Multiply(-1, x)
     };
 
@@ -411,7 +415,7 @@ public partial class Builtins
 
     protected internal static object ToIntegerIfPossible(BigInteger i)
     {
-        if (i.IsInt32)
+        if (i.IsInt32())
         {
             return RT.Box((int)i);
         }
@@ -490,14 +494,14 @@ public partial class Builtins
                     {
                         var ff = ConvertToBigInteger(first);
                         var ss = ConvertToBigInteger(second);
-                        var ffa = ff.Abs();
-                        var ssa = ss.Abs();
+                        var ffa = BigInteger.Abs(ff);
+                        var ssa = BigInteger.Abs(ss);
                         var r = ffa / ssa;
-                        if (ff.Negative && ffa != ssa * r)
+                        if (ff.Sign < 0 && ffa != ssa * r)
                         {
                             r++;
                         }
-                        if (ff.Negative ^ ss.Negative)
+                        if ((ff.Sign < 0) ^ (ss.Sign < 0))
                         {
                             r = -r;
                         }

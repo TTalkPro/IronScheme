@@ -18,7 +18,7 @@
 #endregion
 
 using System;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -113,108 +113,8 @@ public class Fraction : IComparable, IConvertible
 
     #region GCD
 
-    /// <summary>
-    /// The classic GCD algorithm of Euclid
-    /// </summary>
-    /// <param name="smaller"></param>
-    /// <param name="larger"></param>
-    /// <returns></returns>
-    internal BigInteger Gcd(BigInteger smaller, BigInteger larger)
-    {
-        if (smaller.IsInt && larger.IsInt)
-        {
-            return Gcd((uint)smaller, (uint)larger);
-        }
-
-        if (smaller.IsLong && larger.IsLong)
-        {
-            return Gcd((ulong)smaller, (ulong)larger);
-        }
-
-        BigInteger rest;
-
-        smaller = smaller.Abs();
-        larger = larger.Abs();
-
-        if (smaller == 0)
-            return larger;
-        else
-        {
-            if (larger == 0)
-                return smaller;
-        }
-
-        // the GCD algorithm requires second >= first
-        if (smaller > larger)
-        {
-            rest = larger;
-            larger = smaller;
-            smaller = rest;
-        }
-
-        while ((rest = larger % smaller) != 0)
-        {
-            larger = smaller;
-            smaller = rest;
-        }
-        return smaller;
-    }
-
-    internal uint Gcd(uint smaller, uint larger)
-    {
-        uint rest;
-
-        if (smaller == 0)
-            return larger;
-        else
-        {
-            if (larger == 0)
-                return smaller;
-        }
-
-        // the GCD algorithm requires second >= first
-        if (smaller > larger)
-        {
-            rest = larger;
-            larger = smaller;
-            smaller = rest;
-        }
-
-        while ((rest = larger % smaller) != 0)
-        {
-            larger = smaller;
-            smaller = rest;
-        }
-        return smaller;
-    }
-
-    internal ulong Gcd(ulong smaller, ulong larger)
-    {
-        ulong rest;
-
-        if (smaller == 0)
-            return larger;
-        else
-        {
-            if (larger == 0)
-                return smaller;
-        }
-
-        // the GCD algorithm requires second >= first
-        if (smaller > larger)
-        {
-            rest = larger;
-            larger = smaller;
-            smaller = rest;
-        }
-
-        while ((rest = larger % smaller) != 0)
-        {
-            larger = smaller;
-            smaller = rest;
-        }
-        return smaller;
-    }
+    /// <summary>最大公约数（非负）。</summary>
+    internal static BigInteger Gcd(BigInteger a, BigInteger b) => BigInteger.GreatestCommonDivisor(a, b);
 
     #endregion
 
@@ -227,9 +127,7 @@ public class Fraction : IComparable, IConvertible
 
     public static explicit operator double(Fraction fraction)
     {
-        BigInteger n = fraction.Numerator, d = fraction.Denominator;
-        double r = n.ToFloat64() / d.ToFloat64();
-        return r;
+        return BigIntegers.RationalToDouble(fraction._numerator, fraction._denominator);
     }
 
     public static explicit operator BigInteger(Fraction fraction)
@@ -424,7 +322,7 @@ public class Fraction : IComparable, IConvertible
 
     public override string ToString()
     {
-        return _numerator + "/" + _denominator;
+        return BigIntegers.ToDecimalString(_numerator) + "/" + BigIntegers.ToDecimalString(_denominator);
     }
 
     #region IConvertible Members

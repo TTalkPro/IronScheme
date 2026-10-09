@@ -6,7 +6,7 @@
 |---|---|
 | 程序集 / 根命名空间 | `IronScheme.Core` |
 | 目标框架 | net10.0 |
-| 依赖 | 只有 BCL 与 `Oyster.IntX`（大整数，源码已在仓库；已改为 `net20;net10.0` 多目标） |
+| 依赖 | 只有 BCL（大整数原用第三方的 `Oyster.IntX`，iron-059 改为 `System.Numerics.BigInteger`） |
 | 位置 | `src/IronScheme.Core/` |
 | 与旧运行时的关系 | **并存**直到 M7。命名空间不同（旧为 `IronScheme.Runtime`、`Microsoft.Scripting`），两者互不引用；旧系统只用于一次性生成文本种子（05 §5）。旧代码按需**复制后改写**，不在原文件上改，直到 M6 删除旧项目 |
 
@@ -22,7 +22,7 @@
 | 向量 / 字节向量 | `object[]` / `byte[]` | 不变 |
 | **符号** | `Symbol` 类（见 §3） | **替换** `SymbolId` 结构体 |
 | fixnum | `int`（32 位） | 不变。`boot/arithmetic/fixnums.sls` 依赖 32 位宽度，改成 64 位留作以后 |
-| flonum / bignum / 有理数 | `double` / `IntX` / `Fraction` | 不变 |
+| flonum / bignum / 有理数 | `double` / `System.Numerics.BigInteger` / `Fraction` | bignum 原为 `Oyster.IntX`，iron-059 替换；到 double 的转换正确舍入（`BigIntegers.RationalToDouble`） |
 | 复数 | `ComplexFraction`、`Complex64` | `Complex64` 从 DLR 移入 |
 | 字符 | BMP 内为 `System.Char`，之外为 `SchemeChar` | 不变（iron-010 核对旧 reader 后更正：旧系统就是这样的双表示，`boot/base.sls` 两种都处理） |
 | 字符串 | `string`（不可变）或 `StringBuilder`（可变） | 不变。`boot/base.sls` 依赖这种二元表示 |

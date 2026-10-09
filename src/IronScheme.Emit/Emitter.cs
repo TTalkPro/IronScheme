@@ -134,7 +134,7 @@ public sealed partial class LcilEmitter
         _module = module;
         _debug = debug;
         foreach (var r in asm.References) _references.Add(LoadReference(r));
-        // 互操作类型名在已加载程序集中查找：被引用程序集的依赖（如 Core 引用的 Oyster.IntX）也要加载
+        // 互操作类型名在已加载程序集中查找：被引用程序集的依赖也要加载
         // 每个程序集只处理一次：eval 与 compile-library 每次都新建发射器，重复 Assembly.Load 是热点（iron-033）
         foreach (var a in _references.ToList())
             if (s_depsLoaded.TryAdd(a, true))

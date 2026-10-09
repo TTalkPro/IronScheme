@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using IronScheme.Core;
 using NUnit.Framework;
-using IntX = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core.Tests;
 
@@ -160,7 +160,7 @@ public class InteropCallTests
     {
         Assert.That(Helpers.FFIConvertTo<long>(5), Is.EqualTo(5L));
         Assert.That(Helpers.FFIConvertTo<IntPtr>(null), Is.EqualTo(IntPtr.Zero));
-        Assert.That(Helpers.FFIConvertFrom(long.MaxValue), Is.InstanceOf<IntX>());
+        Assert.That(Helpers.FFIConvertFrom(long.MaxValue), Is.InstanceOf<BigInteger>());
         Assert.That(Helpers.FFIConvertFrom((short)3), Is.EqualTo(3).And.InstanceOf<int>());
         Assert.That(Helpers.FFIConvertFrom(1.5f), Is.EqualTo(1.5).And.InstanceOf<double>());
         Assert.That(Helpers.SymbolToEnum<DayOfWeek>(Symbol.Intern("monday")), Is.EqualTo(DayOfWeek.Monday));

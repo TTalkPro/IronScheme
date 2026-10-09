@@ -38,7 +38,7 @@
 | [iron-031](tasks/iron-031-r6rs-and-system-libraries.md) | R6RS 测试与系统库编译达标 | M6 | iron-030 | 完成 |
 | [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 完成 |
 | [iron-033](tasks/iron-033-performance.md) | 性能优化（后续） | M7 | iron-031 | 完成 |
-| [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化 | 后续 | iron-033 | 未开始 |
+| [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化（034a 基准 → 034b 循环降级 → 034c 拆箱 → 034d 共享类 → 034e 跨库直接调用） | 后续 | iron-033、iron-057 | 未开始，设计已定 |
 | [iron-035](tasks/iron-035-repository-layout.md) | 目录结构调整 | M8 | iron-032 | 完成 |
 | [iron-036](tasks/iron-036-self-contained-publish.md) | 自包含发布 | M8 | iron-037 | 完成 |
 | [iron-037](tasks/iron-037-compile-file.md) | compile-file 与 .fasl | M8 | iron-035 | 完成 |
@@ -55,6 +55,7 @@
 | [iron-054](tasks/iron-054-base-library-fixes.md) | 基础库问题修复 | M9 | iron-041 ~ iron-046 | 完成 |
 | [iron-055](tasks/iron-055-scheme-strings.md) | 字符串表示：按码点的窄/宽字符串 | M9 | iron-054 | 完成 |
 | [iron-058](tasks/iron-058-csharp-style.md) | C# 代码按 09 规范落地（4 空格、字段命名等） | M9 | — | 完成 |
+| [iron-059](tasks/iron-059-system-numerics-bignum.md) | 大整数改用 `System.Numerics.BigInteger`，删除 Oyster.IntX；进制转换与位运算改由宿主完成 | M9 | — | 完成 |
 | [iron-048](tasks/iron-048-spike-runtime-async.md) | 验证 Runtime Async 能否做 async-lambda 的后端 | 后续 | iron-003 | 完成 |
 | [iron-049](tasks/iron-049-spike-async-frame.md) | 验证 AsyncFrame 状态机能否做 async-lambda 的后端 | 后续 | iron-048 | 完成 |
 | [iron-050](tasks/iron-050-async-runtime.md) | 异步：运行时支持 | 后续 | iron-049 | 完成 |
@@ -77,5 +78,5 @@
 | M6 自举闭合 | iron-030 ~ iron-031 |
 | M7 清理与优化 | iron-032 ~ iron-033 |
 | M8 工程与示例 | iron-035 ~ iron-040、iron-047 |
-| M9 标准库 | iron-041 ~ iron-046、iron-054、iron-055、iron-058 |
+| M9 标准库 | iron-041 ~ iron-046、iron-054、iron-055、iron-058、iron-059 |
 | 后续 | iron-034、iron-048 ~ iron-053、iron-056 ~ iron-057 |

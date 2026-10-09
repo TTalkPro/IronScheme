@@ -8,7 +8,7 @@
 
 using System;
 
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -116,12 +116,6 @@ public class ComplexFraction
 
     public static implicit operator ComplexFraction(BigInteger i)
     {
-        if (ReferenceEquals(i, null))
-        {
-            throw new ArgumentNullException("i");
-        }
-
-        // throws an overflow exception if we can't handle the value.
         return MakeReal(i);
     }
 

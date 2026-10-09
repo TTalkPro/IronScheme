@@ -6,7 +6,7 @@
 #endregion
 
 using System;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 

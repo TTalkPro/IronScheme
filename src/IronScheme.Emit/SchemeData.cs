@@ -68,8 +68,8 @@ internal static class SchemeData
             return l;
         }
         if (t == s_symbolType) return new SSym(s_symbolName(x));
-        // bignum（Oyster.IntX）：Lcil 中的整数操作数都在 long 范围内
-        if (t.FullName == "Oyster.Math.IntX" && long.TryParse(x.ToString(), out var big)) return new SInt(big);
+        // bignum：Lcil 中的整数操作数都在 long 范围内
+        if (x is System.Numerics.BigInteger big && big >= long.MinValue && big <= long.MaxValue) return new SInt((long)big);
         throw new LcilException("cannot convert to Lcil: " + t.FullName);
     }
 }

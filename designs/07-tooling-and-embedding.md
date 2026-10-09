@@ -9,7 +9,7 @@ IronScheme.slnx                 解决方案（Directory.Solution.props：默认
 Directory.Build.props           全部项目共用（NoWarn 等）
 src/
   IronScheme.Core/  IronScheme.Emit/  IronScheme.Hosting/  IronScheme.Host/
-  IronScheme.Stage0/  IronScheme.PrimGen/  Oyster.IntX/
+  IronScheme.Stage0/  IronScheme.PrimGen/
   scheme/                       Scheme 源码树（原 IronScheme/IronScheme.Console）
       boot/                     编进 boot 镜像的一切（见下）
       lib/                      按需加载的库：ironscheme/*（含编译器）、第三方、nanopass 子模块

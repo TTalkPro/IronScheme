@@ -2,7 +2,7 @@ using System.IO;
 using System.Linq;
 using IronScheme.Core;
 using NUnit.Framework;
-using IntX = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core.Tests;
 
@@ -177,7 +177,7 @@ public class NumberParserTests
         Assert.That(N("#b-101"), Is.EqualTo(-5));
         Assert.That(N("#o17"), Is.EqualTo(15));
         Assert.That(N("12345678901234567890").ToString(), Is.EqualTo("12345678901234567890"));
-        Assert.That(N("12345678901234567890"), Is.InstanceOf<IntX>());
+        Assert.That(N("12345678901234567890"), Is.InstanceOf<BigInteger>());
     }
 
     [Test]

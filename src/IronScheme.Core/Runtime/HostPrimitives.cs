@@ -5,7 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -651,16 +651,16 @@ public static class HostPrimitives
         _ => BitConverter.GetBytes(ToInt64(n)),
     };
 
-    // 大整数经十进制文本转换：IntX 没有到 ulong 的直接转换，超出范围时 Parse 抛出溢出异常
-    private static ulong ToUInt64(object n) => n is BigInteger b ? ulong.Parse(b.ToString(), CultureInfo.InvariantCulture) : checked((ulong)(int)n);
-    private static long ToInt64(object n) => n is BigInteger b ? long.Parse(b.ToString(), CultureInfo.InvariantCulture) : (int)n;
+    // 超出范围时宿主抛出溢出异常
+    private static ulong ToUInt64(object n) => n is BigInteger b ? (ulong)b : checked((ulong)(int)n);
+    private static long ToInt64(object n) => n is BigInteger b ? (long)b : (int)n;
 
-    /// <summary>大整数的小端补码字节（IntX.ToByteArray）。</summary>
+    /// <summary>大整数的小端补码字节（最短）。</summary>
     [Primitive("$bignum->bytes", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object BignumToBytes(object b) => ToBignum(b).ToByteArray();
 
     [Primitive("$bytes->bignum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object BytesToBignum(object bv) => Builtins.ToIntegerIfPossible(BigInteger.Create((byte[])bv));
+    public static object BytesToBignum(object bv) => Builtins.ToIntegerIfPossible(new BigInteger((byte[])bv));
 
     [Primitive("$bytes->single", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object BytesToSingle(object bv) => (double)BitConverter.ToSingle((byte[])bv, 0);
@@ -678,7 +678,7 @@ public static class HostPrimitives
 
     #region 数（boot/numbers.sls、arithmetic/*.sls）
 
-    private static BigInteger ToBignum(object o) => o is BigInteger b ? b : BigInteger.Create((int)o);
+    private static BigInteger ToBignum(object o) => o is BigInteger b ? b : new BigInteger((int)o);
     private static Fraction ToFraction(object o) => o switch
     {
         Fraction f => f,
@@ -727,16 +727,16 @@ public static class HostPrimitives
     public static object BignumRemainder(object a, object b) => Builtins.ToIntegerIfPossible(ToBignum(a) % ToBignum(b));
 
     [Primitive("$bignum->fixnum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object BignumToFixnum(object b) => RT.Box(((BigInteger)b).ToInt32());
+    public static object BignumToFixnum(object b) => RT.Box((int)(BigInteger)b);
 
     [Primitive("$bignum->flonum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object BignumToFlonum(object b) => ((BigInteger)b).ToFloat64();
 
     [Primitive("$bignum-fits-fixnum?", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object BignumFitsFixnum(object b) => RT.Bool(((BigInteger)b).IsInt32);
+    public static object BignumFitsFixnum(object b) => RT.Bool(((BigInteger)b).IsInt32());
 
     [Primitive("$fixnum->bignum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object FixnumToBignum(object n) => BigInteger.Create((int)n);
+    public static object FixnumToBignum(object n) => new BigInteger((int)n);
 
     [Primitive("$flonum->ratnum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object FlonumToRatnum(object d) => (Fraction)(double)d;
@@ -753,6 +753,10 @@ public static class HostPrimitives
     [Primitive("$rectnum->complexnum", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object RectnumToComplexnum(object c) => ((ComplexFraction)c).ToComplex64();
 
+    /// <summary>大整数按 2、8、10、16 进制写出（iron-059；原来在 Scheme 中逐位 div/mod，O(n²)）。</summary>
+    [Primitive("$bignum->string", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object BignumToString(object b, object radix) => BigIntegers.ToString(ToBignum(b), (int)radix);
+
     [Primitive("$fixnum->string", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object FixnumToString(object n, object radix) => Convert.ToString((int)n, (int)radix);
 
@@ -763,7 +767,7 @@ public static class HostPrimitives
     public static object InexactCompare(object a, object b) => RT.Box(Builtins.InexactCompare(a, b));
 
     [Primitive("$bignum-expt", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object BignumExpt(object b, object n) => Builtins.ToIntegerIfPossible(ToBignum(b).Power((int)n));
+    public static object BignumExpt(object b, object n) => Builtins.ToIntegerIfPossible(BigInteger.Pow(ToBignum(b), (int)n));
 
     [Primitive("$bignum-not", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object BignumNot(object b) => Builtins.ToIntegerIfPossible(~ToBignum(b));
@@ -778,10 +782,46 @@ public static class HostPrimitives
     public static object BignumXor(object a, object b) => Builtins.ToIntegerIfPossible(ToBignum(a) ^ ToBignum(b));
 
     [Primitive("$bignum-negative?", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object IsBignumNegative(object b) => RT.Bool(ToBignum(b) < BigInteger.Create(0));
+    public static object IsBignumNegative(object b) => RT.Bool(ToBignum(b).Sign < 0);
 
+    /// <summary>R6RS bitwise-length：负数为其补数的位数（GetBitLength 不含符号位，正好如此）。</summary>
     [Primitive("$bignum-bit-length", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
-    public static object BignumBitLength(object b) => RT.Box(ToBignum(b).BitLength);
+    public static object BignumBitLength(object b) => RT.Box((int)ToBignum(b).GetBitLength());
+
+    /// <summary>R6RS bitwise-bit-count：非负数为 1 的个数，负数为 (bitwise-not (bitwise-bit-count (bitwise-not ei)))。</summary>
+    [Primitive("$bignum-bit-count", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object BignumBitCount(object b)
+    {
+        var x = ToBignum(b);
+        return x.Sign >= 0 ? Builtins.ToIntegerIfPossible(BigInteger.PopCount(x)) : Builtins.ToIntegerIfPossible(-BigInteger.PopCount(~x) - 1);
+    }
+
+    /// <summary>最低的 1 位的下标；0 为 -1（补码下负数与其绝对值相同）。</summary>
+    [Primitive("$bignum-first-bit-set", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object BignumFirstBitSet(object b)
+    {
+        var x = ToBignum(b);
+        return RT.Box(x.IsZero ? -1 : (int)BigInteger.TrailingZeroCount(x));
+    }
+
+    /// <summary>第 k 位（补码，k ≥ 0）是否为 1。</summary>
+    [Primitive("$bignum-bit-set?", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object IsBignumBitSet(object b, object k) => RT.Bool(!(ToBignum(b) >> (int)k).IsEven);
+
+    /// <summary>非负数 b 的低 width 位逆序（bitwise-reverse-bit-field 用；原来逐位拼接，O(n²)）。</summary>
+    [Primitive("$bignum-reverse-bits", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
+    public static object BignumReverseBits(object b, object width)
+    {
+        int w = (int)width;
+        byte[] src = ToBignum(b).ToByteArray(isUnsigned: true, isBigEndian: false);
+        var dst = new byte[w / 8 + 2];   // 末尾留 0 字节，结果非负
+        for (int i = 0; i < w; i++)
+        {
+            int j = w - 1 - i;
+            if ((i >> 3) < src.Length && (src[i >> 3] & (1 << (i & 7))) != 0) dst[j >> 3] |= (byte)(1 << (j & 7));
+        }
+        return Builtins.ToIntegerIfPossible(new BigInteger(dst));
+    }
 
     [Primitive("$bignum-shift-left", Flags = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure)]
     public static object BignumShiftLeft(object b, object k) => Builtins.ToIntegerIfPossible(ToBignum(b) << (int)k);

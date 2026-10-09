@@ -1,6 +1,6 @@
 using IronScheme.Core;
 using NUnit.Framework;
-using IntX = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core.Tests;
 
@@ -18,7 +18,7 @@ public class NumbersTests
     public void OverflowPromotesToBignum()
     {
         var r = Builtins.Add(int.MaxValue, 1);
-        Assert.That(r, Is.InstanceOf<IntX>());
+        Assert.That(r, Is.InstanceOf<BigInteger>());
         Assert.That(r.ToString(), Is.EqualTo("2147483648"));
         var m = Builtins.Multiply(int.MaxValue, int.MaxValue);
         Assert.That(m.ToString(), Is.EqualTo("4611686014132420609"));
@@ -82,5 +82,150 @@ public class NumbersTests
         Assert.That(sr[1], Is.EqualTo(0));
         var parts = Builtins.DecomposeFlonum(1.5);
         Assert.That(parts, Is.InstanceOf<MultipleValues>());
+    }
+
+    // ——— 大整数与有理数转 double 的舍入（iron-059）———
+
+    /// <summary>有限 double 的精确值 m·2^e（m 为整数）。</summary>
+    private static (BigInteger m, int e) Exact(double x)
+    {
+        long bits = System.BitConverter.DoubleToInt64Bits(x);
+        int exp = (int)((bits >> 52) & 0x7FF);
+        long frac = bits & 0xFFFFFFFFFFFFFL;
+        BigInteger m = exp == 0 ? frac : frac | (1L << 52);
+        int e = (exp == 0 ? 1 : exp) - 1075;
+        return (bits < 0 ? -m : m, e);
+    }
+
+    /// <summary>|n/d - x| 与 |n/d - y| 比较（精确）。</summary>
+    private static int CompareDistance(BigInteger n, BigInteger d, double x, double y)
+    {
+        // |n/d - m·2^e| ∝ |n·2^k - m·d·2^(e+k)|，取公共的 2 的幂
+        var (mx, ex) = Exact(x);
+        var (my, ey) = Exact(y);
+        int k = System.Math.Max(0, -System.Math.Min(ex, ey));
+        BigInteger Dist(BigInteger m, int e) => BigInteger.Abs((n << k) - ((m * d) << (e + k)));
+        return Dist(mx, ex).CompareTo(Dist(my, ey));
+    }
+
+    private static void AssertNearest(BigInteger n, BigInteger d)
+    {
+        double r = BigIntegers.RationalToDouble(n, d);
+        Assert.That(double.IsNaN(r), Is.False);
+        if (double.IsInfinity(r))
+        {
+            // 超过 double.MaxValue 与 2^1024 的中点
+            var big = (BigInteger.One << 1024) - (BigInteger.One << 970);
+            Assert.That(BigInteger.Abs(n) >= big * d, Is.True, $"{n}/{d}");
+            return;
+        }
+        foreach (double other in new[] { System.Math.BitIncrement(r), System.Math.BitDecrement(r) })
+        {
+            if (double.IsInfinity(other)) continue;
+            int c = CompareDistance(n, d, r, other);
+            Assert.That(c <= 0, Is.True, $"{n}/{d} → {r:R}，{other:R} 更近");
+            if (c == 0) Assert.That(Exact(r).m.IsEven || r == 0, Is.True, $"{n}/{d} 平局应取偶");
+        }
+    }
+
+    [Test]
+    public void RationalToDoubleIsCorrectlyRounded()
+    {
+        var rnd = new System.Random(59);
+        BigInteger Random(int bits)
+        {
+            var bytes = new byte[bits / 8 + 2];
+            rnd.NextBytes(bytes);
+            bytes[^1] = 0;
+            return new BigInteger(bytes) >> (bytes.Length * 8 - 8 - bits);
+        }
+        for (int i = 0; i < 3000; i++)
+        {
+            var n = Random(rnd.Next(1, 2200)) + 1;
+            var d = Random(rnd.Next(1, 2200)) + 1;
+            AssertNearest(rnd.Next(2) == 0 ? n : -n, d);
+            AssertNearest(n, BigInteger.One);
+        }
+        // 边界：上溢、次正规、平局取偶
+        var one = BigInteger.One;
+        Assert.That(BigIntegers.RationalToDouble(one << 1024, one), Is.EqualTo(double.PositiveInfinity));
+        Assert.That(BigIntegers.RationalToDouble((one << 1024) - (one << 970), one), Is.EqualTo(double.PositiveInfinity));
+        Assert.That(BigIntegers.RationalToDouble((one << 1024) - (one << 970) - 1, one), Is.EqualTo(double.MaxValue));
+        Assert.That(BigIntegers.RationalToDouble(one, one << 1074), Is.EqualTo(double.Epsilon));
+        Assert.That(BigIntegers.RationalToDouble(one, one << 1075), Is.EqualTo(0.0));
+        Assert.That(BigIntegers.RationalToDouble(3, one << 1076), Is.EqualTo(double.Epsilon));
+        Assert.That(BigIntegers.RationalToDouble(-(one << 3000), one << 10), Is.EqualTo(double.NegativeInfinity));
+        Assert.That(BigIntegers.RationalToDouble((one << 53) + 1, one), Is.EqualTo(9007199254740992.0));
+        Assert.That(BigIntegers.RationalToDouble((one << 53) + 3, one), Is.EqualTo(9007199254740996.0));
+        Assert.That(BigIntegers.RationalToDouble(one << 2000, (one << 2000) * 3), Is.EqualTo(1.0 / 3));
+    }
+
+    [Test]
+    public void BignumToDoubleOutsideRange()
+    {
+        Assert.That(Builtins.ToInexact(BigInteger.Pow(2, 1100)), Is.EqualTo(double.PositiveInfinity));
+        Assert.That(Builtins.ToInexact(-BigInteger.Pow(10, 400)), Is.EqualTo(double.NegativeInfinity));
+        // 分子分母都超出 double 范围（原来得 ∞/∞ = NaN）
+        var f = new Fraction(BigInteger.Pow(10, 400) + 1, BigInteger.Pow(10, 400) * 4);
+        Assert.That((double)f, Is.EqualTo(0.25));
+    }
+
+    [Test]
+    public void BignumRadixConversionRoundTrips()
+    {
+        // 参照：逐位 div/mod（原 Scheme 实现的算法）
+        static string Reference(BigInteger v, int radix)
+        {
+            if (v.IsZero) return "0";
+            var sb = new System.Text.StringBuilder();
+            var a = BigInteger.Abs(v);
+            while (!a.IsZero) { int d = (int)(a % radix); sb.Insert(0, (char)(d < 10 ? '0' + d : 'a' + d - 10)); a /= radix; }
+            return (v.Sign < 0 ? "-" : "") + sb;
+        }
+        var rnd = new System.Random(59);
+        foreach (int radix in new[] { 2, 8, 10, 16 })
+        {
+            for (int i = 0; i < 300; i++)
+            {
+                var bytes = new byte[rnd.Next(1, 200)];
+                rnd.NextBytes(bytes);
+                var v = new BigInteger(bytes);
+                string text = BigIntegers.ToString(v, radix);
+                Assert.That(text, Is.EqualTo(Reference(v, radix)), $"radix {radix}");
+                string digits = text.TrimStart('-');
+                Assert.That(BigIntegers.TryParse(digits, radix, out var back), Is.True);
+                Assert.That(back, Is.EqualTo(BigInteger.Abs(v)));
+                Assert.That(BigIntegers.TryParse(digits.ToUpperInvariant(), radix, out back) && back == BigInteger.Abs(v), Is.True);
+            }
+        }
+        Assert.That(BigIntegers.TryParse("12a", 10, out _), Is.False);
+        Assert.That(BigIntegers.TryParse("1012", 2, out _), Is.False);
+        Assert.That(BigIntegers.TryParse("", 16, out _), Is.False);
+        Assert.That(BigIntegers.TryParse("000000000000000000000000000ff", 16, out var x) && x == 255, Is.True);
+        Assert.That(BigIntegers.TryParse("2222222222222222222222", 3, out var y) && y == BigInteger.Pow(3, 22) - 1, Is.True);
+    }
+
+    [Test]
+    public void LargeDecimalOutputMatchesBcl()
+    {
+        // 分治路径（约 1000 位以上）与 BCL 的结果逐字相同；含低半全为 0、补 0 跨越多层的值
+        var cases = new System.Collections.Generic.List<BigInteger>
+        {
+            BigInteger.Pow(10, 5000), BigInteger.Pow(10, 5000) - 1, BigInteger.Pow(10, 5000) + 1,
+            BigInteger.Pow(10, 256) * BigInteger.Pow(10, 4000) + 7, BigInteger.Pow(3, 30000), -BigInteger.Pow(7, 9000),
+            BigInteger.Pow(2, 3300), BigInteger.Pow(2, 3301), BigInteger.Pow(10, 1024) * 12345,
+        };
+        var rnd = new System.Random(59);
+        for (int i = 0; i < 40; i++)
+        {
+            var bytes = new byte[rnd.Next(400, 12000)];
+            rnd.NextBytes(bytes);
+            cases.Add(new BigInteger(bytes));
+        }
+        foreach (var v in cases)
+            Assert.That(BigIntegers.ToDecimalString(v), Is.EqualTo(v.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        // 第二轮用上已缓存的幂
+        foreach (var v in cases)
+            Assert.That(BigIntegers.ToString(v, 10), Is.EqualTo(v.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 }

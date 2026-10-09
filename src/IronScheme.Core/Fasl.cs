@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
-using BigInteger = Oyster.Math.IntX;
+using BigInteger = System.Numerics.BigInteger;
 
 namespace IronScheme.Core;
 
@@ -322,8 +322,8 @@ public static class Fasl
                 case bool b: _w.Write(b ? True : False); return;
                 case Unspecified _: _w.Write(Unspec); return;
                 case int i: _w.Write(Fix); _w.Write(i); return;
-                case BigInteger _:
-                case Fraction _: _w.Write(o is Fraction ? Rat : Big); String(o.ToString()); return;   // 十进制，"n/d"；Fraction 的 IConvertible.ToString 未实现
+                case BigInteger b: _w.Write(Big); String(BigIntegers.ToDecimalString(b)); return;   // 十进制
+                case Fraction f: _w.Write(Rat); String(f.ToString()); return;   // "n/d"
                 case double d: _w.Write(Flo); _w.Write(BitConverter.DoubleToInt64Bits(d)); return;
                 case ComplexFraction cf: _w.Write(Cpx); Object(Builtins.ToExact(cf.Real)); Object(Builtins.ToExact(cf.Imag)); return;
                 case Complex64 cd: _w.Write(Cpx); Object(cd.Real); Object(cd.Imag); return;

@@ -20,10 +20,6 @@ indent_size = 2
 [*.md]
 trim_trailing_whitespace = false
 
-# 第三方代码：不做样式检查
-[src/Oyster.IntX/**.cs]
-generated_code = true
-
 # ———————— C# ————————
 [*.cs]
 

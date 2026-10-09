@@ -10,6 +10,5 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Oyster.IntX\Oyster.IntX.csproj" />
   </ItemGroup>
 </Project>

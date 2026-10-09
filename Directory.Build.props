@@ -2,8 +2,8 @@
   <PropertyGroup>
     <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
     <DebugType>portable</DebugType>
-    <!-- 从旧代码移植的类型带 CLSCompliant 标注；Oyster.IntX 的异常类型带序列化构造函数 -->
-    <NoWarn>$(NoWarn);CS3021;SYSLIB0050;SYSLIB0051</NoWarn>
+    <!-- 从旧代码移植的类型带 CLSCompliant 标注 -->
+    <NoWarn>$(NoWarn);CS3021</NoWarn>
     <!-- 构建时按 .editorconfig 检查代码样式（designs/09-csharp-style.md；warning 级别的规则在构建中报告） -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
