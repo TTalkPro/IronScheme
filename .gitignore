@@ -20,8 +20,20 @@ src/Oyster.IntX/Oyster.IntX.xml
 /*.speedscope.json
 
 # Phase A 生成的 stage1 boot 镜像（dotnet build 的 GenerateBootImage 目标）
-src/scheme/build/ironscheme.boot.dll
-src/scheme/build/ironscheme.boot.lcil
+src/scheme/boot/ironscheme.boot.dll
+src/scheme/boot/ironscheme.boot.lcil
 
 # tools/build.cs publish 的输出
 /artifacts/
+
+# compile-library / compile-program / compile-system-libraries 的产物（写在库源码旁）
+src/scheme/**/*.dll
+src/scheme/**/*.fasl
+
+# 测试运行时写在 src/scheme 下的中间文件（SystemLibraryTests、R6RS 的 I/O 用例）
+src/scheme/compiled.lst
+src/scheme/lib.hide/
+src/scheme/tmp*
+
+# dotnet test 的结果目录
+TestResults/
