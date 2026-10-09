@@ -150,7 +150,23 @@ namespace IronScheme.Emit
       var loaded = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(x => x.GetName().Name == name);
       if (loaded != null) return loaded;
       try { return Assembly.Load(new AssemblyName(name)); }
-      catch (FileNotFoundException) { throw new LcilException($"referenced assembly not found: {name}"); }
+      catch (FileNotFoundException) { }
+      // 默认探测（应用的 deps.json）找不到时：当前目录、库搜索路径（-I）、应用目录下的 名字.dll
+      foreach (var dir in ReferenceDirectories())
+      {
+        string path = Path.Combine(dir, name + ".dll");
+        if (File.Exists(path)) return Assembly.LoadFrom(Path.GetFullPath(path));
+      }
+      throw new LcilException($"referenced assembly not found: {name}");
+    }
+
+    static IEnumerable<string> ReferenceDirectories()
+    {
+      yield return Environment.CurrentDirectory;
+      var core = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(x => x.GetName().Name == "IronScheme.Core");
+      if (core?.GetType("IronScheme.Core.Builtins")?.GetProperty("IncludePaths")?.GetValue(null) is IEnumerable<string> paths)
+        foreach (var p in paths) yield return p;
+      yield return AppContext.BaseDirectory;
     }
 
     // ———————————————— 类型解析 ————————————————

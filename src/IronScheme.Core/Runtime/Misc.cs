@@ -44,11 +44,22 @@ namespace IronScheme.Core
     [Primitive("get-command-line")]
     public static object CommandLine() => IronScheme.Core.Cons.FromList(CommandLineArgs);
 
-    public static string ApplicationDirectory => Path.GetDirectoryName(typeof(Builtins).Assembly.Location);
+    /// <summary>运行时所在目录；单文件发布时程序集没有文件位置，用应用目录（iron-036）。</summary>
+    public static string ApplicationDirectory
+    {
+      get
+      {
+        string location = typeof(Builtins).Assembly.Location;
+        return string.IsNullOrEmpty(location) ? AppContext.BaseDirectory : Path.GetDirectoryName(location);
+      }
+    }
 
     static readonly List<string> includepaths = new List<string>();
 
     public static void AddIncludePath(string path) => includepaths.Add(path);
+
+    /// <summary>宿主设置的库搜索路径（-I）；发射器按名字查找 clr-reference 的程序集时也搜索这些目录。</summary>
+    public static IReadOnlyList<string> IncludePaths => includepaths;
 
     [Primitive("get-library-paths")]
     public static object GetLibraryPaths()
