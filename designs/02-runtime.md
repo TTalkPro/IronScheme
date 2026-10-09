@@ -7,7 +7,7 @@
 | 程序集 / 根命名空间 | `IronScheme.Core` |
 | 目标框架 | net10.0 |
 | 依赖 | 只有 BCL 与 `Oyster.IntX`（大整数，源码已在仓库；已改为 `net20;net10.0` 多目标） |
-| 位置 | `IronScheme/IronScheme.Core/` |
+| 位置 | `src/IronScheme.Core/` |
 | 与旧运行时的关系 | **并存**直到 M7。命名空间不同（旧为 `IronScheme.Runtime`、`Microsoft.Scripting`），两者互不引用；旧系统只用于一次性生成文本种子（05 §5）。旧代码按需**复制后改写**，不在原文件上改，直到 M6 删除旧项目 |
 
 ## 2. 值表示
@@ -123,7 +123,7 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
 - 决议不了的（参数类型只有运行时才知道、重载歧义）发射为对 `Interop.Call(type, name, instance, args)` 等运行时方法的调用：
   - 用反射按实际参数类型选重载，结果按（类型、名字、参数类型序列）缓存。
   - 参数转换：数值拓宽、`Procedure` 转委托（用 `System.Linq.Expressions` 生成适配委托并缓存；这是 .NET 自带的能力）、符号转枚举、列表转数组。
-  - 返回值转换：`void` → 未指定值，枚举 → 符号。
+  - 返回值转换：`void` → 未指定值，枚举 → 符号；Scheme 不直接使用的 CLR 数值类型（long、short、byte、sbyte、ushort、uint、ulong、float）转为 Scheme 数（fixnum、bignum 或 flonum）。声明类型为 `object` 的返回值与字段值按运行时类型同样转换（iron-039）。
   - `clr-cast` 在整数类型（含 `char`）之间按 IL `conv` 转换：不检查溢出，截断取低位（与旧编译器一致）；params 数组参数可整体传入可转换的向量。
   - 类型名决议找不到类型时，按惯例加载与类型全名或其命名空间同名的程序集再找（如 `Microsoft.Win32.Registry`；.NET 10 不会预先加载它们，iron-031）。
   - 类型名别名（`fixnum`、`list` 等）之外，另把第三方代码写死的旧类型名 `IronScheme.Runtime.Builtins` 映射到 `IronScheme.Core.Builtins`（nanopass 适配文件）。

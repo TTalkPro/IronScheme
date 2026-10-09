@@ -76,10 +76,10 @@ stage0 不实现展开器：展开器（psyntax）本身就在种子里，以核
 1. **首次**：旧系统（`legacy-stage0/` 中的快照）运行 `seed-buildscript.sps`（由现有 `ironscheme-buildscript.sps` 改写：保留展开部分，最后一步把 `(map compile-core-expr core*)` 写成文本，而不是调用 `compile-bootfile`）。当时的命令（旧版 `tools/gen-seed.sh`）：旧系统会优先加载当前目录与脚本目录下的 `psyntax/*.sls` 源码，所以脚本复制到临时目录、在快照目录下运行，源码根目录作为参数。
    - 文本格式：核心形式与其中的常量都是标准 S 表达式，写出器自己实现（不用宿主 `write`），按新 reader 能逐值读回的写法输出 ASCII：符号中的非法字符用 `\xHH;`，字符串中的代理项对合成码点，flonum 检查往返，`-0.0` 单独处理。非调试模式下种子中没有注解、记录或语法对象。
 2. 生成前，boot 源码已经改为面向新运行时（iron-013）。展开是纯数据处理，旧系统不执行这些代码。
-3. **之后**（iron-032 实测）：新系统或 stage0 运行同一脚本重新生成种子，命令为 `dotnet run tools/build.cs -- seed`（默认用新宿主与 `build/ironscheme.boot.dll`，约 16 秒；`--stage0` 由 stage0 执行现有种子来运行，约 40 秒，不需要 boot 镜像）。脚本在 `IronScheme.Console` 目录下运行，源码根目录参数为 `./`，种子写回原处。与旧系统生成时相比，脚本只改了一处：`clr-call-internal`、`clr-cast-internal` 在 stage0 中是特殊形式，不作为原语取值（与 `ironscheme-buildscript-nano.sps` 相同）。
+3. **之后**（iron-032 实测）：新系统或 stage0 运行同一脚本重新生成种子，命令为 `dotnet run tools/build.cs -- seed`（默认用新宿主与 `build/ironscheme.boot.dll`，约 16 秒；`--stage0` 由 stage0 执行现有种子来运行，约 40 秒，不需要 boot 镜像）。脚本在 `src/scheme` 目录下运行，源码根目录参数为 `./`，种子写回原处。与旧系统生成时相比，脚本只改了一处：`clr-call-internal`、`clr-cast-internal` 在 stage0 中是特殊形式，不作为原语取值（与 `ironscheme-buildscript-nano.sps` 相同）。
    - 种子不动点成立：新宿主与 stage0 生成的种子逐字节相同，两次生成结果相同；用重新生成的种子经 stage0 构建的 stage1 与原先的 stage1 逐字节相同。
    - 与旧系统生成的种子相比，gensym 计数的起点不同（新系统展开前已生成的 gensym 数不同），其余由 boot 源码的改动决定。boot 源码改动后可以随时再生成；不再生成也不影响构建——种子只用来在 stage0 上运行编译器，stage1 总是从当前源码编译。
-4. 种子文件放在 `IronScheme/IronScheme.Console/boot-seed.core`。
+4. 种子文件放在 `src/scheme/boot-seed.core`。
 
 ## 6. 交叉编译纪律
 
@@ -106,8 +106,8 @@ Phase A 中编译器跑在解释器上、宿主就是新运行时，比原先"�
 |---|---|
 | M2 之前 | 旧系统的可运行快照 `legacy-stage0/`（含原始 DLR 格式种子），只用于第 0 步生成文本种子。iron-032 确认新系统能自行再生成种子后已删除 |
 | M2 完成后 | `boot-seed.core`（文本） |
-| M6 完成后 | stage3 的 boot dll 作为二进制缓存放入工作区（`IronScheme.Console/build/ironscheme.boot.dll`，不提交）；从源码重建的路径是 `boot-seed.core` + stage0。实测 stage0 编译出的 stage1 与 stage2、stage3 逐字节相同（iron-030） |
-| M7 删除旧系统后（iron-032） | 旧 DLR 系统不再需要。从零重建只要 .NET SDK、本仓库（含 nanopass 子模块）与文本种子：仓库根目录 `dotnet build`（C# 项目 + boot 镜像）。仓库不再跟踪旧格式的 `IronScheme.Console/ironscheme.boot.dll`；新 boot 生成在 `build/`（忽略），宿主从 `IronScheme.Console` 启动时自动复制到宿主目录 |
+| M6 完成后 | stage3 的 boot dll 作为二进制缓存放入工作区（`src/scheme/build/ironscheme.boot.dll`，不提交）；从源码重建的路径是 `boot-seed.core` + stage0。实测 stage0 编译出的 stage1 与 stage2、stage3 逐字节相同（iron-030） |
+| M7 删除旧系统后（iron-032） | 旧 DLR 系统不再需要。从零重建只要 .NET SDK、本仓库（含 nanopass 子模块）与文本种子：仓库根目录 `dotnet build`（C# 项目 + boot 镜像）。仓库不再跟踪旧格式的 `ironscheme.boot.dll`；新 boot 生成在 `build/`（忽略），宿主从 `src/scheme` 启动时自动复制到宿主目录 |
 
 ## 9. 新系统中的构建脚本（Phase B）
 

@@ -39,6 +39,18 @@
 | [iron-032](tasks/iron-032-remove-legacy.md) | 删除 DLR、旧编译器与旧目标框架 | M7 | iron-031 | 完成 |
 | [iron-033](tasks/iron-033-performance.md) | 性能优化（后续） | M7 | iron-031 | 完成 |
 | [iron-034](tasks/iron-034-compiler-optimizations.md) | 编译器深度优化 | 后续 | iron-033 | 未开始 |
+| [iron-035](tasks/iron-035-repository-layout.md) | 目录结构调整 | M8 | iron-032 | 完成 |
+| [iron-036](tasks/iron-036-self-contained-publish.md) | 自包含发布 | M8 | iron-037 | 完成 |
+| [iron-037](tasks/iron-037-compile-file.md) | compile-file 与 .fasl | M8 | iron-035 | 完成 |
+| [iron-038](tasks/iron-038-repl-line-editing.md) | REPL：行编辑、补全与提示 | M8 | iron-035 | 完成 |
+| [iron-039](tasks/iron-039-hosting-and-examples.md) | 嵌入 API 与 Web 服务器示例 | M8 | iron-035 | 完成 |
+| [iron-040](tasks/iron-040-vendor-srfi-pfds.md) | srfi 与 pfds 纳入仓库 | M8 | iron-035 | 完成 |
+| [iron-041](tasks/iron-041-std-foundation.md) | std 基础：目录、约定与语法类库 | M9 | iron-040 | 未开始 |
+| [iron-042](tasks/iron-042-std-lists-strings.md) | std：表、字符串与字符 | M9 | iron-041 | 未开始 |
+| [iron-043](tasks/iron-043-std-collections-arithmetic.md) | std：向量、散列表、比较、排序与算术 | M9 | iron-041 | 未开始 |
+| [iron-044](tasks/iron-044-std-misc.md) | std：惰性序列、记录、时间、测试等 | M9 | iron-041 | 未开始 |
+| [iron-045](tasks/iron-045-std-persistent.md) | std：持久数据结构 | M9 | iron-041 | 未开始 |
+| [iron-046](tasks/iron-046-remove-srfi-pfds.md) | 删除 srfi 与 pfds，迁移依赖方 | M9 | iron-042 ~ iron-045 | 未开始 |
 
 ## 里程碑
 
@@ -52,4 +64,6 @@
 | M5 首次自举 | iron-028 ~ iron-029 |
 | M6 自举闭合 | iron-030 ~ iron-031 |
 | M7 清理与优化 | iron-032 ~ iron-033 |
+| M8 工程与示例 | iron-035 ~ iron-040 |
+| M9 标准库 | iron-041 ~ iron-046 |
 | 后续 | iron-034 |

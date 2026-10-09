@@ -131,7 +131,7 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 | `(eqht 键 值 …)` | eq 哈希表（psyntax 的 rib 索引用它）；条目按键（符号、字符串、定长整数的文本）排序，保证确定 |
 | `(def n x)` / `(ref n)` | 共享与环（`eq?` 同一对象只编码一次，编号在整张常量表内统一） |
 
-- **发射器**（`FaslEncoder`）把编码转成二进制 fasl（标签字节 + 内容；计数为 7 位变长整数；字符串为 UTF-16 码元），整张表编码成一个向量，以 base64 字符串放进保留类型 `$Constants` 的类型初始化器：`$Constants.c = Fasl.ReadTable("…")`。`(ldconst k)` 即 `ldsfld $Constants::c; ldc.i4 k; ldelem.ref`，Lcil 中也可直接写 `(ldsfld "$Constants" "c")`。不用托管资源：内存模式的程序集不能带资源，用字符串两种模式一致。
+- **发射器**（`FaslEncoder`）把编码转成二进制 fasl（标签字节 + 内容；计数为 7 位变长整数；字符串为 UTF-16 码元），整张表编码成一个向量，用 Deflate 压缩（BCL `DeflateStream`，固定压缩级别，同一运行时版本下输出确定）后作为保留类型 `$Constants` 的初始化数据（RVA 静态数据，`DefineInitializedData`）嵌入。类型初始化器 `RuntimeHelpers.InitializeArray` 取出字节，`$Constants.c = Fasl.ReadPackedTable(bytes)`。`(ldconst k)` 即 `ldsfld $Constants::c; ldc.i4 k; ldelem.ref`，Lcil 中也可直接写 `(ldsfld "$Constants" "c")`。不用托管资源：内存模式的程序集不能带资源。iron-037 之前以 base64 字符串存放（UTF-16，约为原始字节的 2.7 倍）；改后 boot 镜像由 5.2 MB 降到 2.0 MB，旧格式仍可读（`Fasl.ReadTable`）。
 - **运行时** `IronScheme.Core.Fasl`：`Read` 重建对象（复合对象先登记再读子项，环才能指回自己），非生成性 RTD 经 `make-record-type-descriptor` 按名字 + uid 取回已登记的同一对象，生成性 RTD 在同一次读取内经 def/ref 共享；`Write` 把对象直接写成同一格式（`serialize-port`/`deserialize-port` 使用）。
 - psyntax 的语法对象（`stx` 记录，含 mark、rib 与 rib 的 eq 哈希表）可完整往返：解码后 `syntax-case`、`free-identifier=?`、`bound-identifier=?` 与 `eval` 都正常（`compiler/tests/constants-roundtrip.sps`）。
 - 无法编码的对象（自定义哈希函数的表、过程、端口等）报错。
@@ -140,7 +140,7 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 
 | 项 | 决定 |
 |---|---|
-| 项目 | `IronScheme/IronScheme.Emit/`，net10.0，只依赖 BCL；对 `IronScheme.Core` 的引用**按名字解析**（运行时加载），不做项目引用 |
+| 项目 | `src/IronScheme.Emit/`，net10.0，只依赖 BCL；对 `IronScheme.Core` 的引用**按名字解析**（运行时加载），不做项目引用 |
 | 输入 | Lcil 文本（自带一个极简 S 表达式读取器，不依赖 Scheme reader） |
 | 输出模式 | **持久化**：`PersistedAssemblyBuilder`（.NET 9+）→ `GenerateMetadata` + `ManagedPEBuilder`（可加托管资源与 Portable PDB；iron-003 已验证）；**内存**：`AssemblyBuilder.DefineDynamicAssembly(…, RunAndCollect)`，用于 `eval` |
 | 两种形态 | 库 API `LcilEmitter.Emit(string lcil, EmitMode)`；命令行 `iron-emit in.lcil -o out.dll`（交叉自举阶段使用） |

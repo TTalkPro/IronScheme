@@ -62,7 +62,7 @@
 | D12 | reader 改为**手写 C# 递归下降**，取代 gplex/gppg | 生成的分析器代码不在仓库里，构建要靠 BuildTools 子模块；手写后构建只需 .NET SDK | 02 |
 | D13 | C# 侧调用 Scheme 函数（`raise` 等）改为**运行时钩子**：boot 初始化时把过程登记到 `RuntimeHooks` | 取代手写 IL 胶水 `IronScheme.Glue.il` 对 `#::'库::名'` 方法名的硬编码 ABI | 02 |
 | D14 | 自举 stage0 是**精简的 C# 核心形式解释器**（`IronScheme.Stage0`，跑在新运行时上），解释执行文本种子 `boot-seed.core`（boot 源码展开后的核心形式）来运行 psyntax、nanopass 与新编译器，编译出新 boot 镜像；之后新系统自己编译自己直到不动点。旧 IronScheme 只用于一次性生成文本种子 | 只依赖本仓库与 .NET；nanopass 不必在旧 DLR 系统上运行；种子是可审阅的文本 | 05 |
-| D15 | nanopass 以 git 子模块引入，不复制源码 | 与仓库现有 srfi、pfds 子模块做法一致；跟随上游 | 03 |
+| D15 | nanopass 以 git 子模块引入，不复制源码 | 跟随上游（当时与 srfi、pfds 子模块做法一致；这两者自 iron-040 起直接纳入仓库，nanopass 仍是子模块） | 03 |
 
 ## 5. 里程碑
 
@@ -76,6 +76,7 @@
 | M5 首次自举 | stage0 运行新编译器生成新 boot 镜像；新控制台宿主 | 新系统首次启动 |
 | M6 自举闭合 | 新系统编译自己到不动点；R6RS 测试与系统库编译达到基线 | 不动点、测试结果 |
 | M7 清理与优化 | 删除 DLR、旧编译器、旧目标框架与 BuildTools 依赖；性能优化 | 只依赖 .NET 的仓库 |
+| M8 工程与示例 | 目录结构、compile-file（.fasl）、自包含发布、REPL 行编辑与补全、嵌入 API 与 Web 服务器示例（07） | 可日常使用与嵌入 |
 
 ## 6. 主要风险
 
