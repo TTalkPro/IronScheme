@@ -21,7 +21,7 @@
 
 ;;; Phase A 构建脚本（iron-028，designs/05-bootstrap.md §3）：在 stage0 上运行，
 ;;; 展开 boot 源文件、nanopass 与新编译器，用新编译器编译成 stage1 boot 镜像（Lcil 与 dll）。
-;;; 运行（在 IronScheme.Console 目录下）：
+;;; 运行（在 src/scheme 目录下）：
 ;;;   dotnet ../IronScheme.Stage0/bin/Release/net10.0/stage0.dll --deterministic -I lib -I lib/nanopass-framework-scheme \
 ;;;     boot-seed.core ironscheme-buildscript-nano.sps [输出目录]
 ;;; 输出 <输出目录>/ironscheme.boot.lcil 与 ironscheme.boot.dll（默认输出目录 build/）。
@@ -142,7 +142,7 @@
     ))
 
 
-;; 源码根目录：当前目录（IronScheme.Console）
+;; 源码根目录：当前目录（src/scheme）
 (define source-root "")
 
 ;; 输出目录（命令行第一个参数），默认 build/
@@ -485,6 +485,8 @@
     (load/args                                  i)
     (load/unload                                i)
     (make-promise                               ic)
+    (make-lazy-promise                          ic)
+    (make-eager-promise                         ic)
     (promise?                                   i)
     (enum-set?                                  i)
     (record-constructor-descriptor?             i)
@@ -1280,7 +1282,8 @@
     (new-interaction-environment                i)
     (string-normalize                           ic)
     (compile-bootfile                           ic)
-    (compile-library                            ic)
+    (compile-library-dll                        ic)
+    (load-fasl                                  ic)
     (stx?                                       ic)
     (stx-expr                                   ic)
     (library-name->file-name                    ic)
@@ -1291,6 +1294,11 @@
     (compile                                    i)
     (compile-to-current-directory?              i)
     (compile->closure                           i)
+    (compile-file                               i)
+    (compile-library                            i)
+    (compile-program                            i)
+    (compile-whole-program                      i)
+    (compile-imported-libraries                 i)
     (compile-system-libraries                   i)
     (serialize-library                          iser)
     (load-serialized-library                    iser)

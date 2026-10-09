@@ -91,7 +91,7 @@
     ))
 
 
-;; 源码根目录（命令行第一个参数，以 / 结尾，通常为 ./），种子也写在这里。在 IronScheme.Console 目录下
+;; 源码根目录（命令行第一个参数，以 / 结尾，通常为 ./），种子也写在这里。在 src/scheme 目录下
 ;; 由新系统或 stage0 运行（tools/build.cs seed）；最初的种子由旧系统运行本脚本生成（iron-015）。
 (define source-root
   (let ((args (command-line)))
@@ -434,6 +434,8 @@
     (load/args                                  i)
     (load/unload                                i)
     (make-promise                               ic)
+    (make-lazy-promise                          ic)
+    (make-eager-promise                         ic)
     (promise?                                   i)
     (enum-set?                                  i)
     (record-constructor-descriptor?             i)
@@ -1229,7 +1231,8 @@
     (new-interaction-environment                i)
     (string-normalize                           ic)
     (compile-bootfile                           ic)
-    (compile-library                            ic)
+    (compile-library-dll                        ic)
+    (load-fasl                                  ic)
     (stx?                                       ic)
     (stx-expr                                   ic)
     (library-name->file-name                    ic)
@@ -1240,6 +1243,11 @@
     (compile                                    i)
     (compile-to-current-directory?              i)
     (compile->closure                           i)
+    (compile-file                               i)
+    (compile-library                            i)
+    (compile-program                            i)
+    (compile-whole-program                      i)
+    (compile-imported-libraries                 i)
     (compile-system-libraries                   i)
     (serialize-library                          iser)
     (load-serialized-library                    iser)
