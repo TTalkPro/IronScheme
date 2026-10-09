@@ -1,6 +1,6 @@
 # 09 C# 代码规范：以微软规范为主的 `.editorconfig` 对照建议
 
-> 状态：**建议，待定**。本文只给出对照与建议的配置，尚未改动 `.editorconfig` 与代码。
+> 状态：**已采纳并落地**（iron-058，2026-10-09）：用户决定缩进改为 4 空格、私有字段改名；§2 的配置即仓库根目录的 `.editorconfig`。§0 的统计是落地前的现状。
 > 依据：微软《C# 编码约定》（Common C# code conventions）与《C# 标识符命名规则和约定》（learn.microsoft.com，.NET 文档）、
 > 《框架设计准则》（Framework Design Guidelines）、`.editorconfig` 的 .NET 代码样式规则（IDExxxx）与代码分析规则（CAxxxx）。
 
@@ -195,7 +195,7 @@ dotnet_naming_rule.locals_and_parameters.severity = suggestion
 
 §2 的配置已在仓库的临时副本上用 `dotnet format IronScheme.slnx --verify-no-changes --severity info` 实测：配置能被 Roslyn 正确加载，§1 "差距"一列的数字即其报告（另有若干 `info` 级别的代码分析提示，如 CA1822 可改为 `static`，不属于样式规范）。
 
-## §4 落地步骤（若采纳）
+## §4 落地步骤
 
 每一步单独一次提交，每步之后全部测试与自举不动点照绿（这些改动不改变生成的 IL 语义）。
 
@@ -209,7 +209,7 @@ dotnet_naming_rule.locals_and_parameters.severity = suggestion
 
 不在本次范围：可空引用类型（第 21 项，另立任务）；`var`、`is null`、模式匹配等 `suggestion` 级别的写法不批量改，新代码按提示写。
 
-## §5 需要你决定的点
+## §5 决定（已定）
 
 1. **缩进改为 4 空格**（第 1 项）：微软规范如此，但这是对全部 C# 文件的一次性机械改动，`git blame` 会被这一次提交覆盖（可用 `.git-blame-ignore-revs` 忽略该提交）。
 2. **私有字段 `_camelCase` / `s_camelCase`**（第 5 项）：335 个字段改名，半自动。

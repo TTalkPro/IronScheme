@@ -2,7 +2,7 @@
 
 M8 的设计：在自举闭合、旧系统删除之后，补齐日常使用所需的工程能力。不涉及 NativeAOT（运行时没有 JIT，`eval` 与宏展开需要即时编译，见 00 §2 非目标）。
 
-## 1. 目录结构（iron-035）
+## 1. 目录结构（iron-035、iron-047）
 
 ```
 IronScheme.slnx                 解决方案（Directory.Solution.props：默认 Release）
@@ -11,8 +11,10 @@ src/
   IronScheme.Core/  IronScheme.Emit/  IronScheme.Hosting/  IronScheme.Host/
   IronScheme.Stage0/  IronScheme.PrimGen/  Oyster.IntX/
   scheme/                       Scheme 源码树（原 IronScheme/IronScheme.Console）
-    build/ psyntax/ lib/ compiler/ tests/ examples/ playground/
-    boot-seed.core  ironscheme-buildscript-nano.sps  seed-buildscript.sps  …
+      boot/                     编进 boot 镜像的一切（见下）
+      lib/                      按需加载的库：ironscheme/*（含编译器）、第三方、nanopass 子模块
+      tests/                    Scheme 测试脚本：compiler/、std/、r6rs/ …
+      examples/  docs/
 tests/
   IronScheme.Core.Tests/  IronScheme.Tests/
 examples/
@@ -21,8 +23,14 @@ tools/build.cs                  常规构建之外的命令（05 §5、本文 §
 designs/  tasks/  spikes/
 ```
 
-- `scheme/` 是"运行时的工作目录"：宿主默认从这里找 `lib/`、`build/ironscheme.boot.dll`，测试也以它为当前目录。
-- 子模块随 `scheme/lib/` 移动；`.gitmodules` 中子模块的名字不变，只改 `path`。srfi 与 pfds 自 iron-040 起直接纳入仓库（来源与提交见 `src/scheme/lib/THIRD-PARTY.md`），只有 nanopass 仍是子模块。
+- `scheme/` 是"运行时的工作目录"：宿主默认从这里找 `lib/`、`boot/ironscheme.boot.dll`，测试也以它为当前目录。
+- `src/scheme/` 的划分参照 Chez Scheme（iron-047）：Chez 的 `s/` 按 boot 文件组织源码，`(rnrs …)`、`(chezscheme)` 由 `primdata.ss` 的声明合成而没有库源文件，测试在 `mats/`。对应地：
+  - `boot/`：boot 镜像的源码与产物。核心库（列表、数值、端口、记录等，原 `build/`）、展开器 `boot/expander/`（原 `psyntax/`，见下）、原语表 `primitives.ss`（PrimGen 生成，原 `compiler/primitives.ss`）、文本种子 `boot-seed.core`、两份构建脚本，以及生成的 `ironscheme.boot.{dll,lcil}`（不跟踪）。这里的库名只在构建期间使用：对外可见的库由构建脚本的图例（`library-legend` 与 `identifier->library-map`）合成，作用同 Chez 的 `primdata.ss`。boot 内部模块一律命名为 `(boot …)`，与文件路径一一对应（`boot/lists.sls` 是 `(boot lists)`，`boot/io/ports.sls` 是 `(boot io ports)`，`boot/expander/core.sls` 是 `(boot expander core)`），不会与 `lib/` 中的库同名。构建脚本按库名导入展开器的源码副本时，`(boot expander internal)` 经库搜索路径中的当前目录（`src/scheme`）找到 `boot/expander/internal.sls`；若用 `(ironscheme boot …)` 则要求目录为 `ironscheme/boot/`，与布局冲突，所以不加 `ironscheme` 前缀。
+  - 展开器源自 Ghuloum 的 psyntax（Ikarus 的可移植 R6RS 展开器，名字取自 Dybvig 等人为 Chez 写的 `psyntax.ss`），原库名 `(psyntax …)`，iron-047 改名：`(psyntax expander)` → `(boot expander core)`，`compat`、`internal`、`library-manager`、`builders`、`main` → `(boot expander 同名)`；图例合成的内部库 `(psyntax system $all)`、`(psyntax system $bootstrap)` → `(boot system all)`、`(boot system bootstrap)`，`(psyntax null-environment-5)`、`(psyntax scheme-report-environment-5)`、`(psyntax primlocs)` → `(boot …)` 同名。
+  - `lib/`：运行时按库名从库搜索路径加载。编译器 `(ironscheme compiler …)` 也在这里：构建 boot 时同样按库名找到它与 nanopass，编进镜像，但不作为已安装的库，运行时导入它仍从源码加载。
+  - `tests/compiler/`：编译器测试与快照（原 `compiler/tests/`），由 stage0 运行（Stage0ScriptTests）。
+  - 上游的试验代码 `playground/` 已删除（不参与构建、无测试）。
+- 子模块随 `scheme/lib/` 移动；`.gitmodules` 中子模块的名字不变，只改 `path`。srfi 与 pfds 在 iron-040 中改为普通目录，iron-046 改写进 `(ironscheme std …)` 后删除（来源与提交见 `src/scheme/lib/THIRD-PARTY.md`）；只有 nanopass 仍是子模块。
 
 ## 2. compile-file 与 .fasl（iron-037）
 
@@ -51,9 +59,10 @@ designs/  tasks/  spikes/
 - **发布应用**（带 `app.sps`）：
   1. 先在新宿主上运行 `(compile-whole-program "app.sps" 目录)`：程序展开期间从源码加载的每个库编译为一个 `libN.fasl`（按安装顺序，依赖在前），程序编译为 `program.fasl`，清单 `ironscheme.app` 每行 `library 文件` 或 `program 文件`。展开时不使用已有的编译产物，保证每个库都从源码展开、都能序列化。
   2. 发布宿主时把这些文件作为嵌入资源（属性 `IronSchemeApp=目录`），可执行文件名改为应用名（`IronSchemeAppName`），不带 `lib/`。为此用单独的中间与输出目录，不影响常规构建。
-  3. 可执行文件启动时发现嵌入的清单，进入应用模式：按清单把各 `.fasl` 按字节加载，经 psyntax 的钩子 `load-fasl-content` 安装库、运行程序。参数原样作为 `(command-line)`，条件导致退出码 1。
+  3. 可执行文件启动时发现嵌入的清单，进入应用模式：按清单把各 `.fasl` 按字节加载，经展开器的钩子 `load-fasl-content` 安装库、运行程序。参数原样作为 `(command-line)`，条件导致退出码 1。
 - **boot 镜像的来源**：命令行 `--boot`；否则可执行文件旁的 `ironscheme.boot.dll`；再否则入口程序集的嵌入资源（`SchemeRuntime` 按字节加载）。单文件中程序集没有文件位置，`Builtins.ApplicationDirectory` 改用 `AppContext.BaseDirectory`。
 - **不裁剪**（trimming）：互操作的运行时决议依赖反射元数据。
+- 同一次发布中，每个被引用的项目只能有一种构建配置，否则会并发写同一输出目录：宿主的中间与输出目录在 `IronScheme.Host.csproj` 中按 `IronSchemeAppName` 设置（不作为全局属性传入）；`IronScheme.Emit` 是可执行项目，声明 `IsRidAgnostic=true`，宿主与 IronScheme.Hosting 才会按同一配置构建它。
 - 在测试等输出被重定向的场合，`tools/build.cs` 给 `dotnet build`/`publish` 加 `-nodeReuse:false`：常驻的 MSBuild 节点会继承输出管道，调用方等不到输出结束。
 
 ## 4. REPL（iron-038）
@@ -66,10 +75,10 @@ designs/  tasks/  spikes/
 | 多行输入 | 括号未闭合时回车换行继续输入（续行提示 `. `），闭合后求值 |
 | 历史 | 上下键浏览；保存到用户目录 `.ironscheme_history` |
 | 补全 | Tab：当前词为前缀补全交互环境中绑定的名字（含宏与语法关键字）；在 `(import …)` 中补全库名（来自已安装库与 `lib/` 下的文件）；多个候选时第一次补全公共前缀，再按一次列出候选 |
-| 提示 | 光标位于 `(名字 ` 之后且在行尾时，在同一行末尾以暗色显示该过程各子句的形参（多于两个子句时显示首尾两个）。形参来自 `procedure-form`：编译器为每个过程类生成 `get_Form`（各子句的 `(名字 . 形参)`，形参名由 psyntax 的 gensym 还原），C# 原语取方法的参数名；都没有时按 `procedure-arity` 显示 `_`。语法关键字不提示 |
+| 提示 | 光标位于 `(名字 ` 之后且在行尾时，在同一行末尾以暗色显示该过程各子句的形参（多于两个子句时显示首尾两个）。形参来自 `procedure-form`：编译器为每个过程类生成 `get_Form`（各子句的 `(名字 . 形参)`，形参名由展开器的 gensym 还原），C# 原语取方法的参数名；都没有时按 `procedure-arity` 显示 `_`。语法关键字不提示 |
 | 括号匹配 | 输入右括号时短暂高亮与之匹配的左括号 |
 
-补全与提示所需的信息由 Scheme 侧提供：psyntax main 登记 `repl-complete`（交互环境的名字；库名来自已安装的库与库搜索路径下的 `.sls` 文件）和 `repl-describe`（参数提示），宿主经符号值槽调用，不在 C# 中重复实现环境查询。
+补全与提示所需的信息由 Scheme 侧提供：`(boot expander main)` 登记 `repl-complete`（交互环境的名字；库名来自已安装的库与库搜索路径下的 `.sls` 文件）和 `repl-describe`（参数提示），宿主经符号值槽调用，不在 C# 中重复实现环境查询。
 
 光标定位：Unix 终端上不查询光标位置。查询要与终端往返；有的伪终端不回应，等待回应时会吞掉按键。编辑器记录光标相对当前输入行起点的行列，用 ANSI 相对移动（`ESC[nA/B/C`、回车）定位，用 `ESC[J` 清除残留，终端滚动不影响它。Windows 控制台的光标查询是本地 API 调用，用 `SetCursorPosition` 绝对定位。终端不支持所需控制时退回逐个读取数据。
 

@@ -21,11 +21,11 @@
 | 序对 | `Cons`（`car`/`cdr` 公有字段） | 不变 |
 | 向量 / 字节向量 | `object[]` / `byte[]` | 不变 |
 | **符号** | `Symbol` 类（见 §3） | **替换** `SymbolId` 结构体 |
-| fixnum | `int`（32 位） | 不变。`build/arithmetic/fixnums.sls` 依赖 32 位宽度，改成 64 位留作以后 |
+| fixnum | `int`（32 位） | 不变。`boot/arithmetic/fixnums.sls` 依赖 32 位宽度，改成 64 位留作以后 |
 | flonum / bignum / 有理数 | `double` / `IntX` / `Fraction` | 不变 |
 | 复数 | `ComplexFraction`、`Complex64` | `Complex64` 从 DLR 移入 |
-| 字符 | BMP 内为 `System.Char`，之外为 `SchemeChar` | 不变（iron-010 核对旧 reader 后更正：旧系统就是这样的双表示，`build/base.sls` 两种都处理） |
-| 字符串 | `string`（不可变）或 `StringBuilder`（可变） | 不变。`build/base.sls` 依赖这种二元表示 |
+| 字符 | BMP 内为 `System.Char`，之外为 `SchemeChar` | 不变（iron-010 核对旧 reader 后更正：旧系统就是这样的双表示，`boot/base.sls` 两种都处理） |
+| 字符串 | `string`（不可变）或 `StringBuilder`（可变） | 不变。`boot/base.sls` 依赖这种二元表示 |
 | 记录 | `Record`（见 §7） | **替换**运行时生成的 CLR 类型 |
 | 多值 | `MultipleValues`（包装 `object[]`） | 不变 |
 | 过程 | `Procedure` 子类（见 §4） | **替换** `Callable`/`Closure` |
@@ -42,7 +42,7 @@ public sealed class Symbol {
 ```
 
 - **驻留**：普通符号与 gensym 都按名字驻留。gensym 的名字格式沿用 `g$name$N$TICKS`，`ungensym` 取两个 `$` 之间的部分。按名字驻留保证从 dll 重新加载时得到同一个对象，`eq?` 按引用比较。
-- **全局与库绑定**：psyntax 给每个导出变量分配一个位置 gensym（loc）。**该绑定的值就存在 loc 符号的 `Value` 字段里**。
+- **全局与库绑定**：展开器给每个导出变量分配一个位置 gensym（loc）。**该绑定的值就存在 loc 符号的 `Value` 字段里**。
   - `symbol-value` / `set-symbol-value!` / `symbol-bound?` 直接读写字段。
   - 编译后的代码：从常量表取出符号对象（每个模块一次），读写 `.Value`。一次间接访问，没有字典。
   - 未绑定时 `Value` 为 `Unbound.Instance`，读取时检查并调用钩子报 `undefined-error`。
@@ -85,7 +85,7 @@ public sealed class Box { public object Value; }   // 被赋值且被捕获的�
 
 - C# 原语用 `[Primitive("name", …)]` 属性标注静态方法，参数和返回值都是 `object`（有特殊类型时由编译器负责转换）。属性带元数据：`Pure`（可常量折叠）、`AllowTailCall`、`Inline`（编译器有内联 IL 模板）。
 - 启动时 `PrimitiveRegistry` 用反射找到所有原语，为每个原语创建一个包装 `Procedure`（用 `Delegate.CreateDelegate` 得到 `Func<…>`，不在运行时生成 IL），写进名字符号的值槽。
-- **原语表数据文件**：构建 `IronScheme.Core` 时，一个小工具 `IronScheme.PrimGen`（.NET 控制台程序）反射出全部原语，生成 `Console/compiler/primitives.ss`：每项包括名字、所在类型、方法名、参数个数、标志。编译器只读这个文件，不访问运行时（见 03 §4）。
+- **原语表数据文件**：构建 `IronScheme.Core` 时，一个小工具 `IronScheme.PrimGen`（.NET 控制台程序）反射出全部原语，生成 `src/scheme/boot/primitives.ss`：每项包括名字、所在类型、方法名、参数个数、标志。编译器只读这个文件，不访问运行时（见 03 §4）。
 - 现有 `[Builtin]`（约 82 个）迁移为 `[Primitive]`；现有 56 个 `[InlineEmitter]` 改由编译器的内联 IL 模板实现（03 §6），C# 侧只保留对应的普通方法作为非内联时的后备。
 
 ## 6. 异常、逃逸续延与钩子
@@ -93,7 +93,7 @@ public sealed class Box { public object Value; }   // 被赋值且被捕获的�
 | 机制 | 设计 |
 |---|---|
 | Scheme 条件 | `SchemeException : Exception`，携带条件对象。沿用现状 |
-| `raise` / `with-exception-handler` / `guard` | 保持在 Scheme 实现（`build/exceptions.sls`、psyntax 的 `guard`）。不改语义 |
+| `raise` / `with-exception-handler` / `guard` | 保持在 Scheme 实现（`boot/exceptions.sls`、展开器的 `guard`）。不改语义。处理器栈本身（栈顶在前的过程列表）自 iron-050 起放在 C# 的 `AsyncLocal` 里（`ExceptionHandlers`，原语 `$current-handlers` / `$set-current-handlers!`），随 `ExecutionContext` 流入子任务与 await 之后的续接；参数对象（`make-parameter`）同样改为每个参数一个 `AsyncLocal`（`ParamSlot`，原语 `$make-param-slot` / `$param-ref` / `$param-set!`），见 10 §2 D7 |
 | **call/cc** | 只支持逃逸续延。`call/cc` 创建 `EscapeContinuation : Procedure`，带唯一标记；调用时抛 `ContinuationException(标记, 值)`；`call/cc` 所在帧按标记捕获并返回值。帧退出后（finally 中置失效标志）再调用该续延，报"续延已失效"的条件，而不是现在的模糊错误 |
 | `dynamic-wind` | 沿用 Scheme 定义 `(in) ($try/finally (proc) (out))`，`$try/finally` 是编译器核心形式 |
 | **运行时钩子**（取代 `IronScheme.Glue.il`） | `RuntimeHooks` 静态类持有若干 `Procedure` 字段：`Raise`、`RaiseContinuable`、`WithExceptionHandler`、`AssertionViolation`、`Exact`、`Inexact`、`SyntaxError`、`LexicalError`、`UndefinedError`、I/O 与文件条件构造器等（与现有 15 个胶水方法一一对应）。boot 镜像初始化时由 Scheme 调用原语 `($set-runtime-hook! 'raise raise)` 登记。C# 代码通过钩子调用，不再依赖 boot dll 的方法名 |
@@ -106,7 +106,7 @@ public sealed class RecordTypeDescriptor { string Name; Symbol Uid; RecordTypeDe
 public sealed class Record { public readonly RecordTypeDescriptor Rtd; public readonly object[] Fields; }
 ```
 
-- 所有记录（包括条件、psyntax 的语法对象等）都是 `Record`，字段在数组里。**不再运行时生成 CLR 类型**。
+- 所有记录（包括条件、展开器的语法对象等）都是 `Record`，字段在数组里。**不再运行时生成 CLR 类型**。
 - 访问器、谓词、修改器是普通原语，编译器可以为已知 RTD 的访问器内联"类型检查 + 取数组元素"。
 - 非生成性记录（`nongenerative`）按 `Uid` 在全局表登记，保证常量重建时得到同一个 RTD（见 04 §3）。
 - 放弃的能力：记录作为真实 CLR 类型供 C# 强类型使用。以后如有需要，再做一个"可选生成 CLR 类型"的扩展。
@@ -114,7 +114,7 @@ public sealed class Record { public readonly RecordTypeDescriptor Rtd; public re
 ## 8. Reader
 
 - 手写递归下降，取代 gplex/gppg 生成的分析器与 `RealParser`。覆盖 R6RS 第 4 章数据语法：注释（`;`、`#|…|#`、`#;`）、`#!r6rs` 等指令、所有字面量、数字语法（含精度前缀、基数、有理数、复数、`+inf.0`/`+nan.0`）、字符名、字符串转义、字节向量、`'`/`` ` ``/`,`/`,@`/`#'`/`` #` ``/`#,`/`#,@` 缩写。
-- `read-annotated`：为 psyntax 生成带源位置的注解对象。源位置类型 `SourceSpan` 在 Core 里自定义（文件、起止行列）。
+- `read-annotated`：为展开器生成带源位置的注解对象。源位置类型 `SourceSpan` 在 Core 里自定义（文件、起止行列）。
 - 错误报告通过钩子 `LexicalError`。
 
 ## 9. CLR 互操作运行时

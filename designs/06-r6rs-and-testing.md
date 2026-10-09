@@ -2,7 +2,7 @@
 
 ## 1. 符合性范围
 
-保留 psyntax 与现有 R6RS 库实现，目标是**不低于现状**的符合程度。
+保留展开器与现有 R6RS 库实现，目标是**不低于现状**的符合程度。
 
 ### 明确的偏离
 
@@ -11,7 +11,7 @@
 | `call/cc` | 逃逸续延（异常实现） | 相同；续延失效后调用给出明确错误（02 §6） |
 | 重入、多次进入续延 | 不支持 | 不支持 |
 | `dynamic-wind` | try/finally | 相同；没有重入，`before` 只在进入时执行一次 |
-| `guard` 无匹配时的再抛出 | 在 guard 的动态环境中 `raise-continuable` | 相同（psyntax 不改） |
+| `guard` 无匹配时的再抛出 | 在 guard 的动态环境中 `raise-continuable` | 相同（展开器不改） |
 | try/finally 区域内的尾调用 | 不是真尾调用 | 相同（CIL 限制，03 §5） |
 | 记录作为 CLR 类型 | 支持 | **不支持**（02 §7） |
 | FFI（`ffi-callout`、`ffi-callback`、`pinvoke-call`） | 编译器静态生成调用代码 | 支持，改为运行时原语（02 §9，iron-032）；`dlopen`/`dlsym`/`dlclose` 改用 `NativeLibrary`，不再限于 Windows |
@@ -31,7 +31,7 @@
 | stage0 测试 | 手写 Lcore 小程序；执行文本种子后的 R6RS 冒烟测试；nanopass 示例 | M2 |
 | 发射器测试 | 手写 Lcil → dll → 运行；互操作决议；常量；try/finally；`tail.` 深递归 | M3 |
 | pass 快照测试 | 典型 Lcore 输入每个 pass 后的 `unparse` 输出 | M4 |
-| 单库编译 | 用新编译器编译 `build/` 中的单个库并加载运行 | M4 |
+| 单库编译 | 用新编译器编译 `boot/` 中的单个库并加载运行 | M4 |
 | 自举 | Phase A（stage0）产出 stage1；Phase B stage2 == stage3 | M5、M6 |
 | R6RS 符合性 | `tests/r6rs/run.sps`、`trigtest.sps`、`clisp-number-tests.sps`、`fp-test.sps` | M6 |
 | 系统库 | `compile-system-libraries` 全部成功，dll 可独立加载 | M6 |

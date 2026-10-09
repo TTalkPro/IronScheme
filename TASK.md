@@ -45,12 +45,24 @@
 | [iron-038](tasks/iron-038-repl-line-editing.md) | REPL：行编辑、补全与提示 | M8 | iron-035 | 完成 |
 | [iron-039](tasks/iron-039-hosting-and-examples.md) | 嵌入 API 与 Web 服务器示例 | M8 | iron-035 | 完成 |
 | [iron-040](tasks/iron-040-vendor-srfi-pfds.md) | srfi 与 pfds 纳入仓库 | M8 | iron-035 | 完成 |
-| [iron-041](tasks/iron-041-std-foundation.md) | std 基础：目录、约定与语法类库 | M9 | iron-040 | 未开始 |
-| [iron-042](tasks/iron-042-std-lists-strings.md) | std：表、字符串与字符 | M9 | iron-041 | 未开始 |
-| [iron-043](tasks/iron-043-std-collections-arithmetic.md) | std：向量、散列表、比较、排序与算术 | M9 | iron-041 | 未开始 |
-| [iron-044](tasks/iron-044-std-misc.md) | std：惰性序列、记录、时间、测试等 | M9 | iron-041 | 未开始 |
-| [iron-045](tasks/iron-045-std-persistent.md) | std：持久数据结构 | M9 | iron-041 | 未开始 |
-| [iron-046](tasks/iron-046-remove-srfi-pfds.md) | 删除 srfi 与 pfds，迁移依赖方 | M9 | iron-042 ~ iron-045 | 未开始 |
+| [iron-041](tasks/iron-041-std-foundation.md) | std 基础：目录、约定与语法类库 | M9 | iron-040 | 完成 |
+| [iron-042](tasks/iron-042-std-lists-strings.md) | std：表、字符串与字符 | M9 | iron-041 | 完成 |
+| [iron-043](tasks/iron-043-std-collections-arithmetic.md) | std：向量、散列表、比较、排序与算术 | M9 | iron-041 | 完成 |
+| [iron-044](tasks/iron-044-std-misc.md) | std：惰性序列、记录、时间、测试等 | M9 | iron-041 | 完成 |
+| [iron-045](tasks/iron-045-std-persistent.md) | std：持久数据结构 | M9 | iron-041 | 完成 |
+| [iron-046](tasks/iron-046-remove-srfi-pfds.md) | 删除 srfi 与 pfds，迁移依赖方 | M9 | iron-042 ~ iron-045 | 完成 |
+| [iron-047](tasks/iron-047-scheme-tree-layout.md) | Scheme 源码树整理 | M8 | iron-035 | 完成 |
+| [iron-054](tasks/iron-054-base-library-fixes.md) | 基础库问题修复 | M9 | iron-041 ~ iron-046 | 完成 |
+| [iron-055](tasks/iron-055-scheme-strings.md) | 字符串表示：按码点的窄/宽字符串 | M9 | iron-054 | 完成 |
+| [iron-058](tasks/iron-058-csharp-style.md) | C# 代码按 09 规范落地（4 空格、字段命名等） | M9 | — | 完成 |
+| [iron-048](tasks/iron-048-spike-runtime-async.md) | 验证 Runtime Async 能否做 async-lambda 的后端 | 后续 | iron-003 | 完成 |
+| [iron-049](tasks/iron-049-spike-async-frame.md) | 验证 AsyncFrame 状态机能否做 async-lambda 的后端 | 后续 | iron-048 | 完成 |
+| [iron-050](tasks/iron-050-async-runtime.md) | 异步：运行时支持 | 后续 | iron-049 | 完成 |
+| [iron-051](tasks/iron-051-async-frontend.md) | 异步：展开器、parse-core 与 lower-async | 后续 | iron-050 | 未开始 |
+| [iron-052](tasks/iron-052-async-codegen.md) | 异步：codegen 生成状态机 | 后续 | iron-051 | 未开始 |
+| [iron-053](tasks/iron-053-async-library-and-tests.md) | 异步：库、测试与文档 | 后续 | iron-052 | 未开始 |
+| [iron-056](tasks/iron-056-boot-std-without-clr.md) | boot 与 std 去 `clr-*` | 后续 | 无 | 未开始 |
+| [iron-057](tasks/iron-057-host-neutral-interop-nodes.md) | 互操作节点改 `host-*`，codegen 加 `target` 参数 | 后续 | iron-056 | 未开始 |
 
 ## 里程碑
 
@@ -64,6 +76,6 @@
 | M5 首次自举 | iron-028 ~ iron-029 |
 | M6 自举闭合 | iron-030 ~ iron-031 |
 | M7 清理与优化 | iron-032 ~ iron-033 |
-| M8 工程与示例 | iron-035 ~ iron-040 |
-| M9 标准库 | iron-041 ~ iron-046 |
-| 后续 | iron-034 |
+| M8 工程与示例 | iron-035 ~ iron-040、iron-047 |
+| M9 标准库 | iron-041 ~ iron-046、iron-054、iron-055、iron-058 |
+| 后续 | iron-034、iron-048 ~ iron-053、iron-056 ~ iron-057 |

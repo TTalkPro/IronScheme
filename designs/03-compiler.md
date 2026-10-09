@@ -5,18 +5,18 @@
 | 项 | 决定 |
 |---|---|
 | nanopass 框架 | **第三方依赖**：git 子模块 `src/scheme/lib/nanopass-framework-scheme`（固定提交 `c14d3924`；iron-002 已在旧系统上验证可直接运行）（上游 https://github.com/nanopass/nanopass-framework-scheme，MIT 许可）。该目录加入库搜索路径，使 `(nanopass)` 解析到其中的 `nanopass.ss`。用其 `implementation-helpers.ironscheme.sls` 适配；需要的修改以补丁或覆盖库的形式放在子模块之外，不改子模块内容 |
-| 编译器源码 | `Console/lib/ironscheme/compiler/*.sls`，库名 `(ironscheme compiler …)`：放在标准库目录下，经库路径（`-I lib`）直接解析（iron-020 调整）。`Console/compiler/` 只放原语表等数据文件与编译器测试（`compiler/tests/`） |
-| 原语表 | `Console/compiler/primitives.ss`，由 `IronScheme.PrimGen` 生成（02 §5） |
+| 编译器源码 | `Console/lib/ironscheme/compiler/*.sls`，库名 `(ironscheme compiler …)`：放在标准库目录下，经库路径（`-I lib`）直接解析（iron-020 调整）。`Console/compiler/` 只放原语表等数据文件与编译器测试（`tests/compiler/`） |
+| 原语表 | `src/scheme/boot/primitives.ss`，由 `IronScheme.PrimGen` 生成（02 §5） |
 | 进入 boot 镜像 | 是。新系统运行时 `eval` 需要编译器，所以编译器库与 nanopass 一起编进 boot 镜像 |
 | 纯函数原则 | 编译器**不读运行时状态**：不调 `symbol-value` 查绑定，不执行目标原语，不反射目标程序集。它的全部输入是 Lcore 数据、原语表数据和编译选项 |
 
 ## 2. 输入语言 Lcore
 
-即 psyntax `rewrite`（`Console/psyntax/internal.sls:37-113`）的输出。以下是**固定文法**，`parse-core` 只接受这些形式，其余报错。
+即展开器 `rewrite`（`boot/expander/internal.sls:37-113`）的输出。以下是**固定文法**，`parse-core` 只接受这些形式，其余报错。
 
 ```
 e ::= x                                  ; 符号（见 §3 分类）
-    | (quote d)                          ; psyntax 对所有字面量都加 quote
+    | (quote d)                          ; 展开器对所有字面量都加 quote
     | (if e e e) | (if e e)
     | (begin e ...)
     | (set! x e)
@@ -33,7 +33,7 @@ e ::= x                                  ; 符号（见 §3 分类）
     | (ffi-callout-internal …) | (ffi-callback-internal …) | (pinvoke-call-internal …)
     | (e e ...)                          ; 应用
 fmls ::= (x ...) | (x x ... . x) | x
-body ::= e ...                           ; psyntax 实际只生成一个
+body ::= e ...                           ; 展开器实际只生成一个
 ```
 
 - `$try/finally`、`$throw`、`$break`、`$and?`、`$or?` 等以**原语调用**的形式出现（`($try/finally e1 e2)`），由编译器按原语表中的"特殊原语"处理。
@@ -114,7 +114,7 @@ body ::= e ...                           ; psyntax 实际只生成一个
 
 ## 6. 原语的编译
 
-原语表（`Console/compiler/primitives.ss`，由 `IronScheme.PrimGen` 生成，iron-012）格式：
+原语表（`src/scheme/boot/primitives.ss`，由 `IronScheme.PrimGen` 生成，iron-012）格式：
 
 ```scheme
 (primitive-table 1

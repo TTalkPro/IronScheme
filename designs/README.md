@@ -13,6 +13,9 @@ IronScheme 派生改造：去掉 DLR，用 nanopass 编译器把 Scheme 直接�
 | [06-r6rs-and-testing.md](06-r6rs-and-testing.md) | R6RS 符合性与偏离项（call/cc），测试策略与验收基线 |
 | [07-tooling-and-embedding.md](07-tooling-and-embedding.md) | M8：目录结构、compile-file 与 .fasl、自包含发布、REPL 行编辑、嵌入 API 与示例 |
 | [08-std-library.md](08-std-library.md) | M9：把 SRFI 与 pfds 改写为按用途命名的 `(ironscheme std …)`，逐个 SRFI 的裁决与迁移 |
-| [09-csharp-style.md](09-csharp-style.md) | C# 代码规范：以微软规范为主的 `.editorconfig` 对照建议（待定） |
+| [09-csharp-style.md](09-csharp-style.md) | C# 代码规范：以微软规范为主的 `.editorconfig`（已落地，iron-058） |
+| [10-async.md](10-async.md) | 异步：`async-lambda` / `await` 的语言表面、`AsyncFrame` 状态机后端、`lower-async` pass、参数对象改 `AsyncLocal`、偏离与任务拆分 |
+| [11-portability.md](11-portability.md) | 可移植性：`(ironscheme clr)` 名字不改、互操作三层（宿主绑定 / 可移植包装 / 核心只用原语）、把托管运行时当作目标机器、JVM 靠交叉编译自举 |
+| [12-strings.md](12-strings.md) | 字符串表示：按码点的窄/宽字符串（iron-055） |
 
 任务索引见仓库根目录 [TASK.md](../TASK.md)。

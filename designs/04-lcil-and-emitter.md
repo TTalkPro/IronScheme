@@ -128,12 +128,12 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 | `(rcd rtd 父)` | 记录构造描述符（只支持没有 protocol 的；nanopass 生成的代码把展开时创建的 RCD 作为常量）；父为编码或 `(false)` |
 | `(cnd 简单条件 …)` | 复合条件 |
 | `(ann 表达式 源位置 剥离后的表达式)` | reader 注解 |
-| `(eqht 键 值 …)` | eq 哈希表（psyntax 的 rib 索引用它）；条目按键（符号、字符串、定长整数的文本）排序，保证确定 |
+| `(eqht 键 值 …)` | eq 哈希表（展开器的 rib 索引用它）；条目按键（符号、字符串、定长整数的文本）排序，保证确定 |
 | `(def n x)` / `(ref n)` | 共享与环（`eq?` 同一对象只编码一次，编号在整张常量表内统一） |
 
 - **发射器**（`FaslEncoder`）把编码转成二进制 fasl（标签字节 + 内容；计数为 7 位变长整数；字符串为 UTF-16 码元），整张表编码成一个向量，用 Deflate 压缩（BCL `DeflateStream`，固定压缩级别，同一运行时版本下输出确定）后作为保留类型 `$Constants` 的初始化数据（RVA 静态数据，`DefineInitializedData`）嵌入。类型初始化器 `RuntimeHelpers.InitializeArray` 取出字节，`$Constants.c = Fasl.ReadPackedTable(bytes)`。`(ldconst k)` 即 `ldsfld $Constants::c; ldc.i4 k; ldelem.ref`，Lcil 中也可直接写 `(ldsfld "$Constants" "c")`。不用托管资源：内存模式的程序集不能带资源。iron-037 之前以 base64 字符串存放（UTF-16，约为原始字节的 2.7 倍）；改后 boot 镜像由 5.2 MB 降到 2.0 MB，旧格式仍可读（`Fasl.ReadTable`）。
 - **运行时** `IronScheme.Core.Fasl`：`Read` 重建对象（复合对象先登记再读子项，环才能指回自己），非生成性 RTD 经 `make-record-type-descriptor` 按名字 + uid 取回已登记的同一对象，生成性 RTD 在同一次读取内经 def/ref 共享；`Write` 把对象直接写成同一格式（`serialize-port`/`deserialize-port` 使用）。
-- psyntax 的语法对象（`stx` 记录，含 mark、rib 与 rib 的 eq 哈希表）可完整往返：解码后 `syntax-case`、`free-identifier=?`、`bound-identifier=?` 与 `eval` 都正常（`compiler/tests/constants-roundtrip.sps`）。
+- 展开器的语法对象（`stx` 记录，含 mark、rib 与 rib 的 eq 哈希表）可完整往返：解码后 `syntax-case`、`free-identifier=?`、`bound-identifier=?` 与 `eval` 都正常（`tests/compiler/constants-roundtrip.sps`）。
 - 无法编码的对象（自定义哈希函数的表、过程、端口等）报错。
 
 ## 4. 发射器 IronScheme.Emit
@@ -167,6 +167,6 @@ S 表达式，UTF-8。发射器自带读取器（`IronScheme.Emit.SExpr`），�
 - 程序集级属性 `[IronScheme.Core.SchemeModule("入口类型", "入口方法")]` 标明入口（iron-021 用类型名字符串而非 `typeof`：内存模式要在定义类型前写属性），加载器不再按 `CustomSymbolDictionary` 搜索。
 - 加载（`IronScheme.Core.ModuleLoader`）：`LoadModule(路径, inMemory)` → `LoadAssembly`（`~/` 前缀为运行时目录；`inMemory` 时按字节加载并带上修改时间相近的 .pdb）→ 读属性 → 调入口；内存模块（eval）由发射器给出 `Assembly`，调 `Run(asm)`。
   - boot 镜像：执行全部顶层代码，登记钩子与库。
-  - 库：返回 13 元素列表，交给 psyntax 的 `try-load-from-file` 安装；原语 `load-library-dll` 即 `LoadModule`。
-- 库 dll 文件名沿用 `library-name->dll-name`（`Console/psyntax/library-manager.sls:132-162`）。
+  - 库：返回 13 元素列表，交给展开器的 `try-load-from-file` 安装；原语 `load-library-dll` 即 `LoadModule`。
+- 库 dll 文件名沿用 `library-name->dll-name`（`boot/expander/library-manager.sls:132-162`）。
 - 每个 lambda 一个类会产生大量类型：boot 镜像预计数千个。这是 .NET 能承受的规模（Kotlin、F# 等也如此），先不优化。

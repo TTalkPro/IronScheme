@@ -38,6 +38,8 @@
 **测试**
 - 类别 Publish 2 项：发布宿主，运行脚本与 REPL；发布 WordCount 应用，确认输出目录只有一个文件，检查运行结果和失败时的退出码。
 - 首次运行时 SelfContainedHost 有一次退出码为 1，之后单独运行与整类运行均通过，未能复现原因。
+- 补记：之后 StandaloneApplication 也偶发失败，查明原因。发布应用时，`tools/build.cs` 在命令行上以全局属性传入 `IntermediateOutputPath`/`OutputPath`，被引用的可执行项目（Emit、stage0）于是在两组全局属性下各构建一次，并发写同一个 `obj/app-<名字>/apphost`。改为在 `IronScheme.Host.csproj` 中按 `IronSchemeAppName` 设置这两个路径，`build.cs` 不再传入；之后 Publish 类别连续两轮 2/2 通过。
+- 再补记（iron-047 期间）：StandaloneApplication 又一次失败，并发写 `IronScheme.Emit/bin/Release/net10.0/linux-x64/IronScheme.Emit.runtimeconfig.json`。用 binlog 核对 Emit 的构建配置：宿主经传递引用构建 Emit 时传入 `RuntimeIdentifier`/`SelfContained`，IronScheme.Hosting（与平台无关的库）构建它时不传，同一次发布出现两种配置；全局属性 `PublishSingleFile=true` 又使无 RID 的那份推断出当前 RID，两者输出到同一目录。Emit 声明 `IsRidAgnostic=true` 后只剩一种配置。
 - 全部测试通过：Core.Tests 229/229，IronScheme.Tests 57/57。种子已按当前源码再生成，达到不动点。
 
 **限制**
