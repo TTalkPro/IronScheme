@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- 新控制台宿主。设计：designs/02-runtime.md §11 -->
+  <!-- 新控制台宿主。设计：designs/02-runtime.md §11、07 §4 -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,48 +10,38 @@
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
-    <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
-    <!-- 只为构建顺序：生成 boot 镜像要先有 stage0（不引用其程序集） -->
-    <ProjectReference Include="..\IronScheme.Stage0\IronScheme.Stage0.csproj" ReferenceOutputAssembly="false" />
+    <!-- 运行时初始化与 boot 镜像（GenerateBootImage 目标在 IronScheme.Hosting 中，镜像随引用复制到输出目录） -->
+    <ProjectReference Include="..\IronScheme.Hosting\IronScheme.Hosting.csproj" />
   </ItemGroup>
 
   <!--
-    boot 镜像（designs/05-bootstrap.md §3）：stage0 执行文本种子，运行 ironscheme-buildscript-nano.sps，
-    用新编译器编译出 IronScheme.Console/build/ironscheme.boot.{lcil,dll}，再复制到输出目录作为默认的 ~/ironscheme.boot.dll。
-    按输入增量：种子、构建脚本、boot 源码、lib/ironscheme（编译器及构建脚本导入的库）、nanopass、原语表，
-    以及 Core / Emit / Stage0 程序集都没变时跳过（生成一次约 45 秒）。
-    dotnet build -p:BuildBootImage=false 只编译 C#。输出到其他目录（自举比对）用 tools/build.cs stage1 <目录>。
+    自包含发布（iron-036，designs/07-tooling-and-embedding.md §3；由 tools/build.cs publish 设置这些属性）：
+    - EmbedBootImage=true：boot 镜像作为嵌入资源 ironscheme.boot.dll（SchemeRuntime 在可执行文件旁没有镜像时使用它）；
+    - IronSchemeApp=目录：compile-whole-program 的产物（*.fasl 与清单 ironscheme.app）作为嵌入资源，宿主启动后运行该应用；
+      IronSchemeAppName 为可执行文件名。
+    单文件发布时：已嵌入的 boot 文件不再单独发布；lib/ 作为目录留在可执行文件旁（应用发布不需要 lib/，所需的库已编译嵌入）。
   -->
-  <PropertyGroup>
-    <BuildBootImage Condition="'$(BuildBootImage)' == ''">true</BuildBootImage>
-    <IronSchemeConsoleDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\IronScheme.Console'))</IronSchemeConsoleDir>
-    <BootImageDir>$(IronSchemeConsoleDir)\build</BootImageDir>
-    <BootImage>$(BootImageDir)\ironscheme.boot.dll</BootImage>
-    <Stage0Dir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\IronScheme.Stage0\bin\$(Configuration)\$(TargetFramework)'))</Stage0Dir>
-    <DotnetHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</DotnetHost>
-    <DotnetHost Condition="'$(DOTNET_HOST_PATH)' == ''">dotnet</DotnetHost>
+  <PropertyGroup Condition="'$(IronSchemeApp)' != '' and '$(IronSchemeAppName)' != ''">
+    <AssemblyName>$(IronSchemeAppName)</AssemblyName>
+    <!-- 程序集名与嵌入资源不同：只有本项目用单独的中间与输出目录（不能作为命令行全局属性传入，
+         否则被引用的项目也会换目录，可执行项目 Emit、stage0 在两组全局属性下各构建一次、并发写同一 apphost） -->
+    <IntermediateOutputPath>obj\app-$(IronSchemeAppName)\</IntermediateOutputPath>
+    <OutputPath>bin\app-$(IronSchemeAppName)\</OutputPath>
   </PropertyGroup>
-
-  <ItemGroup>
-    <BootImageInput Include="$(IronSchemeConsoleDir)\boot-seed.core;$(IronSchemeConsoleDir)\ironscheme-buildscript-nano.sps" />
-    <BootImageInput Include="$(IronSchemeConsoleDir)\compiler\primitives.ss" />
-    <BootImageInput Include="$(IronSchemeConsoleDir)\build\**\*.sls" />
-    <BootImageInput Include="$(IronSchemeConsoleDir)\psyntax\**\*.sls" />
-    <BootImageInput Include="$(IronSchemeConsoleDir)\lib\ironscheme\**\*.sls;$(IronSchemeConsoleDir)\lib\ironscheme\**\*.ss" />
-    <BootImageInput Include="$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass\**\*.ss;$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass\**\*.sls;$(IronSchemeConsoleDir)\lib\nanopass-framework-scheme\nanopass.ss" />
-    <BootImageInput Include="$(Stage0Dir)\stage0.dll;$(Stage0Dir)\IronScheme.Core.dll;$(Stage0Dir)\IronScheme.Emit.dll;$(Stage0Dir)\Oyster.IntX.dll" />
+  <ItemGroup Condition="'$(EmbedBootImage)' == 'true'">
+    <EmbeddedResource Include="..\scheme\build\ironscheme.boot.dll" LogicalName="ironscheme.boot.dll" />
   </ItemGroup>
-
-  <Target Name="GenerateBootImage" AfterTargets="Build" Condition="'$(BuildBootImage)' == 'true'"
-          Inputs="@(BootImageInput)" Outputs="$(BootImage)">
-    <Message Importance="high" Text="IronScheme: generating boot image with stage0 (about 45 seconds) -> $(BootImage)" />
-    <Exec Command="&quot;$(DotnetHost)&quot; &quot;$(Stage0Dir)\stage0.dll&quot; -I lib -I lib/nanopass-framework-scheme boot-seed.core ironscheme-buildscript-nano.sps &quot;$(BootImageDir)&quot;"
-          WorkingDirectory="$(IronSchemeConsoleDir)" />
-  </Target>
-
-  <!-- 复制到输出目录（镜像存在时；BuildBootImage=false 时也复制已有的镜像） -->
-  <Target Name="CopyBootImage" AfterTargets="Build;GenerateBootImage" Condition="Exists('$(BootImage)')">
-    <Copy SourceFiles="$(BootImage)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  <ItemGroup Condition="'$(IronSchemeApp)' != ''">
+    <EmbeddedResource Include="$(IronSchemeApp)\*.fasl" LogicalName="%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(IronSchemeApp)\ironscheme.app" LogicalName="ironscheme.app" />
+  </ItemGroup>
+  <Target Name="IronSchemeSingleFilePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'$(EmbedBootImage)' == 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'ironscheme.boot.dll'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'$(IronSchemeApp)' != '' and $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\','/').StartsWith('lib/'))" />
+      <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\','/').StartsWith('lib/'))">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
   </Target>
 </Project>

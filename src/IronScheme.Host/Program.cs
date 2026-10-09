@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using IronScheme.Core;
+using IronScheme.Hosting;
 
 namespace IronScheme.Host
 {
@@ -31,13 +32,17 @@ namespace IronScheme.Host
 
     static int Run(string[] args)
     {
+      // 自包含发布的应用（iron-036）：可执行文件中嵌入了应用清单，全部参数交给应用
+      if (SchemeRuntime.ReadResource(AppManifest) is byte[] manifest) return RunApp(manifest, args);
+
       string boot = DefaultBoot;
+      var options = new SchemeRuntimeOptions();
       int i = 0;
       for (; i < args.Length; i++)
       {
         switch (args[i])
         {
-          case "-I" when i + 1 < args.Length: Builtins.AddIncludePath(args[++i]); continue;
+          case "-I" when i + 1 < args.Length: options.LibraryPaths.Add(args[++i]); continue;
           case "--boot" when i + 1 < args.Length: boot = args[++i]; continue;
           case "--show-imports": ModuleLoader.ShowImports = true; continue;
           case "--deterministic": RuntimeOptions.DeterministicGensym = true; continue;
@@ -49,13 +54,16 @@ namespace IronScheme.Host
       string script = i < args.Length ? args[i] : null;
 
       // psyntax 在 boot 初始化时读取命令行：脚本及其参数（REPL 时为空串，与旧宿主一致）
-      Builtins.CommandLineArgs = script != null ? args[i..] : new[] { "" };
+      options.CommandLine.Clear();
+      foreach (var a in script != null ? args[i..] : new[] { "" }) options.CommandLine.Add(a);
 
       try
       {
-        PrimitiveRegistry.RegisterAll();
         if (boot == DefaultBoot) ReplaceBootImage();
-        ModuleLoader.LoadModule(boot);
+        // 默认镜像不存在时交给 SchemeRuntime：它再找可执行文件中的嵌入资源（单文件发布）
+        string resolved = ModuleLoader.ResolvePath(boot);
+        options.BootImage = boot == DefaultBoot && !File.Exists(resolved) ? null : resolved;
+        SchemeRuntime.Initialize(options);
       }
       catch (Exception e)
       {
@@ -64,6 +72,43 @@ namespace IronScheme.Host
       }
 
       return script != null ? RunScript(script) : Repl.Run();
+    }
+
+    const string AppManifest = "ironscheme.app";
+
+    /// <summary>
+    /// 运行嵌入的应用：清单（compile-whole-program 生成）每行 "library 资源名" 或 "program 资源名"，
+    /// 依次加载这些嵌入的 .fasl 并交给 psyntax 的 load-fasl-content（安装库、运行程序）。(command-line) 为应用名与参数。
+    /// </summary>
+    static int RunApp(byte[] manifest, string[] args)
+    {
+      var options = new SchemeRuntimeOptions();
+      options.CommandLine.Clear();
+      options.CommandLine.Add(Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "app"));
+      foreach (var a in args) options.CommandLine.Add(a);
+      try
+      {
+        SchemeRuntime.Initialize(options);
+        var load = Symbol.Intern("load-fasl-content").Value as Procedure
+          ?? throw new InvalidOperationException("boot image has no load-fasl-content hook");
+        foreach (var line in System.Text.Encoding.UTF8.GetString(manifest).Split('\n'))
+        {
+          var parts = line.Trim().Split(' ', 2);
+          if (parts.Length != 2) continue;
+          var bytes = SchemeRuntime.ReadResource(parts[1]) ?? throw new InvalidOperationException("missing embedded file " + parts[1]);
+          load.Invoke2(ModuleLoader.Run(System.Reflection.Assembly.Load(bytes)), parts[1]);
+        }
+        return 0;
+      }
+      catch (Exception e)
+      {
+        Repl.Report(e);
+        return 1;
+      }
+      finally
+      {
+        Console.Out.Flush();
+      }
     }
 
     static int Usage()

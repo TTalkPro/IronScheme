@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    嵌入示例（iron-039，designs/07-tooling-and-embedding.md §5）：HTTP 路由在 C#（ASP.NET Core 最小 API），
+    业务逻辑在 Scheme 库 (bookstore)（scheme/bookstore.sls），C# 经 IronScheme.Hosting 调用 Scheme 过程；
+    Scheme 经 CLR 互操作直接使用 Microsoft.Data.Sqlite 访问 SQLite 数据库。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IronScheme.Hosting\IronScheme.Hosting.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Scheme 库源码复制到输出目录的 scheme/，运行时加入库搜索路径 -->
+    <None Include="scheme\**\*.sls" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

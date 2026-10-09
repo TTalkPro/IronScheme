@@ -103,7 +103,14 @@ namespace IronScheme.Emit
     void ConvertFrom(ILGenerator il, Type t)
     {
       if (t == typeof(void)) { il.Emit(OpCodes.Ldsfld, Core.Unspecified); return; }
-      if (!t.IsValueType) return;   // 引用类型 ConvertFrom 不改变值
+      if (t == typeof(object) || t == typeof(ValueType))
+      {
+        // 声明为 object 的值按运行时类型转换（装箱的 Int64 等 → Scheme 数；Interop.ConvertFrom）
+        EmitType(il, typeof(object));
+        il.Emit(OpCodes.Call, Core.ConvertFrom);
+        return;
+      }
+      if (!t.IsValueType) return;   // 其他引用类型 ConvertFrom 不改变值
       il.Emit(OpCodes.Box, t);
       EmitType(il, t);
       il.Emit(OpCodes.Call, Core.ConvertFrom);

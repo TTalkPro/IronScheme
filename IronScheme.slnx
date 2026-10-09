@@ -1,10 +1,18 @@
 <Solution>
-  <Project Path="IronScheme/IronScheme.Core.Tests/IronScheme.Core.Tests.csproj" />
-  <Project Path="IronScheme/IronScheme.Core/IronScheme.Core.csproj" />
-  <Project Path="IronScheme/IronScheme.Emit/IronScheme.Emit.csproj" />
-  <Project Path="IronScheme/IronScheme.Host/IronScheme.Host.csproj" />
-  <Project Path="IronScheme/IronScheme.PrimGen/IronScheme.PrimGen.csproj" />
-  <Project Path="IronScheme/IronScheme.Stage0/IronScheme.Stage0.csproj" />
-  <Project Path="IronScheme/IronScheme.Tests/IronScheme.Tests.csproj" />
-  <Project Path="IronScheme/Oyster.IntX/Oyster.IntX.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/IronScheme.Core/IronScheme.Core.csproj" />
+    <Project Path="src/IronScheme.Emit/IronScheme.Emit.csproj" />
+    <Project Path="src/IronScheme.Host/IronScheme.Host.csproj" />
+    <Project Path="src/IronScheme.Hosting/IronScheme.Hosting.csproj" />
+    <Project Path="src/IronScheme.PrimGen/IronScheme.PrimGen.csproj" />
+    <Project Path="src/IronScheme.Stage0/IronScheme.Stage0.csproj" />
+    <Project Path="src/Oyster.IntX/Oyster.IntX.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/WebServer/WebServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IronScheme.Core.Tests/IronScheme.Core.Tests.csproj" />
+    <Project Path="tests/IronScheme.Tests/IronScheme.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -95,7 +95,7 @@ namespace IronScheme.Core
     /// <summary>(clr-cast T e)：转换为 T 后再转回 Scheme 表示；null 得到 T 的默认值（与旧系统一致）。</summary>
     public static object Cast(Type type, object value)
     {
-      if (value == null && type.IsValueType) return ConvertFrom(Activator.CreateInstance(type), type);
+      if (value == null && type.IsValueType) return CastResult(Activator.CreateInstance(type), type);
       // 整数类型之间（含 char）按 IL 的 conv 指令转换：不检查溢出，截断取低位（与旧编译器一致）
       if ((IsNumeric(type) || type == typeof(char)) && value is int or long or char or byte or sbyte or short or ushort or uint or ulong)
       {
@@ -115,9 +115,9 @@ namespace IronScheme.Core
           TypeCode.Double => (double)v,
           _ => null,
         };
-        if (r != null) return ConvertFrom(r, type);
+        if (r != null) return CastResult(r, type);
       }
-      return ConvertFrom(ConvertTo(value, type, "clr-cast"), type);
+      return CastResult(ConvertTo(value, type, "clr-cast"), type);
     }
 
     public static object Is(Type type, object value) => RT.Bool(type.IsInstanceOfType(value));
@@ -380,7 +380,35 @@ namespace IronScheme.Core
     }
 
     /// <summary>CLR 返回值 → Scheme 值：void → 未指定值，枚举 → 符号，bool → #t/#f 单例（旧系统每次装箱新对象）。</summary>
+    /// <summary>
+    /// CLR 值 → Scheme 表示：布尔规范化、枚举 → 符号；Scheme 不直接使用的 CLR 数值类型转为 Scheme 数
+    /// （各整型 → fixnum 或 bignum，float → flonum）。声明类型为 object 的返回值与字段值也经过这里（按运行时类型，iron-039：
+    /// 如 SqliteCommand.ExecuteScalar 返回装箱的 Int64）。
+    /// </summary>
     public static object ConvertFrom(object v, Type declared)
+    {
+      if (declared == typeof(void)) return Unspecified.Instance;
+      switch (v)
+      {
+        case null: return null;
+        case int i: return RT.Box(i);
+        case string: case double: return v;
+        case bool b: return RT.Bool(b);
+        case long l: return Builtins.ToIntegerIfPossible(l);
+        case short s: return RT.Box(s);
+        case byte b8: return RT.Box(b8);
+        case sbyte sb: return RT.Box(sb);
+        case ushort us: return RT.Box(us);
+        case uint ui: return Builtins.ToIntegerIfPossible(ui);
+        case ulong ul: return Builtins.ToIntegerIfPossible(ul);
+        case float f: return (double)f;
+        case Enum e: return EnumToSymbol(e);
+        default: return v;
+      }
+    }
+
+    /// <summary>clr-cast 的结果：只做布尔规范化与枚举 → 符号，保留 long 等 CLR 数值类型（运行时按实参类型选重载时要用到）。</summary>
+    static object CastResult(object v, Type declared)
     {
       if (declared == typeof(void)) return Unspecified.Instance;
       switch (v)

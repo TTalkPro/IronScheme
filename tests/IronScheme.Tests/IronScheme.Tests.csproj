@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- 新系统的集成测试（iron-030、iron-031）：以进程方式运行 IronScheme.Host（及自举时的 stage0）。
-       工作目录为 IronScheme.Console；boot 镜像默认 IronScheme.Console/build/ironscheme.boot.dll。 -->
+       工作目录为 src/scheme；boot 镜像默认 src/scheme/build/ironscheme.boot.dll。 -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>disable</Nullable>
@@ -15,6 +15,10 @@
   </ItemGroup>
   <!-- 测试以进程方式运行宿主与 boot 镜像：引用 Host 只为让 dotnet test 先构建它（并经 GenerateBootImage 生成 boot 镜像），不引用其程序集 -->
   <ItemGroup>
-    <ProjectReference Include="..\IronScheme.Host\IronScheme.Host.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\IronScheme.Host\IronScheme.Host.csproj" ReferenceOutputAssembly="false" />
+    <!-- HostingTests 在进程内初始化 IronScheme（boot 镜像与 lib 随 Hosting 复制到输出目录） -->
+    <ProjectReference Include="..\..\src\IronScheme.Hosting\IronScheme.Hosting.csproj" />
+    <!-- Examples 测试启动编译好的示例服务 -->
+    <ProjectReference Include="..\..\examples\WebServer\WebServer.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
