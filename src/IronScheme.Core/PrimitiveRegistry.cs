@@ -98,6 +98,24 @@ namespace IronScheme.Core
 
     public IReadOnlyList<PrimitiveOverload> Overloads { get; }
 
+    object form, arity;
+
+    /// <summary>procedure-form：各重载的 (名字 . 形参)，形参取 C# 参数名，params 数组为剩余参数（REPL 的参数提示，iron-038）。</summary>
+    public override object Form => form ??= Cons.FromArray(Overloads.OrderBy(o => o.FixedArity).ThenBy(o => o.HasRest).Select(o =>
+    {
+      var ps = o.Method.GetParameters();
+      object formals = o.HasRest ? Symbol.Intern(ps[^1].Name) : null;
+      for (int i = o.FixedArity - 1; i >= 0; i--) formals = new Cons(Symbol.Intern(ps[i].Name), formals);
+      return (object)new Cons(Symbol.Intern(name), formals);
+    }).ToArray());
+
+    /// <summary>procedure-arity：与编译器生成的一致（固定 n，剩余参数 n.0，多个重载为列表）。</summary>
+    public override object Arity => arity ??= Overloads.Count == 1
+      ? ArityOf(Overloads[0])
+      : Cons.FromArray(Overloads.OrderBy(o => o.FixedArity).Select(ArityOf).ToArray());
+
+    static object ArityOf(PrimitiveOverload o) => o.HasRest ? (object)(double)o.FixedArity : RT.Box(o.FixedArity);
+
     public PrimitiveProcedure(string name, IReadOnlyList<PrimitiveOverload> overloads)
     {
       this.name = name;

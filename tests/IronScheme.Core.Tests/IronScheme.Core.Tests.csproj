@@ -14,16 +14,16 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\IronScheme.Core\IronScheme.Core.csproj" />
-    <ProjectReference Include="..\IronScheme.Emit\IronScheme.Emit.csproj" />
-    <ProjectReference Include="..\IronScheme.PrimGen\IronScheme.PrimGen.csproj" />
-    <ProjectReference Include="..\IronScheme.Stage0\IronScheme.Stage0.csproj" />
+    <ProjectReference Include="..\..\src\IronScheme.Core\IronScheme.Core.csproj" />
+    <ProjectReference Include="..\..\src\IronScheme.Emit\IronScheme.Emit.csproj" />
+    <ProjectReference Include="..\..\src\IronScheme.PrimGen\IronScheme.PrimGen.csproj" />
+    <ProjectReference Include="..\..\src\IronScheme.Stage0\IronScheme.Stage0.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\IronScheme.Emit\samples\*.lcil" LinkBase="samples" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\IronScheme.Emit\samples\*.lcil" LinkBase="samples" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- 测试以进程方式运行宿主与 boot 镜像：引用 Host 只为让 dotnet test 先构建它（并经 GenerateBootImage 生成 boot 镜像），不引用其程序集 -->
+  <!-- 引用 Host：dotnet test 先构建它（经 GenerateBootImage 生成 boot 镜像）；LineEditorTests 直接测试其输入扫描 -->
   <ItemGroup>
-    <ProjectReference Include="..\IronScheme.Host\IronScheme.Host.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\IronScheme.Host\IronScheme.Host.csproj" />
   </ItemGroup>
 </Project>

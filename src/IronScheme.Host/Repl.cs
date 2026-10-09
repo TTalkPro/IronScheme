@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using IronScheme.Core;
 
 namespace IronScheme.Host
 {
   /// <summary>
-  /// 简单 REPL（iron-029）：读入一个数据（可跨行）→ psyntax 的 eval-r6rs（交互环境；出错时由它打印条件）→
+  /// REPL（iron-029、iron-038）：读入一个数据（可跨行）→ psyntax 的 eval-r6rs（交互环境；出错时由它打印条件）→
   /// 用 pretty-print 打印结果（未指定值不打印，多值逐个打印）。输入结束或 (exit) 时退出。
+  /// 终端交互时用 LineEditor（行编辑、历史、补全、提示）；标准输入或输出被重定向时逐个读取数据。
   /// </summary>
   static class Repl
   {
@@ -19,6 +23,23 @@ namespace IronScheme.Host
     public static int Run()
     {
       Console.WriteLine($"IronScheme {Builtins.VersionString} on {System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription} (new runtime)");
+      if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
+      {
+        try
+        {
+          return RunInteractive();
+        }
+        catch (Exception e) when (e is IOException || e is InvalidOperationException || e is ArgumentException)
+        {
+          // 终端不支持所需的控制（如光标定位）：退回逐个读取数据
+          Console.Error.WriteLine("line editing disabled: " + e.Message);
+        }
+      }
+      return RunPlain();
+    }
+
+    static int RunPlain()
+    {
       var reader = new SchemeReader(Console.In, "stdin", false);
       var eval = Global("eval-r6rs");
       var print = Global("pretty-print");
@@ -42,19 +63,82 @@ namespace IronScheme.Host
           Console.WriteLine();
           return 0;
         }
-        try
+        EvalPrint(eval, print, x);
+      }
+    }
+
+    static void EvalPrint(Procedure eval, Procedure print, object x)
+    {
+      try
+      {
+        object v = eval.Invoke1(x);
+        if (v is MultipleValues mv)
+          foreach (var item in mv.ToArray()) print.Invoke1(item);
+        else if (!(v is Unspecified))
+          print.Invoke1(v);
+      }
+      catch (Exception e)
+      {
+        Report(e);
+      }
+      Console.Out.Flush();
+    }
+
+    /// <summary>终端交互：行编辑器读入一个完整的输入（可含多个数据），逐个求值打印。</summary>
+    static int RunInteractive()
+    {
+      var eval = Global("eval-r6rs");
+      var print = Global("pretty-print");
+      string historyFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ironscheme_history");
+      var editor = new LineEditor(new SchemeServices(), historyFile);
+      while (true)
+      {
+        string text = editor.Read("> ", ". ");
+        if (text == null) return 0;
+        if (text.Trim().Length == 0) continue;
+        var reader = new SchemeReader(new StringReader(text), "stdin", false);
+        while (true)
         {
-          object v = eval.Invoke1(x);
-          if (v is MultipleValues mv)
-            foreach (var item in mv.ToArray()) print.Invoke1(item);
-          else if (!(v is Unspecified))
-            print.Invoke1(v);
+          object x;
+          try
+          {
+            x = reader.Read();
+          }
+          catch (ReaderException e)
+          {
+            Console.Error.WriteLine("read error: " + e.Message);
+            break;
+          }
+          if (ReferenceEquals(x, Builtins.EofObject())) break;
+          EvalPrint(eval, print, x);
         }
-        catch (Exception e)
-        {
-          Report(e);
-        }
-        Console.Out.Flush();
+      }
+    }
+
+    /// <summary>
+    /// 补全与提示的数据来自 psyntax main 登记的钩子（repl-complete、repl-describe）；旧的 boot 镜像没有这些钩子时不补全、不提示。
+    /// </summary>
+    sealed class SchemeServices : IReplServices
+    {
+      static Procedure Hook(string name) => Symbol.Intern(name).Value as Procedure;
+
+      public IReadOnlyList<string> Complete(string prefix, bool library)
+      {
+        var p = Hook("repl-complete");
+        if (p == null) return Array.Empty<string>();
+        var result = new List<string>();
+        for (object l = p.Invoke2(prefix, RT.Bool(library)); l is Cons c; l = c.cdr)
+          if (c.car is string s) result.Add(s);
+          else if (c.car != null) result.Add(c.car.ToString());
+        return result.Distinct().OrderBy(s => s, StringComparer.Ordinal).ToList();
+      }
+
+      public string Hint(string name)
+      {
+        var p = Hook("repl-describe");
+        if (p == null) return null;
+        object v = p.Invoke1(name);
+        return v as string ?? (v as System.Text.StringBuilder)?.ToString();
       }
     }
 

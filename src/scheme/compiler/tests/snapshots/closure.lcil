@@ -1,5 +1,8 @@
 (lcil 1
   (assembly "closure" (references "IronScheme.Core") (entry "#Module" "Initialize"))
+  (constants
+    (0 (list (list (sym "lambda") (sym "y"))))
+    (1 (list (list (sym "lambda") (sym "x")))))
   (type "#Module"
     (attrs abstract sealed)
     (method "Init0"
@@ -56,6 +59,13 @@
         (ldc.i4 1)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
         (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 0)
+        (ret)))
     (method ".ctor"
       (attrs ctor)
       (params)
@@ -96,6 +106,13 @@
       (body
         (ldc.i4 1)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 1)
         (ret)))
     (method ".ctor"
       (attrs ctor)

@@ -1,8 +1,12 @@
 (lcil 1
   (assembly "letrec-forward" (references "IronScheme.Core") (entry "#Module" "Initialize"))
   (constants
-    (0 (sym "total"))
-    (1 (list (fix 1) (fix 2))))
+    (0 (list (list (sym "f") (sym "x"))))
+    (1 (sym "total"))
+    (2 (list (list (sym "g") (sym "y"))))
+    (3 (list (list (sym "bump"))))
+    (4 (list (fix 1) (fix 2)))
+    (5 (list (list (sym "lambda") (sym "n")))))
   (type "#Module"
     (attrs abstract sealed)
     (method "Init0"
@@ -58,6 +62,13 @@
         (ldc.i4 1)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
         (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 0)
+        (ret)))
     (method "get_Name"
       (attrs override)
       (params)
@@ -93,7 +104,7 @@
         (ldfld "_Module$2$g" "c0")
         (castclass "IronScheme.Core.Box")
         (ldfld "IronScheme.Core.Box" "Value")
-        (ldconst 0)
+        (ldconst 1)
         (call "IronScheme.Core.Calls" "CheckInitialized" ("System.Object" "System.Object") "System.Object")
         (ret)
         (label L0)
@@ -122,6 +133,13 @@
       (body
         (ldc.i4 1)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 2)
         (ret)))
     (method "get_Name"
       (attrs override)
@@ -182,6 +200,13 @@
       (body
         (ldc.i4 0)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 3)
         (ret)))
     (method "get_Name"
       (attrs override)
@@ -253,7 +278,7 @@
         (pop)
         (ldloc 1)
         (call "IronScheme.Core.Calls" "Proc" ("System.Object") "IronScheme.Core.Procedure")
-        (ldconst 1)
+        (ldconst 4)
         (tail)
         (callvirt "IronScheme.Core.Procedure" "Invoke1" ("System.Object") "System.Object")
         (ret)))
@@ -273,6 +298,13 @@
       (body
         (ldc.i4 1)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 5)
         (ret)))
     (method ".ctor"
       (attrs ctor)

@@ -34,8 +34,10 @@ See docs/license.txt. |#
   (define/contract (procedure-name proc:procedure)
     (string->symbol (clr-prop-get Procedure Name proc)))
 
+  ;; 每个子句一个值：(名字 . 形参)（编译器生成 Form 属性，iron-038）；未知时为 unspecified
   (define/contract (procedure-form proc:procedure)
-    (clr-prop-get Procedure Form proc))
+    (let ((f (clr-prop-get Procedure Form proc)))
+      (if (pair? f) (apply values f) f)))
 
   (define/contract (procedure-environment proc:procedure)
     #f)

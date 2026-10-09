@@ -725,6 +725,12 @@ See docs/license.txt. |#
                           ((fixnum? arity) `((ldc.i4 ,arity) (call ,rt-type "Box" ("System.Int32") ,obj)))
                           (else `((ldconst ,(constant-index! u arity)))))
                       (ret)))))
+         ;; procedure-form：各子句的 (名字 . 形参)，形参取源码中的名字（REPL 的参数提示使用，iron-038）
+         (unless (null? cl*)
+           (add-method!
+             `(method "get_Form" (attrs override) (params) (ret ,obj)
+                (body (ldconst ,(constant-index! u (map (lambda (cl) (clause-form nm cl)) cl*)))
+                      (ret)))))
          (when nm
            (add-method! `(method "get_Name" (attrs override) (params) (ret "System.String")
                            (body (ldstr ,(if (symbol? nm) (symbol->string nm) nm)) (ret)))))
@@ -742,6 +748,26 @@ See docs/license.txt. |#
   (define (class-name u nm)
     (string-append (sanitize (unit-module u)) "$" (number->string (next-id! u))
                    (if nm (string-append "$" (sanitize nm)) "")))
+
+  ;; 子句的 (名字 . 形参)：形参是 psyntax 生成的 gensym（g$名字$序号$后缀），还原为源码中的名字
+  (define (clause-form nm cl)
+    (define (source-name x)
+      (let* ((s (symbol->string x)) (n (string-length s)))
+        (if (and (> n 2) (char=? (string-ref s 0) #\g) (char=? (string-ref s 1) #\$))
+            (let loop ((i (- n 1)) (dollars 0))
+              (cond
+                ((< i 2) x)
+                ((char=? (string-ref s i) #\$)
+                 (if (= dollars 1) (string->symbol (substring s 2 i)) (loop (- i 1) (+ dollars 1))))
+                (else (loop (- i 1) dollars))))
+            x)))
+    (nanopass-case (L3 Clause) cl
+      [(clause (,x* ...) ,x ,body)
+       (cons (if (symbol? nm) nm (if (string? nm) (string->symbol nm) 'lambda))
+             (let loop ((xs x*))
+               (if (null? xs)
+                   (if x (source-name x) '())
+                   (cons (source-name (car xs)) (loop (cdr xs))))))]))
 
   (define (clause-shape cl)
     (nanopass-case (L3 Clause) cl

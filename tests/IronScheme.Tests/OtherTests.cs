@@ -26,6 +26,14 @@ namespace IronScheme.Tests
     }
 
     [Test]
+    public void ReplHooks()
+    {
+      var r = RunIronSchemeTest(@"tests\repl-hooks.sps");
+      Assert.That(r.Output, Does.Contain("repl-hooks: all passed"));
+      AssertError(r);
+    }
+
+    [Test]
     public void MiniKanren()
     {
       var r = RunIronSchemeTestWithInput(@"(include ""lib/minikanren/mktests.scm"")");

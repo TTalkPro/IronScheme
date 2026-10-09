@@ -1,5 +1,7 @@
 (lcil 1
   (assembly "named-let-loop" (references "IronScheme.Core") (entry "#Module" "Initialize"))
+  (constants
+    (0 (list (list (sym "loop") (sym "i") (sym "acc")))))
   (type "#Module"
     (attrs abstract sealed)
     (method "Init0"
@@ -74,6 +76,13 @@
       (body
         (ldc.i4 2)
         (call "IronScheme.Core.RT" "Box" ("System.Int32") "System.Object")
+        (ret)))
+    (method "get_Form"
+      (attrs override)
+      (params)
+      (ret "System.Object")
+      (body
+        (ldconst 0)
         (ret)))
     (method "get_Name"
       (attrs override)
