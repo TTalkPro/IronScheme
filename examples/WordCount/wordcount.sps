@@ -1,7 +1,7 @@
 ;;; 词频统计（iron-036 的自包含发布示例）：
 ;;;   wordcount [-n 个数] 文件 …      没有文件时读标准输入
 ;;; 发布为独立可执行文件：dotnet run tools/build.cs -- publish examples/WordCount/wordcount.sps
-(import (rnrs) (only (srfi :1 lists) take))
+(import (rnrs) (only (ironscheme std lists) take))
 
 (define (words-of text)
   ;; 字母与撇号组成词，其余字符分隔；统一小写

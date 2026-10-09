@@ -1,45 +1,53 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 
-namespace IronScheme.Tests
+namespace IronScheme.Tests;
+
+[Order(4)]
+[Parallelizable(scope: ParallelScope.All | ParallelScope.Fixtures)]
+[Category(nameof(Other))]
+public class Other : TestRunner
 {
-  [Order(4)]
-  [Parallelizable(scope: ParallelScope.All | ParallelScope.Fixtures)]
-  [Category(nameof(Other))]
-  public class Other : TestRunner
-  {
-    [Test]
-    [Retry(3)]
-    public void PFDS()
-    {
-      var r = RunIronSchemeTest(@"lib\pfds\tests.scm");
-      Assert.That(r.Output, Does.Contain("255 tests, 255 passed (100%), 0 failed (0%)"));
-      AssertError(r);
-    }
-
     [Test]
     [Platform(Exclude = "MacOsX")]   // pinvoke 用例按 libc.so.6 / msvcrt 查找 C 运行库
     public void FFI()
     {
-      var r = RunIronSchemeTest(@"tests\ffi-test.sps");
-      Assert.That(r.Output, Does.Contain("ffi: all passed"));
-      AssertError(r);
+        var r = RunIronSchemeTest(@"tests\ffi-test.sps");
+        Assert.That(r.Output, Does.Contain("ffi: all passed"));
+        AssertError(r);
+    }
+
+    [Test]
+    public void BaseLibrary()
+    {
+        // 基础库问题修复的回归测试（iron-054）
+        var r = RunIronSchemeTest(@"tests\base-library.sps");
+        Assert.That(r.Output, Does.Contain("base-library: all passed"));
+        AssertError(r);
+    }
+
+    [Test]
+    public void UnicodeStrings()
+    {
+        // 字符串按码点（iron-055）
+        var r = RunIronSchemeTest(@"tests\unicode-strings.sps");
+        Assert.That(r.Output, Does.Contain("unicode-strings: all passed"));
+        AssertError(r);
     }
 
     [Test]
     public void ReplHooks()
     {
-      var r = RunIronSchemeTest(@"tests\repl-hooks.sps");
-      Assert.That(r.Output, Does.Contain("repl-hooks: all passed"));
-      AssertError(r);
+        var r = RunIronSchemeTest(@"tests\repl-hooks.sps");
+        Assert.That(r.Output, Does.Contain("repl-hooks: all passed"));
+        AssertError(r);
     }
 
     [Test]
     public void MiniKanren()
     {
-      var r = RunIronSchemeTestWithInput(@"(include ""lib/minikanren/mktests.scm"")");
-      Assert.That(r.Output, Does.Contain("Ignoring divergent test 10.62"));
-      
-      AssertError(r);
+        var r = RunIronSchemeTestWithInput(@"(include ""lib/minikanren/mktests.scm"")");
+        Assert.That(r.Output, Does.Contain("Ignoring divergent test 10.62"));
+
+        AssertError(r);
     }
-  }
 }

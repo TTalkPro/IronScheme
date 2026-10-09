@@ -17,8 +17,8 @@
   </ItemGroup>
 
   <!--
-    boot 镜像（designs/05-bootstrap.md §3）：stage0 执行文本种子，运行 ironscheme-buildscript-nano.sps，
-    用新编译器编译出 src/scheme/build/ironscheme.boot.{lcil,dll}。在复制输出之前生成，作为内容项复制到本项目
+    boot 镜像（designs/05-bootstrap.md §3）：stage0 执行文本种子，运行 boot/ironscheme-buildscript-nano.sps，
+    用新编译器编译出 src/scheme/boot/ironscheme.boot.{lcil,dll}。在复制输出之前生成，作为内容项复制到本项目
     以及所有引用本项目的项目（宿主、示例）的输出目录，作为默认的 ironscheme.boot.dll。
     按输入增量：种子、构建脚本、boot 源码、lib/ironscheme（编译器及构建脚本导入的库）、nanopass、原语表，
     以及 Core / Emit / Stage0 程序集都没变时跳过（生成一次约 45 秒）。
@@ -27,7 +27,7 @@
   <PropertyGroup>
     <BuildBootImage Condition="'$(BuildBootImage)' == ''">true</BuildBootImage>
     <SchemeDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\scheme'))</SchemeDir>
-    <BootImageDir>$(SchemeDir)\build</BootImageDir>
+    <BootImageDir>$(SchemeDir)\boot</BootImageDir>
     <BootImage>$(BootImageDir)\ironscheme.boot.dll</BootImage>
     <Stage0Dir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\IronScheme.Stage0\bin\$(Configuration)\$(TargetFramework)'))</Stage0Dir>
     <DotnetHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</DotnetHost>
@@ -35,10 +35,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <BootImageInput Include="$(SchemeDir)\boot-seed.core;$(SchemeDir)\ironscheme-buildscript-nano.sps" />
-    <BootImageInput Include="$(SchemeDir)\compiler\primitives.ss" />
-    <BootImageInput Include="$(SchemeDir)\build\**\*.sls" />
-    <BootImageInput Include="$(SchemeDir)\psyntax\**\*.sls" />
+    <BootImageInput Include="$(SchemeDir)\boot\boot-seed.core;$(SchemeDir)\boot\ironscheme-buildscript-nano.sps;$(SchemeDir)\boot\primitives.ss" />
+    <BootImageInput Include="$(SchemeDir)\boot\**\*.sls" />
     <BootImageInput Include="$(SchemeDir)\lib\ironscheme\**\*.sls;$(SchemeDir)\lib\ironscheme\**\*.ss" />
     <BootImageInput Include="$(SchemeDir)\lib\nanopass-framework-scheme\nanopass\**\*.ss;$(SchemeDir)\lib\nanopass-framework-scheme\nanopass\**\*.sls;$(SchemeDir)\lib\nanopass-framework-scheme\nanopass.ss" />
     <BootImageInput Include="$(Stage0Dir)\stage0.dll;$(Stage0Dir)\IronScheme.Core.dll;$(Stage0Dir)\IronScheme.Emit.dll;$(Stage0Dir)\Oyster.IntX.dll" />
@@ -53,7 +51,7 @@
   <Target Name="GenerateBootImage" BeforeTargets="CopyFilesToOutputDirectory;GetCopyToOutputDirectoryItems" Condition="'$(BuildBootImage)' == 'true'"
           Inputs="@(BootImageInput)" Outputs="$(BootImage)">
     <Message Importance="high" Text="IronScheme: generating boot image with stage0 (about 45 seconds) -> $(BootImage)" />
-    <Exec Command="&quot;$(DotnetHost)&quot; &quot;$(Stage0Dir)\stage0.dll&quot; -I lib -I lib/nanopass-framework-scheme boot-seed.core ironscheme-buildscript-nano.sps &quot;$(BootImageDir)&quot;"
+    <Exec Command="&quot;$(DotnetHost)&quot; &quot;$(Stage0Dir)\stage0.dll&quot; -I lib -I lib/nanopass-framework-scheme boot/boot-seed.core boot/ironscheme-buildscript-nano.sps &quot;$(BootImageDir)&quot;"
           WorkingDirectory="$(SchemeDir)" />
   </Target>
 </Project>

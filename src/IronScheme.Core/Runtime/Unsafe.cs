@@ -1,21 +1,21 @@
 using System;
 
-namespace IronScheme.Core
-{
-  /// <summary>
-  /// 不做类型检查的 $ 原语（旧系统 Runtime/Unsafe.cs 中的内联发射器）。
-  /// 编译器按 Inline 模板内联它们（iron-025）；这里的 C# 实现供 stage0 解释执行与非内联调用使用。
-  /// 类型不符时直接抛 InvalidCastException（与内联后的行为一致）。
-  ///
-  /// 不在此处：$and? $or? $break $throw $try/finally——它们作用于未求值的参数表达式，是编译器 / stage0 的特殊形式，
-  /// 在原语表中以 (special …) 条目出现（iron-012）。
-  /// </summary>
-  public static class Unsafe
-  {
-    const PrimitiveFlags U = PrimitiveFlags.Unsafe, UP = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure;
+namespace IronScheme.Core;
 
-    static object B(bool b) => RT.Bool(b);
-    static object I(int i) => RT.Box(i);
+/// <summary>
+/// 不做类型检查的 $ 原语（旧系统 Runtime/Unsafe.cs 中的内联发射器）。
+/// 编译器按 Inline 模板内联它们（iron-025）；这里的 C# 实现供 stage0 解释执行与非内联调用使用。
+/// 类型不符时直接抛 InvalidCastException（与内联后的行为一致）。
+///
+/// 不在此处：$and? $or? $break $throw $try/finally——它们作用于未求值的参数表达式，是编译器 / stage0 的特殊形式，
+/// 在原语表中以 (special …) 条目出现（iron-012）。
+/// </summary>
+public static class Unsafe
+{
+    private const PrimitiveFlags U = PrimitiveFlags.Unsafe, UP = PrimitiveFlags.Unsafe | PrimitiveFlags.Pure;
+
+    private static object B(bool b) => RT.Bool(b);
+    private static object I(int i) => RT.Box(i);
 
     [Primitive("$car", Flags = UP, Inline = "$car")] public static object Car(object p) => ((Cons)p).car;
     [Primitive("$cdr", Flags = UP, Inline = "$cdr")] public static object Cdr(object p) => ((Cons)p).cdr;
@@ -26,8 +26,8 @@ namespace IronScheme.Core
     [Primitive("$vector-set!", Flags = U, Inline = "$vector-set!")]
     public static object VectorSet(object v, object i, object x)
     {
-      if (v is object[] a) a[(int)i] = x; else ((Array)v).SetValue(x, (int)i);
-      return Unspecified.Instance;
+        if (v is object[] a) a[(int)i] = x; else ((Array)v).SetValue(x, (int)i);
+        return Unspecified.Instance;
     }
 
     [Primitive("$bytevector-ref", Flags = UP, Inline = "$bytevector-ref")]
@@ -36,8 +36,8 @@ namespace IronScheme.Core
     [Primitive("$bytevector-set!", Flags = U, Inline = "$bytevector-set!")]
     public static object ByteVectorSet(object bv, object i, object x)
     {
-      ((byte[])bv)[(int)i] = Convert.ToByte(x);
-      return Unspecified.Instance;
+        ((byte[])bv)[(int)i] = Convert.ToByte(x);
+        return Unspecified.Instance;
     }
 
     // fixnum：32 位，不检查溢出（unchecked，与内联的 IL add/sub/mul 一致）
@@ -84,5 +84,4 @@ namespace IronScheme.Core
     [Primitive("$fl-", Flags = UP, Inline = "$fl-")] public static object FlNeg(object a) => -(double)a;
     [Primitive("$fl-", Flags = UP, Inline = "$fl-")] public static object FlSub(object a, object b) => (double)a - (double)b;
     [Primitive("$fl/", Flags = UP, Inline = "$fl/")] public static object FlDiv(object a, object b) => (double)a / (double)b;
-  }
 }

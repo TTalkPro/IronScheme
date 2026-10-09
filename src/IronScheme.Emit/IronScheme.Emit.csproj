@@ -9,5 +9,9 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- 与平台无关：自包含发布宿主时（tools/build.cs publish），宿主经传递引用、IronScheme.Hosting（与平台无关的库）
+         都会构建本项目。不声明时宿主传入 RuntimeIdentifier/SelfContained，Hosting 不传，同一次发布中出现两种配置，
+         而全局属性 PublishSingleFile 又使两者都推断出同一个 RID，并发写 bin/…/<RID>/ 下的同一组文件（iron-047 发现） -->
+    <IsRidAgnostic>true</IsRidAgnostic>
   </PropertyGroup>
 </Project>

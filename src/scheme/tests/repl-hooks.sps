@@ -1,4 +1,4 @@
-;;; REPL 补全与提示钩子（iron-038）：psyntax main 登记的 repl-complete、repl-describe
+;;; REPL 补全与提示钩子（iron-038）：展开器 main 登记的 repl-complete、repl-describe
 (import (ironscheme))
 
 (define complete (symbol-value 'repl-complete))
@@ -11,7 +11,7 @@
 
 (check 'symbol (list-sort string<? (complete "list-t" #f)) '("list-tail"))
 (check 'library-installed (and (member "(rnrs base)" (complete "(rnrs b" #t)) #t) #t)
-(check 'library-file (and (member "(srfi :1 lists)" (complete "(srfi :1" #t)) #t) #t)
+(check 'library-file (and (member "(ironscheme std lists)" (complete "(ironscheme std li" #t)) #t) #t)
 (check 'hint-compiled (describe "list-tail") "(list-tail lst index)")
 (check 'hint-clauses (describe "map") "(map proc list1) | (map proc list1 . lists)")
 (check 'hint-primitive (string? (describe "car")) #t)

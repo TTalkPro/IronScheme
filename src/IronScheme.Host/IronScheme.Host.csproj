@@ -29,7 +29,7 @@
     <OutputPath>bin\app-$(IronSchemeAppName)\</OutputPath>
   </PropertyGroup>
   <ItemGroup Condition="'$(EmbedBootImage)' == 'true'">
-    <EmbeddedResource Include="..\scheme\build\ironscheme.boot.dll" LogicalName="ironscheme.boot.dll" />
+    <EmbeddedResource Include="..\scheme\boot\ironscheme.boot.dll" LogicalName="ironscheme.boot.dll" />
   </ItemGroup>
   <ItemGroup Condition="'$(IronSchemeApp)' != ''">
     <EmbeddedResource Include="$(IronSchemeApp)\*.fasl" LogicalName="%(Filename)%(Extension)" />

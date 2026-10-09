@@ -1,11 +1,11 @@
-using NUnit.Framework;
 using IronScheme.Host;
+using NUnit.Framework;
 
-namespace IronScheme.Core.Tests
+namespace IronScheme.Core.Tests;
+
+/// <summary>REPL 行编辑器的输入扫描（iron-038，designs/07-tooling-and-embedding.md §4）。交互部分需要终端，见 iron-038 结论中的手工验证。</summary>
+public class LineEditorTests
 {
-  /// <summary>REPL 行编辑器的输入扫描（iron-038，designs/07-tooling-and-embedding.md §4）。交互部分需要终端，见 iron-038 结论中的手工验证。</summary>
-  public class LineEditorTests
-  {
     [TestCase("", true)]
     [TestCase("(+ 1 2)", true)]
     [TestCase("(define (f x)", false)]
@@ -23,27 +23,27 @@ namespace IronScheme.Core.Tests
     [Test]
     public void CompletesSymbols()
     {
-      var (start, library) = LineEditor.CompletionStart("(list-t");
-      Assert.That((start, library), Is.EqualTo((1, false)));
-      (start, library) = LineEditor.CompletionStart("(map car");
-      Assert.That((start, library), Is.EqualTo((5, false)));
+        var (start, library) = LineEditor.CompletionStart("(list-t");
+        Assert.That((start, library), Is.EqualTo((1, false)));
+        (start, library) = LineEditor.CompletionStart("(map car");
+        Assert.That((start, library), Is.EqualTo((5, false)));
     }
 
     [Test]
     public void CompletesLibraryNamesInImport()
     {
-      string s = "(import (rnrs) (srfi :1";
-      var (start, library) = LineEditor.CompletionStart(s);
-      Assert.That(library, Is.True);
-      Assert.That(s.Substring(start), Is.EqualTo("(srfi :1"));
-      // (only (lib ...) ...)：库名在修饰形式里
-      s = "(import (only (rnrs b";
-      (start, library) = LineEditor.CompletionStart(s);
-      Assert.That(library, Is.True);
-      Assert.That(s.Substring(start), Is.EqualTo("(rnrs b"));
-      // 修饰形式本身的名字按符号补全
-      (start, library) = LineEditor.CompletionStart("(import (on");
-      Assert.That(library, Is.True);
+        string s = "(import (rnrs) (ironscheme std li";
+        var (start, library) = LineEditor.CompletionStart(s);
+        Assert.That(library, Is.True);
+        Assert.That(s.Substring(start), Is.EqualTo("(ironscheme std li"));
+        // (only (lib ...) ...)：库名在修饰形式里
+        s = "(import (only (rnrs b";
+        (start, library) = LineEditor.CompletionStart(s);
+        Assert.That(library, Is.True);
+        Assert.That(s.Substring(start), Is.EqualTo("(rnrs b"));
+        // 修饰形式本身的名字按符号补全
+        (start, library) = LineEditor.CompletionStart("(import (on");
+        Assert.That(library, Is.True);
     }
 
     [TestCase("(list-tail ", "list-tail")]
@@ -54,5 +54,4 @@ namespace IronScheme.Core.Tests
     [TestCase("x", null)]
     public void EnclosingHead(string input, string head) =>
       Assert.That(LineEditor.EnclosingHead(input), Is.EqualTo(head));
-  }
 }

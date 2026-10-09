@@ -37,5 +37,9 @@ jobs:
     - name: Install ILVerify
       run: dotnet tool install -g dotnet-ilverify
 
+    - name: Check C# formatting
+      if: matrix.os == 'ubuntu-latest'
+      run: dotnet format IronScheme.slnx --verify-no-changes --severity warning
+
     - name: Build and test
       run: dotnet test

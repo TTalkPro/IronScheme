@@ -2,26 +2,26 @@ using System;
 using System.Linq;
 using System.Text;
 
-namespace IronScheme.Core
+namespace IronScheme.Core;
+
+/// <summary>符号与全局值槽相关的原语。</summary>
+public static class SymbolPrimitives
 {
-  /// <summary>符号与全局值槽相关的原语。</summary>
-  public static class SymbolPrimitives
-  {
-    static Symbol Sym(object o, string who) => Errors.RequiresType<Symbol>(o, who);
+    private static Symbol Sym(object o, string who) => Errors.RequiresType<Symbol>(o, who);
 
     [Primitive("symbol-value")]
     public static object SymbolValue(object symbol)
     {
-      var s = Sym(symbol, "symbol-value");
-      object v = s.Value;
-      return v is Unbound ? Errors.UndefinedError(s) : v;
+        var s = Sym(symbol, "symbol-value");
+        object v = s.Value;
+        return v is Unbound ? Errors.UndefinedError(s) : v;
     }
 
     [Primitive("set-symbol-value!")]
     public static object SetSymbolValue(object symbol, object value)
     {
-      Sym(symbol, "set-symbol-value!").Value = value;
-      return Unspecified.Instance;
+        Sym(symbol, "set-symbol-value!").Value = value;
+        return Unspecified.Instance;
     }
 
     [Primitive("symbol-bound?")]
@@ -30,20 +30,21 @@ namespace IronScheme.Core
     [Primitive("remove-location")]
     public static object RemoveLocation(object symbol)
     {
-      Sym(symbol, "remove-location").Value = Unbound.Instance;
-      return Unspecified.Instance;
+        Sym(symbol, "remove-location").Value = Unbound.Instance;
+        return Unspecified.Instance;
     }
 
     [Primitive("string->symbol", Flags = PrimitiveFlags.Pure)]
     public static object StringToSymbol(object str) => str switch
     {
-      string s => Symbol.Intern(s),
-      StringBuilder sb => Symbol.Intern(sb.ToString()),   // 可变字符串
-      _ => Errors.AssertionViolation("string->symbol", "not a string", str),
+        string s => Symbol.Intern(s),
+        SchemeString ss => Symbol.Intern(ss.ToString()),   // 可变字符串或宽串（iron-055）
+        StringBuilder sb => Symbol.Intern(sb.ToString()),
+        _ => Errors.AssertionViolation("string->symbol", "not a string", str),
     };
 
     [Primitive("symbol->string", Flags = PrimitiveFlags.Pure)]
-    public static object SymbolToString(object symbol) => Sym(symbol, "symbol->string").Name;
+    public static object SymbolToString(object symbol) => SchemeString.Normalize(Sym(symbol, "symbol->string").Name);
 
     [Primitive("gensym")]
     public static object Gensym() => Symbol.Gensym();
@@ -51,10 +52,11 @@ namespace IronScheme.Core
     [Primitive("gensym")]
     public static object Gensym(object name) => name switch
     {
-      string s => Symbol.Gensym(s),
-      StringBuilder sb => Symbol.Gensym(sb.ToString()),
-      Symbol sym => Symbol.Gensym(sym.Ungensym().Name),
-      _ => Errors.AssertionViolation("gensym", "not a string or symbol", name),
+        string s => Symbol.Gensym(s),
+        SchemeString ss => Symbol.Gensym(ss.ToString()),
+        StringBuilder sb => Symbol.Gensym(sb.ToString()),
+        Symbol sym => Symbol.Gensym(sym.Ungensym().Name),
+        _ => Errors.AssertionViolation("gensym", "not a string or symbol", name),
     };
 
     /// <summary>
@@ -68,17 +70,17 @@ namespace IronScheme.Core
     [Primitive("$gensym-scope")]
     public static object GensymScope(object scope)
     {
-      switch (scope)
-      {
-        case Symbol.GensymScope s: Symbol.RestoreGensymScope(s); break;
-        case string s: Symbol.EnterGensymScope(s); break;
-        case Cons c: Symbol.EnterGensymScope(string.Join(".", c.Select(x => x is Symbol y ? y.Name : Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture)))); break;
-        default:
-          if (RT.IsTrue(scope)) return Errors.AssertionViolation("$gensym-scope", "expected a library name, a string, a saved scope or #f", scope);
-          Symbol.RestoreGensymScope(null);
-          break;
-      }
-      return Unspecified.Instance;
+        switch (scope)
+        {
+            case Symbol.GensymScope s: Symbol.RestoreGensymScope(s); break;
+            case string s: Symbol.EnterGensymScope(s); break;
+            case Cons c: Symbol.EnterGensymScope(string.Join(".", c.Select(x => x is Symbol y ? y.Name : Convert.ToString(x, System.Globalization.CultureInfo.InvariantCulture)))); break;
+            default:
+                if (RT.IsTrue(scope)) return Errors.AssertionViolation("$gensym-scope", "expected a library name, a string, a saved scope or #f", scope);
+                Symbol.RestoreGensymScope(null);
+                break;
+        }
+        return Unspecified.Instance;
     }
 
     /// <summary>($gensym-realm) → 当前领域；($gensym-realm 字符串) 设置领域（见 Symbol.GensymRealm）。</summary>
@@ -88,11 +90,10 @@ namespace IronScheme.Core
     [Primitive("$gensym-realm")]
     public static object GensymRealm(object realm)
     {
-      Symbol.GensymRealm = Errors.RequiresType<string>(realm, "$gensym-realm");
-      return Unspecified.Instance;
+        Symbol.GensymRealm = Errors.RequiresType<string>(realm, "$gensym-realm");
+        return Unspecified.Instance;
     }
 
     [Primitive("ungensym", Flags = PrimitiveFlags.Pure)]
     public static object Ungensym(object symbol) => Sym(symbol, "ungensym").Ungensym();
-  }
 }

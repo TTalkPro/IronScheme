@@ -8,128 +8,128 @@
 using System;
 using System.Collections;
 
-namespace IronScheme.Core
-{
-  #region Support classes
+namespace IronScheme.Core;
 
-  [CLSCompliant(false)]
-  public sealed class ReadOnlyHashtable : Hashtable
-  {
+#region Support classes
+
+[CLSCompliant(false)]
+public sealed class ReadOnlyHashtable : Hashtable
+{
     public ReadOnlyHashtable(IDictionary content, IEqualityComparer c)
       : base(c)
     {
-      foreach (DictionaryEntry de in content)
-      {
-        base.Add(de.Key, de.Value);
-      }
+        foreach (DictionaryEntry de in content)
+        {
+            base.Add(de.Key, de.Value);
+        }
     }
 
     public ReadOnlyHashtable(IDictionary content)
     {
-      foreach (DictionaryEntry de in content)
-      {
-        base.Add(de.Key, de.Value);
-      }
+        foreach (DictionaryEntry de in content)
+        {
+            base.Add(de.Key, de.Value);
+        }
     }
 
     public override void Clear()
     {
-      Builtins.AssertionViolation("hashtable-clear!", "hashtable is readonly", this);
+        Builtins.AssertionViolation("hashtable-clear!", "hashtable is readonly", this);
     }
 
     public override void Add(object key, object value)
     {
-      Builtins.AssertionViolation("hashtable-add!", "hashtable is readonly", this);
+        Builtins.AssertionViolation("hashtable-add!", "hashtable is readonly", this);
     }
 
     public override void Remove(object key)
     {
-      Builtins.AssertionViolation("hashtable-remove!", "hashtable is readonly", this);
+        Builtins.AssertionViolation("hashtable-remove!", "hashtable is readonly", this);
     }
 
     public override object this[object key]
     {
-      get
-      {
-        return base[key];
-      }
-      set
-      {
-        Builtins.AssertionViolation("hashtable-set!", "hashtable is readonly", this);
-      }
+        get
+        {
+            return base[key];
+        }
+        set
+        {
+            Builtins.AssertionViolation("hashtable-set!", "hashtable is readonly", this);
+        }
     }
 
     public Procedure HashFunction
     {
-      get
-      {
-        var ec = EqualityComparer as HashComparer;
-        if (ec != null)
+        get
         {
-          return ec.hash;
+            var ec = EqualityComparer as HashComparer;
+            if (ec != null)
+            {
+                return ec._hash;
+            }
+            return null;
         }
-        return null;
-      }
     }
 
     public Procedure EqualityFunction
     {
-      get
-      {
-        var ec = EqualityComparer as HashComparer;
-        if (ec != null)
+        get
         {
-          return ec.equiv;
+            var ec = EqualityComparer as HashComparer;
+            if (ec != null)
+            {
+                return ec._equiv;
+            }
+            return null;
         }
-        return null;
-      }
     }
 
     public override object Clone()
     {
-      if (EqualityComparer is HashComparer)
-      {
-        var ht = new HashtableEx(Count, EqualityComparer);
-        foreach (DictionaryEntry kvp in this)
+        if (EqualityComparer is HashComparer)
         {
-          ht.Add(kvp.Key, kvp.Value);
+            var ht = new HashtableEx(Count, EqualityComparer);
+            foreach (DictionaryEntry kvp in this)
+            {
+                ht.Add(kvp.Key, kvp.Value);
+            }
+            return ht;
         }
-        return ht;
-      }
-      return base.Clone();
+        return base.Clone();
     }
-  }
+}
 
-  [CLSCompliant(false)]
-  public sealed class HashComparer : IEqualityComparer
-  {
-    readonly internal Procedure hash, equiv;
+[CLSCompliant(false)]
+public sealed class HashComparer : IEqualityComparer
+{
+    readonly internal Procedure _hash, _equiv;
 
     public HashComparer(Procedure hash, Procedure equiv)
     {
-      this.hash = hash;
-      this.equiv = equiv;
+        _hash = hash;
+        _equiv = equiv;
     }
 
     bool IEqualityComparer.Equals(object x, object y)
     {
-      return Builtins.IsTrue(equiv.Call(x, y));
+        return Builtins.IsTrue(_equiv.Call(x, y));
     }
 
     int IEqualityComparer.GetHashCode(object obj)
     {
-      var h = hash.Call(obj);
-      if (h is int)
-      {
-        return (int)h;
-      }
-      return Builtins.ConvertToBigInteger(h).ToInt32();
+        var h = _hash.Call(obj);
+        if (h is int)
+        {
+            return (int)h;
+        }
+        return Builtins.ConvertToBigInteger(h).ToInt32();
     }
-  }
+}
 
-  [CLSCompliant(false)]
-  public sealed class HashtableEx : Hashtable
-  {
+[CLSCompliant(false)]
+public sealed class HashtableEx : Hashtable
+{
     public HashtableEx(IEqualityComparer c)
       : base(c)
     {
@@ -142,110 +142,109 @@ namespace IronScheme.Core
 
     public Procedure HashFunction
     {
-      get
-      {
-        return (EqualityComparer as HashComparer).hash;
-      }
+        get
+        {
+            return (EqualityComparer as HashComparer)._hash;
+        }
     }
 
     public Procedure EqualityFunction
     {
-      get
-      {
-        return (EqualityComparer as HashComparer).equiv;
-      }
+        get
+        {
+            return (EqualityComparer as HashComparer)._equiv;
+        }
     }
 
     public Hashtable MakeReadOnly()
     {
-      return new ReadOnlyHashtable(this, EqualityComparer);
+        return new ReadOnlyHashtable(this, EqualityComparer);
     }
 
     public override object Clone()
     {
-      var ht = new HashtableEx(Count, EqualityComparer);
+        var ht = new HashtableEx(Count, EqualityComparer);
 
-      foreach (DictionaryEntry kvp in this)
-      {
-        ht.Add(kvp.Key, kvp.Value);
-      }
+        foreach (DictionaryEntry kvp in this)
+        {
+            ht.Add(kvp.Key, kvp.Value);
+        }
 
-      return ht;
+        return ht;
     }
-  }
+}
 
-  #endregion
+#endregion
 
-  public class Hashtables : Builtins
-  {
-    static readonly object NULL = new object();
+public class Hashtables : Builtins
+{
+    private static readonly object s_null = new object();
 
     public static object ToNull(object o)
     {
-      if (o == null)
-      {
-        return NULL;
-      }
-      return o;
+        if (o == null)
+        {
+            return s_null;
+        }
+        return o;
     }
 
     public static object FromNull(object o)
     {
-      if (o == NULL)
-      {
-        return null;
-      }
-      return o;
+        if (o == s_null)
+        {
+            return null;
+        }
+        return o;
     }
 
 
     [Primitive("hashtable-entries")]
     public static object HashtableEntries(object obj)
     {
-      Hashtable ht = RequiresNotNull<Hashtable>(obj);
-      ArrayList keys = new ArrayList();
-      ArrayList values = new ArrayList();
+        Hashtable ht = RequiresNotNull<Hashtable>(obj);
+        ArrayList keys = new ArrayList();
+        ArrayList values = new ArrayList();
 
-      foreach (DictionaryEntry de in ht)
-      {
-        keys.Add(FromNull(de.Key));
-        values.Add(de.Value);
-      }
-      return Values((object)keys.ToArray(), (object)values.ToArray());
+        foreach (DictionaryEntry de in ht)
+        {
+            keys.Add(FromNull(de.Key));
+            values.Add(de.Value);
+        }
+        return Values((object)keys.ToArray(), (object)values.ToArray());
     }
 
     [Primitive("hashtable-map")]
     public static object HashtableMap(object ht, object proc)
     {
-      Hashtable h = RequiresNotNull<Hashtable>(ht);
-      Procedure c = RequiresNotNull<Procedure>(proc);
+        Hashtable h = RequiresNotNull<Hashtable>(ht);
+        Procedure c = RequiresNotNull<Procedure>(proc);
 
-      object[] result = new object[h.Count];
+        object[] result = new object[h.Count];
 
-      int i = 0;
+        int i = 0;
 
-      foreach (DictionaryEntry de in h)
-      {
-        result[i++] = c.Call(FromNull(de.Key), de.Value);
-      }
+        foreach (DictionaryEntry de in h)
+        {
+            result[i++] = c.Call(FromNull(de.Key), de.Value);
+        }
 
-      return IronScheme.Core.Cons.FromArray(result);
+        return IronScheme.Core.Cons.FromArray(result);
     }
 
     [Primitive("hashtable-for-each")]
     public static object HashtableForEach(object ht, object proc)
     {
-      Hashtable h = RequiresNotNull<Hashtable>(ht);
-      Procedure c = RequiresNotNull<Procedure>(proc);
+        Hashtable h = RequiresNotNull<Hashtable>(ht);
+        Procedure c = RequiresNotNull<Procedure>(proc);
 
-      foreach (DictionaryEntry de in h)
-      {
-        c.Call(FromNull(de.Key), de.Value);
-      }
+        foreach (DictionaryEntry de in h)
+        {
+            c.Call(FromNull(de.Key), de.Value);
+        }
 
-      return Unspecified;
+        return Unspecified;
     }
 
-  }
 }
 

@@ -12,7 +12,7 @@ var app = builder.Build();
 // 初始化 IronScheme：boot 镜像与 lib/ 随 IronScheme.Hosting 复制到输出目录；Scheme 库源码在输出目录的 scheme/
 SchemeRuntime.Initialize(new SchemeRuntimeOptions
 {
-  LibraryPaths = { Path.Combine(AppContext.BaseDirectory, "scheme") },
+    LibraryPaths = { Path.Combine(AppContext.BaseDirectory, "scheme") },
 });
 
 var bookstore = new Bookstore(app.Configuration["Database"] ?? Path.Combine(AppContext.BaseDirectory, "bookstore.db"));
@@ -26,63 +26,63 @@ app.MapGet("/api/books/{id:long}", (long id) =>
 
 app.MapPost("/api/books", (NewBook b) =>
 {
-  try
-  {
-    var book = bookstore.Add(b.Title ?? "", b.Author ?? "", b.Year);
-    return Results.Created($"/api/books/{book!["id"]}", book);
-  }
-  catch (SchemeError e)
-  {
-    // Scheme 中的断言违例（如标题为空）作为 400 返回，消息由 Scheme 打印器给出
-    return Results.BadRequest(new { error = e.Message });
-  }
+    try
+    {
+        var book = bookstore.Add(b.Title ?? "", b.Author ?? "", b.Year);
+        return Results.Created($"/api/books/{book!["id"]}", book);
+    }
+    catch (SchemeError e)
+    {
+        // Scheme 中的断言违例（如标题为空）作为 400 返回，消息由 Scheme 打印器给出
+        return Results.BadRequest(new { error = e.Message });
+    }
 });
 
 app.MapGet("/api/stats", () => Results.Json(bookstore.Stats()));
 
 app.Run();
 
-record NewBook(string? Title, string? Author, int? Year);
+internal record NewBook(string? Title, string? Author, int? Year);
 
 /// <summary>对 Scheme 库 (bookstore) 的包装：取得其导出的过程，调用并把结果转换为可序列化为 JSON 的 C# 值。</summary>
-sealed class Bookstore
+internal sealed class Bookstore
 {
-  // 交互环境与展开器不是线程安全的：对 Scheme 的调用串行进行
-  readonly object gate = new();
-  readonly Procedure allBooks, findBooks, bookById, addBook, stats;
+    // 交互环境与展开器不是线程安全的：对 Scheme 的调用串行进行
+    private readonly object _gate = new();
+    private readonly Procedure _allBooks, _findBooks, _bookById, _addBook, _stats;
 
-  public Bookstore(string database)
-  {
-    // 两种取得过程的方式：Procedure，或强类型委托（参数与返回值按 CLR 互操作规则转换）
-    var openStore = SchemeRuntime.GetFunction<Action<string>>("(bookstore)", "open-store");
-    var initStore = SchemeRuntime.GetFunction<Action>("(bookstore)", "init-store!");
-    allBooks = SchemeRuntime.GetProcedure("(bookstore)", "all-books");
-    findBooks = SchemeRuntime.GetProcedure("(bookstore)", "find-books");
-    bookById = SchemeRuntime.GetProcedure("(bookstore)", "book-by-id");
-    addBook = SchemeRuntime.GetProcedure("(bookstore)", "add-book!");
-    stats = SchemeRuntime.GetProcedure("(bookstore)", "stats");
-    lock (gate)
+    public Bookstore(string database)
     {
-      openStore(database);
-      initStore();
+        // 两种取得过程的方式：Procedure，或强类型委托（参数与返回值按 CLR 互操作规则转换）
+        var openStore = SchemeRuntime.GetFunction<Action<string>>("(bookstore)", "open-store");
+        var initStore = SchemeRuntime.GetFunction<Action>("(bookstore)", "init-store!");
+        _allBooks = SchemeRuntime.GetProcedure("(bookstore)", "all-books");
+        _findBooks = SchemeRuntime.GetProcedure("(bookstore)", "find-books");
+        _bookById = SchemeRuntime.GetProcedure("(bookstore)", "book-by-id");
+        _addBook = SchemeRuntime.GetProcedure("(bookstore)", "add-book!");
+        _stats = SchemeRuntime.GetProcedure("(bookstore)", "stats");
+        lock (_gate)
+        {
+            openStore(database);
+            initStore();
+        }
     }
-  }
 
-  object? Call(Procedure p, params object?[] args)
-  {
-    lock (gate) return SchemeJson.ToClr(SchemeRuntime.Call(p, args!));
-  }
+    private object? Call(Procedure p, params object?[] args)
+    {
+        lock (_gate) return SchemeJson.ToClr(SchemeRuntime.Call(p, args!));
+    }
 
-  public object? Books(string? q) => string.IsNullOrWhiteSpace(q) ? Call(allBooks) : Call(findBooks, q);
+    public object? Books(string? q) => string.IsNullOrWhiteSpace(q) ? Call(_allBooks) : Call(_findBooks, q);
 
-  public Dictionary<string, object?>? Book(long id) => Call(bookById, id) as Dictionary<string, object?>;
+    public Dictionary<string, object?>? Book(long id) => Call(_bookById, id) as Dictionary<string, object?>;
 
-  public Dictionary<string, object?>? Add(string title, string author, int? year) =>
-    Call(addBook, title, author, year.HasValue ? year.Value : false) as Dictionary<string, object?>;
+    public Dictionary<string, object?>? Add(string title, string author, int? year) =>
+      Call(_addBook, title, author, year.HasValue ? year.Value : false) as Dictionary<string, object?>;
 
-  public object? Stats() => Call(stats);
+    public object? Stats() => Call(_stats);
 
-  public const string HomePage = """
+    public const string HomePage = """
     <!doctype html>
     <html><head><meta charset="utf-8"><title>IronScheme bookstore</title>
     <style>body{font-family:system-ui,sans-serif;max-width:44rem;margin:2rem auto;padding:0 1rem}td,th{padding:.2rem .6rem;text-align:left}</style>
@@ -110,23 +110,23 @@ sealed class Bookstore
 /// Scheme 值 → 可序列化为 JSON 的 C# 值：关联表 ((符号 . 值) …) → 字典；其他表与向量 → 列表；
 /// 符号 → 字符串；#f → null（Scheme 侧用 #f 表示 SQL 的 NULL）；空表 → 空列表。
 /// </summary>
-static class SchemeJson
+internal static class SchemeJson
 {
-  public static object? ToClr(object? v) => v switch
-  {
-    null => new List<object?>(),
-    bool b => b ? true : null,
-    Cons c when IsAlist(c) => c.ToDictionary(),
-    Cons c => c.Select(ToClr).ToList(),
-    object[] vec => vec.Select(ToClr).ToList(),
-    Symbol s => s.Name,
-    System.Text.StringBuilder sb => sb.ToString(),
-    int or long or double or string => v,
-    _ => v.ToString(),
-  };
+    public static object? ToClr(object? v) => v switch
+    {
+        null => new List<object?>(),
+        bool b => b ? true : null,
+        Cons c when IsAlist(c) => c.ToDictionary(),
+        Cons c => c.Select(ToClr).ToList(),
+        object[] vec => vec.Select(ToClr).ToList(),
+        Symbol s => s.Name,
+        System.Text.StringBuilder sb => sb.ToString(),
+        int or long or double or string => v,
+        _ => v.ToString(),
+    };
 
-  static bool IsAlist(Cons c) => c.All(x => x is Cons p && p.car is Symbol);
+    private static bool IsAlist(Cons c) => c.All(x => x is Cons p && p.car is Symbol);
 
-  static Dictionary<string, object?> ToDictionary(this Cons c) =>
-    c.Cast<Cons>().ToDictionary(p => ((Symbol)p.car).Name, p => ToClr(p.cdr));
+    private static Dictionary<string, object?> ToDictionary(this Cons c) =>
+      c.Cast<Cons>().ToDictionary(p => ((Symbol)p.car).Name, p => ToClr(p.cdr));
 }

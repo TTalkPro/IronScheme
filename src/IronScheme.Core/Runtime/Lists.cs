@@ -5,224 +5,215 @@
  * See docs/license.txt. */
 #endregion
 
-using System.Reflection;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 
-namespace IronScheme.Core
+namespace IronScheme.Core;
+
+public partial class Builtins
 {
-  public partial class Builtins
-  {
     [Primitive("pair?", Flags = PrimitiveFlags.Pure, Inline = "pair?")]
     public static object IsPair(object arg1)
     {
-      return GetBool(arg1 is Cons);
+        return GetBool(arg1 is Cons);
     }
 
     [Primitive("null?", Flags = PrimitiveFlags.Pure, Inline = "null?")]
     public static object IsNull(object arg1)
     {
-      return GetBool(arg1 == null);
+        return GetBool(arg1 == null);
     }
 
     [Primitive("list-prim")]
     public static object List(params object[] args)
     {
-      return IronScheme.Core.Cons.FromArray(args);
+        return IronScheme.Core.Cons.FromArray(args);
     }
 
     [Primitive("list-prim")]
     public static object List()
     {
-      return null;
+        return null;
     }
 
     [Primitive("list-prim")]
     public static object List(object arg1)
     {
-      return new Cons(arg1);
+        return new Cons(arg1);
     }
 
     [Primitive("list-prim")]
     public static object List(object arg1, object arg2)
     {
-      return new Cons(arg1, new Cons(arg2));
+        return new Cons(arg1, new Cons(arg2));
     }
 
     [Primitive("list-prim")]
     public static object List(object arg1, object arg2, object arg3)
     {
-      return new Cons(arg1, new Cons(arg2, new Cons(arg3)));
+        return new Cons(arg1, new Cons(arg2, new Cons(arg3)));
     }
 
     [Primitive("list-prim")]
     public static object List(object arg1, object arg2, object arg3, object arg4)
     {
-      return new Cons(arg1, new Cons(arg2, new Cons(arg3, new Cons(arg4))));
+        return new Cons(arg1, new Cons(arg2, new Cons(arg3, new Cons(arg4))));
     }
 
     [Primitive("list-prim")]
     public static object List(object arg1, object arg2, object arg3, object arg4, object arg5)
     {
-      return new Cons(arg1, new Cons(arg2, new Cons(arg3, new Cons(arg4, new Cons(arg5)))));
+        return new Cons(arg1, new Cons(arg2, new Cons(arg3, new Cons(arg4, new Cons(arg5)))));
     }
 
     // overload, no export, bad me!
     public static Cons Cons(object car)
     {
-      return new Cons(car);
+        return new Cons(car);
     }
 
     [Primitive("cons", Inline = "cons")]
     public static object Cons(object car, object cdr)
     {
-      return new Cons(car, cdr);
+        return new Cons(car, cdr);
     }
 
     internal static object First(object args)
     {
-      return Car(args);
+        return Car(args);
     }
 
     internal static object Second(object args)
     {
-      return Car(Cdr(args));
+        return Car(Cdr(args));
     }
 
     internal static object Third(object args)
     {
-      return Car(Cdr(Cdr(args)));
+        return Car(Cdr(Cdr(args)));
     }
 
     internal static Cons LastPair(object args)
     {
-      Cons c = Requires<IronScheme.Core.Cons>(args);
-      while (c.cdr is Cons)
-      {
-        c = c.cdr as Cons;
-      }
-      return c;
+        Cons c = Requires<IronScheme.Core.Cons>(args);
+        while (c.cdr is Cons)
+        {
+            c = c.cdr as Cons;
+        }
+        return c;
     }
-    
+
     [Primitive("car", Inline = "car")]
     public static object Car(object args)
     {
-      Cons c = args as Cons;
-      if (c == null)
-      {
-        AssertionViolation("car", "not a pair", args);        
-      }
-      return c.car;
+        Cons c = args as Cons;
+        if (c == null)
+        {
+            AssertionViolation("car", "not a pair", args);
+        }
+        return c.car;
     }
 
     [Primitive("cdr", Inline = "cdr")]
     public static object Cdr(object args)
     {
-      Cons c = args as Cons;
-      if (c == null)
-      {
-        AssertionViolation("cdr", "not a pair", args);
-      }
-      return c.cdr;
+        Cons c = args as Cons;
+        if (c == null)
+        {
+            AssertionViolation("cdr", "not a pair", args);
+        }
+        return c.cdr;
     }
 
     public static object Append(object arg1, object arg2)
     {
-      if (arg1 == null)
-      {
-        return arg2;
-      }
-      if (arg2 == null)
-      {
-        return arg1;
-      }
-      Cons c = arg1 as Cons;
-      do
-      {
-        if (c.cdr == null)
+        if (arg1 == null)
         {
-          break;
+            return arg2;
         }
-        c = c.cdr as Cons;
-      }
-      while (true);
+        if (arg2 == null)
+        {
+            return arg1;
+        }
+        Cons c = arg1 as Cons;
+        do
+        {
+            if (c.cdr == null)
+            {
+                break;
+            }
+            c = c.cdr as Cons;
+        }
+        while (true);
 
-      c.cdr = arg2;
+        c.cdr = arg2;
 
-      return arg1;
+        return arg1;
     }
 
     [Primitive("reverse!")]
     public static object NReverse(object lst)
     {
-      Cons list = lst as Cons;
+        Cons list = lst as Cons;
 
-      if (list == null)
-      {
-        return null;
-      }
-
-      Cons prev = null, next = null;
-
-      while (true)
-      {
-        next = list.cdr as Cons;
-        list.cdr = prev;
-
-        if (next == null)
+        if (list == null)
         {
-          return list;
+            return null;
         }
 
-        prev = list;
-        list = next;
-      }
+        Cons prev = null, next = null;
+
+        while (true)
+        {
+            next = list.cdr as Cons;
+            list.cdr = prev;
+
+            if (next == null)
+            {
+                return list;
+            }
+
+            prev = list;
+            list = next;
+        }
     }
 
     internal static Cons ToImproper(Cons c)
     {
-      Cons i = c;
-      Cons j = null;
+        Cons i = c;
+        Cons j = null;
 
-      while (i.cdr != null)
-      {
-        j = i;
-        i = i.cdr as Cons;
-        if (i == null)
+        while (i.cdr != null)
         {
-          return c; // improper already
+            j = i;
+            i = i.cdr as Cons;
+            if (i == null)
+            {
+                return c; // improper already
+            }
         }
-      }
 
-      j.cdr = i.car;
-      return c;
+        j.cdr = i.car;
+        return c;
     }
 
-    public static object StringToList(string s)
+    /// <summary>字符串 → 字符表（iron-055：按码点；System.String 不含代理码元，但 .NET 来的串仍按代理对组合）。</summary>
+    public static object StringToList(object s)
     {
-      var chars = new List<object>();
-
-      char prev = '\0';
-
-      foreach (var c in s)
-      {
-        if (char.IsHighSurrogate(c))
+        var chars = new List<object>();
+        if (s is SchemeString ss)
         {
-          prev = c;
-        }
-        else if (char.IsLowSurrogate(c) && char.IsHighSurrogate(prev))
-        {
-          chars.Add(new SchemeChar(char.ConvertToUtf32(prev, c)));
+            for (int i = 0; i < ss.Length; i++) chars.Add(CharObject(ss.CodePointAt(i)));
         }
         else
         {
-          chars.Add(c);
-          prev = '\0';
+            foreach (int cp in SchemeString.CodePoints(s.ToString())) chars.Add(CharObject(cp));
         }
-      }
-
-      return IronScheme.Core.Cons.FromList(chars);
+        return IronScheme.Core.Cons.FromList(chars);
     }
-  }
+
+    /// <summary>码点 → Scheme 字符对象（BMP 内为 char，之外为 SchemeChar）。</summary>
+    public static object CharObject(int cp) => cp < 0x10000 ? (object)(char)cp : new SchemeChar(cp);
 }

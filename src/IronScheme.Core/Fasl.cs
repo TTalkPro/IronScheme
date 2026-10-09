@@ -5,17 +5,17 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using BigInteger = Oyster.Math.IntX;
 
-namespace IronScheme.Core
+namespace IronScheme.Core;
+
+/// <summary>
+/// 二进制 fasl（designs/04-lcil-and-emitter.md §3）：编译产物的常量表与 serialize-port 的格式。
+/// 发射器（IronScheme.Emit.FaslEncoder）把中立编码写成同一格式；这里负责读回对象，并能把对象直接写出。
+/// 符号按名字驻留；记录类型按 uid 取回已登记的同一 RTD；def / ref 表示共享与环。
+/// </summary>
+public static class Fasl
 {
-  /// <summary>
-  /// 二进制 fasl（designs/04-lcil-and-emitter.md §3）：编译产物的常量表与 serialize-port 的格式。
-  /// 发射器（IronScheme.Emit.FaslEncoder）把中立编码写成同一格式；这里负责读回对象，并能把对象直接写出。
-  /// 符号按名字驻留；记录类型按 uid 取回已登记的同一 RTD；def / ref 表示共享与环。
-  /// </summary>
-  public static class Fasl
-  {
     public const byte Version = 1;
-    static readonly byte[] Magic = Encoding.ASCII.GetBytes("ISFASL");
+    private static readonly byte[] s_magic = Encoding.ASCII.GetBytes("ISFASL");
 
     // 标签（与 IronScheme.Emit.FaslEncoder 一致）
     public const byte Nil = 0x00, True = 0x01, False = 0x02, Unspec = 0x03, EofTag = 0x04,
@@ -33,180 +33,180 @@ namespace IronScheme.Core
     /// <summary>常量表：发射器把 Deflate 压缩的 fasl 作为初始化数据嵌入程序集，类型初始化器取出后调用本方法。</summary>
     public static object[] ReadPackedTable(byte[] packed)
     {
-      using var z = new System.IO.Compression.DeflateStream(new MemoryStream(packed), System.IO.Compression.CompressionMode.Decompress);
-      using var r = new BinaryReader(z);
-      return (object[])Read(r);
+        using var z = new System.IO.Compression.DeflateStream(new MemoryStream(packed), System.IO.Compression.CompressionMode.Decompress);
+        using var r = new BinaryReader(z);
+        return (object[])Read(r);
     }
 
     public static object Read(byte[] data)
     {
-      using var r = new BinaryReader(new MemoryStream(data));
-      return Read(r);
+        using var r = new BinaryReader(new MemoryStream(data));
+        return Read(r);
     }
 
     public static object Read(BinaryReader r)
     {
-      var magic = r.ReadBytes(Magic.Length);
-      if (!magic.AsSpan().SequenceEqual(Magic)) throw new InvalidDataException("not a fasl stream");
-      byte v = r.ReadByte();
-      if (v != Version) throw new InvalidDataException("unsupported fasl version " + v);
-      return new Reader(r).Object();
+        var magic = r.ReadBytes(s_magic.Length);
+        if (!magic.AsSpan().SequenceEqual(s_magic)) throw new InvalidDataException("not a fasl stream");
+        byte v = r.ReadByte();
+        if (v != Version) throw new InvalidDataException("unsupported fasl version " + v);
+        return new Reader(r).Object();
     }
 
-    sealed class Reader
+    private sealed class Reader
     {
-      readonly BinaryReader r;
-      readonly Dictionary<int, object> defs = new Dictionary<int, object>();
-      int pendingDef = -1;
+        private readonly BinaryReader _r;
+        private readonly Dictionary<int, object> _defs = new Dictionary<int, object>();
+        private int _pendingDef = -1;
 
-      public Reader(BinaryReader r) { this.r = r; }
+        public Reader(BinaryReader r) { _r = r; }
 
-      int Count() => r.Read7BitEncodedInt();
+        private int Count() => _r.Read7BitEncodedInt();
 
-      string String()
-      {
-        int n = Count();
-        var cs = new char[n];
-        for (int i = 0; i < n; i++) cs[i] = (char)r.ReadUInt16();
-        return new string(cs);
-      }
-
-      // 复合对象在读子项之前登记，环才能指回自己
-      T Register<T>(int def, T obj)
-      {
-        if (def >= 0) defs[def] = obj;
-        return obj;
-      }
-
-      public object Object()
-      {
-        int def = pendingDef;
-        pendingDef = -1;
-        byte tag = r.ReadByte();
-        switch (tag)
+        private string String()
         {
-          case Nil: return Register<object>(def, null);
-          case True: return Register(def, RT.True);
-          case False: return Register(def, RT.False);
-          case Unspec: return Register<object>(def, Unspecified.Instance);
-          case EofTag: return Register(def, Builtins.EofObject());
-          case Fix: return Register(def, RT.Box(r.ReadInt32()));
-          case Big:
-          case Rat: return Register(def, Builtins.ParseNumber(String()) ?? throw new InvalidDataException("bad number in fasl"));
-          case Flo: return Register<object>(def, BitConverter.Int64BitsToDouble(r.ReadInt64()));
-          case Cpx:
-          {
-            var re = Object();
-            var im = Object();
-            return Register(def, Builtins.MakeRectangular(re, im));
-          }
-          case Chr:
-          {
-            int cp = r.ReadInt32();
-            return Register<object>(def, cp < 0x10000 ? (object)(char)cp : new SchemeChar(cp));
-          }
-          case Str: return Register<object>(def, String());
-          case MStr: return Register<object>(def, new StringBuilder(String()));
-          case Sym: return Register<object>(def, Symbol.Intern(String()));
-          case Pair:
-          {
-            var c = Register(def, new Cons(null, null));
-            c.car = Object();
-            c.cdr = Object();
-            return c;
-          }
-          case List:
-          {
             int n = Count();
-            if (n == 0) return Register(def, Object());
-            var head = Register(def, new Cons(null, null));
-            var c = head;
-            for (int i = 0; i < n; i++)
-            {
-              if (i > 0) { var next = new Cons(null, null); c.cdr = next; c = next; }
-              c.car = Object();
-            }
-            c.cdr = Object();
-            return head;
-          }
-          case Vec:
-          {
-            var v = Register(def, new object[Count()]);
-            for (int i = 0; i < v.Length; i++) v[i] = Object();
-            return v;
-          }
-          case Bv:
-          {
-            int n = Count();
-            return Register<object>(def, r.ReadBytes(n));
-          }
-          case Rtd:
-          {
-            string name = String();
-            object uid = Object();
-            object parent = Object();
-            bool @sealed = r.ReadByte() != 0, opaque = r.ReadByte() != 0;
-            var fields = new object[Count()];
-            for (int i = 0; i < fields.Length; i++)
-            {
-              bool mutable = r.ReadByte() != 0;
-              fields[i] = Cons.FromArray(Symbol.Intern(mutable ? "mutable" : "immutable"), Symbol.Intern(String()));
-            }
-            // 非生成性：按名字与 uid 取回已登记的同一 RTD；生成性：新建（同一 fasl 内经 def/ref 共享）
-            return Register(def, Records.MakeRecordTypeDescriptor(Symbol.Intern(name), parent, uid, RT.Bool(@sealed), RT.Bool(opaque), fields));
-          }
-          case Rec:
-          {
-            var rtd = Object() as RecordTypeDescriptor ?? throw new InvalidDataException("record without type descriptor in fasl");
-            var fields = new object[Count()];
-            var rec = Register(def, rtd.Instantiate(fields));
-            for (int i = 0; i < fields.Length; i++) fields[i] = Object();
-            return rec;
-          }
-          case Ann:
-          {
-            var expr = Object();
-            var source = Object();
-            var stripped = Object();
-            return Register(def, Builtins.MakeAnnotation(expr, source, stripped));
-          }
-          case EqHt:
-          {
-            // eq 哈希表（make-eq-hashtable 即 System.Collections.Hashtable）；'() 键按 Hashtables 的约定包装
-            int n = Count();
-            var ht = Register(def, new System.Collections.Hashtable(Math.Max(n, 1)));
-            for (int i = 0; i < n; i++)
-            {
-              var k = Object();
-              ht[Hashtables.ToNull(k)] = Object();
-            }
-            return ht;
-          }
-          case Rcd:
-          {
-            // 记录构造描述符（没有 protocol 的）：nanopass 把展开时创建的 RCD 作为常量写进生成的代码
-            var rtd = Object();
-            var parent = Object();
-            return Register(def, Records.MakeRecordConstructorDescriptor(rtd, parent, RT.False));
-          }
-          case Cnd:
-          {
-            // 复合条件：由简单条件组成，构造时就要有组成部分，所以读完再登记（组成部分不会指回它）
-            var parts = new object[Count()];
-            for (int i = 0; i < parts.Length; i++) parts[i] = Object();
-            return Register(def, new CompoundCondition(parts));
-          }
-          case Def:
-            pendingDef = Count();
-            return Object();
-          case Ref:
-          {
-            int n = Count();
-            return defs.TryGetValue(n, out var o) ? o : throw new InvalidDataException("fasl reference to undefined object " + n);
-          }
-          default: throw new InvalidDataException($"bad fasl tag 0x{tag:X2}");
+            var cs = new char[n];
+            for (int i = 0; i < n; i++) cs[i] = (char)_r.ReadUInt16();
+            return new string(cs);
         }
-      }
+
+        // 复合对象在读子项之前登记，环才能指回自己
+        private T Register<T>(int def, T obj)
+        {
+            if (def >= 0) _defs[def] = obj;
+            return obj;
+        }
+
+        public object Object()
+        {
+            int def = _pendingDef;
+            _pendingDef = -1;
+            byte tag = _r.ReadByte();
+            switch (tag)
+            {
+                case Nil: return Register<object>(def, null);
+                case True: return Register(def, RT.True);
+                case False: return Register(def, RT.False);
+                case Unspec: return Register<object>(def, Unspecified.Instance);
+                case EofTag: return Register(def, Builtins.EofObject());
+                case Fix: return Register(def, RT.Box(_r.ReadInt32()));
+                case Big:
+                case Rat: return Register(def, Builtins.ParseNumber(String()) ?? throw new InvalidDataException("bad number in fasl"));
+                case Flo: return Register<object>(def, BitConverter.Int64BitsToDouble(_r.ReadInt64()));
+                case Cpx:
+                    {
+                        var re = Object();
+                        var im = Object();
+                        return Register(def, Builtins.MakeRectangular(re, im));
+                    }
+                case Chr:
+                    {
+                        int cp = _r.ReadInt32();
+                        return Register<object>(def, cp < 0x10000 ? (object)(char)cp : new SchemeChar(cp));
+                    }
+                case Str: return Register<object>(def, SchemeString.Normalize(String()));   // 含 BMP 外字符的为宽串（iron-055）
+                case MStr: return Register<object>(def, SchemeString.MutableFrom(String()));
+                case Sym: return Register<object>(def, Symbol.Intern(String()));
+                case Pair:
+                    {
+                        var c = Register(def, new Cons(null, null));
+                        c.car = Object();
+                        c.cdr = Object();
+                        return c;
+                    }
+                case List:
+                    {
+                        int n = Count();
+                        if (n == 0) return Register(def, Object());
+                        var head = Register(def, new Cons(null, null));
+                        var c = head;
+                        for (int i = 0; i < n; i++)
+                        {
+                            if (i > 0) { var next = new Cons(null, null); c.cdr = next; c = next; }
+                            c.car = Object();
+                        }
+                        c.cdr = Object();
+                        return head;
+                    }
+                case Vec:
+                    {
+                        var v = Register(def, new object[Count()]);
+                        for (int i = 0; i < v.Length; i++) v[i] = Object();
+                        return v;
+                    }
+                case Bv:
+                    {
+                        int n = Count();
+                        return Register<object>(def, _r.ReadBytes(n));
+                    }
+                case Rtd:
+                    {
+                        string name = String();
+                        object uid = Object();
+                        object parent = Object();
+                        bool @sealed = _r.ReadByte() != 0, opaque = _r.ReadByte() != 0;
+                        var fields = new object[Count()];
+                        for (int i = 0; i < fields.Length; i++)
+                        {
+                            bool mutable = _r.ReadByte() != 0;
+                            fields[i] = Cons.FromArray(Symbol.Intern(mutable ? "mutable" : "immutable"), Symbol.Intern(String()));
+                        }
+                        // 非生成性：按名字与 uid 取回已登记的同一 RTD；生成性：新建（同一 fasl 内经 def/ref 共享）
+                        return Register(def, Records.MakeRecordTypeDescriptor(Symbol.Intern(name), parent, uid, RT.Bool(@sealed), RT.Bool(opaque), fields));
+                    }
+                case Rec:
+                    {
+                        var rtd = Object() as RecordTypeDescriptor ?? throw new InvalidDataException("record without type descriptor in fasl");
+                        var fields = new object[Count()];
+                        var rec = Register(def, rtd.Instantiate(fields));
+                        for (int i = 0; i < fields.Length; i++) fields[i] = Object();
+                        return rec;
+                    }
+                case Ann:
+                    {
+                        var expr = Object();
+                        var source = Object();
+                        var stripped = Object();
+                        return Register(def, Builtins.MakeAnnotation(expr, source, stripped));
+                    }
+                case EqHt:
+                    {
+                        // eq 哈希表（make-eq-hashtable 即 System.Collections.Hashtable）；'() 键按 Hashtables 的约定包装
+                        int n = Count();
+                        var ht = Register(def, new System.Collections.Hashtable(Math.Max(n, 1)));
+                        for (int i = 0; i < n; i++)
+                        {
+                            var k = Object();
+                            ht[Hashtables.ToNull(k)] = Object();
+                        }
+                        return ht;
+                    }
+                case Rcd:
+                    {
+                        // 记录构造描述符（没有 protocol 的）：nanopass 把展开时创建的 RCD 作为常量写进生成的代码
+                        var rtd = Object();
+                        var parent = Object();
+                        return Register(def, Records.MakeRecordConstructorDescriptor(rtd, parent, RT.False));
+                    }
+                case Cnd:
+                    {
+                        // 复合条件：由简单条件组成，构造时就要有组成部分，所以读完再登记（组成部分不会指回它）
+                        var parts = new object[Count()];
+                        for (int i = 0; i < parts.Length; i++) parts[i] = Object();
+                        return Register(def, new CompoundCondition(parts));
+                    }
+                case Def:
+                    _pendingDef = Count();
+                    return Object();
+                case Ref:
+                    {
+                        int n = Count();
+                        return _defs.TryGetValue(n, out var o) ? o : throw new InvalidDataException("fasl reference to undefined object " + n);
+                    }
+                default: throw new InvalidDataException($"bad fasl tag 0x{tag:X2}");
+            }
+        }
     }
 
     #endregion
@@ -216,17 +216,17 @@ namespace IronScheme.Core
     [Primitive("serialize-port")]
     public static object SerializePort(object obj, object port)
     {
-      var stream = Errors.RequiresType<Stream>(port, "serialize-port");
-      using (var w = new BinaryWriter(stream, Encoding.UTF8, true)) Write(w, obj);
-      return Unspecified.Instance;
+        var stream = Errors.RequiresType<Stream>(port, "serialize-port");
+        using (var w = new BinaryWriter(stream, Encoding.UTF8, true)) Write(w, obj);
+        return Unspecified.Instance;
     }
 
     [Primitive("deserialize-port")]
     public static object DeserializePort(object port)
     {
-      var stream = Errors.RequiresType<Stream>(port, "deserialize-port");
-      using var r = new BinaryReader(stream, Encoding.UTF8, true);
-      return Read(r);
+        var stream = Errors.RequiresType<Stream>(port, "deserialize-port");
+        using var r = new BinaryReader(stream, Encoding.UTF8, true);
+        return Read(r);
     }
 
     #endregion
@@ -235,168 +235,168 @@ namespace IronScheme.Core
 
     public static byte[] Write(object obj)
     {
-      var ms = new MemoryStream();
-      using (var w = new BinaryWriter(ms, Encoding.UTF8, true)) Write(w, obj);
-      return ms.ToArray();
+        var ms = new MemoryStream();
+        using (var w = new BinaryWriter(ms, Encoding.UTF8, true)) Write(w, obj);
+        return ms.ToArray();
     }
 
     public static void Write(BinaryWriter w, object obj)
     {
-      w.Write(Magic);
-      w.Write(Version);
-      new Writer(w).Run(obj);
+        w.Write(s_magic);
+        w.Write(Version);
+        new Writer(w).Run(obj);
     }
 
     /// <summary>可共享的对象：eq? 身份有意义，出现多次时用 def/ref。</summary>
-    static bool Shareable(object o) =>
+    private static bool Shareable(object o) =>
       o is Cons || o is object[] || o is byte[] || o is Record || o is RecordTypeDescriptor || o is RecordConstructorDescriptor
-      || o is StringBuilder || o is Annotation || IsEqHashtable(o);
+      || o is SchemeString || o is StringBuilder || o is Annotation || IsEqHashtable(o);
 
     /// <summary>只支持 eq 哈希表（类型恰为 Hashtable）；带自定义哈希函数的表无法序列化。</summary>
-    static bool IsEqHashtable(object o) => o != null && o.GetType() == typeof(System.Collections.Hashtable);
+    private static bool IsEqHashtable(object o) => o != null && o.GetType() == typeof(System.Collections.Hashtable);
 
-    sealed class Writer
+    private sealed class Writer
     {
-      readonly BinaryWriter w;
-      readonly Dictionary<object, int> counts = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
-      readonly Dictionary<object, int> ids = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+        private readonly BinaryWriter _w;
+        private readonly Dictionary<object, int> _counts = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<object, int> _ids = new Dictionary<object, int>(ReferenceEqualityComparer.Instance);
 
-      public Writer(BinaryWriter w) { this.w = w; }
+        public Writer(BinaryWriter w) { _w = w; }
 
-      public void Run(object root)
-      {
-        Count(root);
-        Object(root);
-      }
-
-      // 第一遍：统计可共享对象出现的次数（已见过的不再深入，所以环也能结束）
-      void Count(object o)
-      {
-        while (true)
+        public void Run(object root)
         {
-          if (!Shareable(o)) return;
-          counts.TryGetValue(o, out int n);
-          counts[o] = n + 1;
-          if (n > 0) return;
-          switch (o)
-          {
-            case Cons c: Count(c.car); o = c.cdr; continue;   // 沿表尾循环，长表不递归
-            case object[] v: foreach (var e in v) Count(e); return;
-            case CompoundCondition cc: foreach (var e in cc.conds) Count(e); return;
-            case RecordConstructorDescriptor rcd: Count(rcd.type); Count(rcd.parent); return;
-            case Record r: Count(r.Rtd); foreach (var e in r.Fields) Count(e); return;
-            case RecordTypeDescriptor t: Count(t.uid); Count(t.Parent); return;
-            case Annotation a: Count(a.expression); Count(a.source); Count(a.stripped); return;
-            case System.Collections.Hashtable h:
-              foreach (System.Collections.DictionaryEntry e in h) { Count(Hashtables.FromNull(e.Key)); Count(e.Value); }
-              return;
-            default: return;
-          }
+            Count(root);
+            Object(root);
         }
-      }
 
-      bool Shared(object o) => counts.TryGetValue(o, out int n) && n > 1;
-
-      void String(string s)
-      {
-        w.Write7BitEncodedInt(s.Length);
-        foreach (char c in s) w.Write((ushort)c);
-      }
-
-      void Object(object o)
-      {
-        if (Shareable(o))
+        // 第一遍：统计可共享对象出现的次数（已见过的不再深入，所以环也能结束）
+        private void Count(object o)
         {
-          if (ids.TryGetValue(o, out int id)) { w.Write(Ref); w.Write7BitEncodedInt(id); return; }
-          if (Shared(o))
-          {
-            id = ids.Count;
-            ids[o] = id;
-            w.Write(Def);
-            w.Write7BitEncodedInt(id);
-          }
+            while (true)
+            {
+                if (!Shareable(o)) return;
+                _counts.TryGetValue(o, out int n);
+                _counts[o] = n + 1;
+                if (n > 0) return;
+                switch (o)
+                {
+                    case Cons c: Count(c.car); o = c.cdr; continue;   // 沿表尾循环，长表不递归
+                    case object[] v: foreach (var e in v) Count(e); return;
+                    case CompoundCondition cc: foreach (var e in cc._conds) Count(e); return;
+                    case RecordConstructorDescriptor rcd: Count(rcd.type); Count(rcd.parent); return;
+                    case Record r: Count(r.Rtd); foreach (var e in r.Fields) Count(e); return;
+                    case RecordTypeDescriptor t: Count(t.uid); Count(t.Parent); return;
+                    case Annotation a: Count(a.expression); Count(a.source); Count(a.stripped); return;
+                    case System.Collections.Hashtable h:
+                        foreach (System.Collections.DictionaryEntry e in h) { Count(Hashtables.FromNull(e.Key)); Count(e.Value); }
+                        return;
+                    default: return;
+                }
+            }
         }
-        switch (o)
+
+        private bool Shared(object o) => _counts.TryGetValue(o, out int n) && n > 1;
+
+        private void String(string s)
         {
-          case null: w.Write(Nil); return;
-          case bool b: w.Write(b ? True : False); return;
-          case Unspecified _: w.Write(Unspec); return;
-          case int i: w.Write(Fix); w.Write(i); return;
-          case BigInteger _:
-          case Fraction _: w.Write(o is Fraction ? Rat : Big); String(o.ToString()); return;   // 十进制，"n/d"；Fraction 的 IConvertible.ToString 未实现
-          case double d: w.Write(Flo); w.Write(BitConverter.DoubleToInt64Bits(d)); return;
-          case ComplexFraction cf: w.Write(Cpx); Object(Builtins.ToExact(cf.Real)); Object(Builtins.ToExact(cf.Imag)); return;
-          case Complex64 cd: w.Write(Cpx); Object(cd.Real); Object(cd.Imag); return;
-          case char c: w.Write(Chr); w.Write((int)c); return;
-          case SchemeChar sc: w.Write(Chr); w.Write(sc.Value); return;
-          case string s: w.Write(Str); String(s); return;
-          case StringBuilder sb: w.Write(MStr); String(sb.ToString()); return;
-          case Symbol sym: w.Write(Sym); String(sym.Name); return;
-          case Cons c:
-          {
-            // 表尾中未被共享的序对连成一段，用 List 写出
-            var items = new List<object> { c.car };
-            object tail = c.cdr;
-            while (tail is Cons next && !Shared(next)) { items.Add(next.car); tail = next.cdr; }
-            if (items.Count == 1) { w.Write(Pair); Object(c.car); Object(c.cdr); return; }
-            w.Write(List);
-            w.Write7BitEncodedInt(items.Count);
-            foreach (var e in items) Object(e);
-            Object(tail);
-            return;
-          }
-          case object[] v: w.Write(Vec); w.Write7BitEncodedInt(v.Length); foreach (var e in v) Object(e); return;
-          case byte[] bv: w.Write(Bv); w.Write7BitEncodedInt(bv.Length); w.Write(bv); return;
-          case RecordTypeDescriptor t:
-            w.Write(Rtd);
-            String(t.Name);
-            Object(t.generative && !(t.uid is string) ? RT.False : t.uid);
-            Object((object)t.Parent ?? RT.False);
-            w.Write((byte)(t.@sealed ? 1 : 0));
-            w.Write((byte)(t.opaque ? 1 : 0));
-            w.Write7BitEncodedInt(t.Fields.Length);
-            foreach (var f in t.Fields) { w.Write((byte)(f.mutable ? 1 : 0)); String(f.Name); }
-            return;
-          case RecordConstructorDescriptor rcd when rcd.protocol == null:
-            w.Write(Rcd);
-            Object(rcd.type);
-            Object((object)rcd.parent ?? RT.False);
-            return;
-          case CompoundCondition cc:
-            w.Write(Cnd);
-            w.Write7BitEncodedInt(cc.conds.Length);
-            foreach (var e in cc.conds) Object(e);
-            return;
-          case Record r when r.Rtd != null:
-            w.Write(Rec);
-            Object(r.Rtd);
-            w.Write7BitEncodedInt(r.Fields.Length);
-            foreach (var e in r.Fields) Object(e);
-            return;
-          case Annotation a: w.Write(Ann); Object(a.expression); Object(a.source); Object(a.stripped); return;
-          case System.Collections.Hashtable h when IsEqHashtable(h):
-          {
-            w.Write(EqHt);
-            w.Write7BitEncodedInt(h.Count);
-            foreach (var (k, v) in SortedEntries(h)) { Object(k); Object(v); }
-            return;
-          }
+            _w.Write7BitEncodedInt(s.Length);
+            foreach (char c in s) _w.Write((ushort)c);
         }
-        if (ReferenceEquals(o, Builtins.EofObject())) { w.Write(EofTag); return; }
-        Errors.AssertionViolation("fasl-write", "cannot serialize object", o);
-      }
+
+        private void Object(object o)
+        {
+            if (Shareable(o))
+            {
+                if (_ids.TryGetValue(o, out int id)) { _w.Write(Ref); _w.Write7BitEncodedInt(id); return; }
+                if (Shared(o))
+                {
+                    id = _ids.Count;
+                    _ids[o] = id;
+                    _w.Write(Def);
+                    _w.Write7BitEncodedInt(id);
+                }
+            }
+            switch (o)
+            {
+                case null: _w.Write(Nil); return;
+                case bool b: _w.Write(b ? True : False); return;
+                case Unspecified _: _w.Write(Unspec); return;
+                case int i: _w.Write(Fix); _w.Write(i); return;
+                case BigInteger _:
+                case Fraction _: _w.Write(o is Fraction ? Rat : Big); String(o.ToString()); return;   // 十进制，"n/d"；Fraction 的 IConvertible.ToString 未实现
+                case double d: _w.Write(Flo); _w.Write(BitConverter.DoubleToInt64Bits(d)); return;
+                case ComplexFraction cf: _w.Write(Cpx); Object(Builtins.ToExact(cf.Real)); Object(Builtins.ToExact(cf.Imag)); return;
+                case Complex64 cd: _w.Write(Cpx); Object(cd.Real); Object(cd.Imag); return;
+                case char c: _w.Write(Chr); _w.Write((int)c); return;
+                case SchemeChar sc: _w.Write(Chr); _w.Write(sc.Value); return;
+                case string s: _w.Write(Str); String(s); return;
+                case SchemeString ss: _w.Write(ss.IsMutable ? MStr : Str); String(ss.ToString()); return;
+                case StringBuilder sb: _w.Write(MStr); String(sb.ToString()); return;
+                case Symbol sym: _w.Write(Sym); String(sym.Name); return;
+                case Cons c:
+                    {
+                        // 表尾中未被共享的序对连成一段，用 List 写出
+                        var items = new List<object> { c.car };
+                        object tail = c.cdr;
+                        while (tail is Cons next && !Shared(next)) { items.Add(next.car); tail = next.cdr; }
+                        if (items.Count == 1) { _w.Write(Pair); Object(c.car); Object(c.cdr); return; }
+                        _w.Write(List);
+                        _w.Write7BitEncodedInt(items.Count);
+                        foreach (var e in items) Object(e);
+                        Object(tail);
+                        return;
+                    }
+                case object[] v: _w.Write(Vec); _w.Write7BitEncodedInt(v.Length); foreach (var e in v) Object(e); return;
+                case byte[] bv: _w.Write(Bv); _w.Write7BitEncodedInt(bv.Length); _w.Write(bv); return;
+                case RecordTypeDescriptor t:
+                    _w.Write(Rtd);
+                    String(t.Name);
+                    Object(t._generative && !(t.uid is string) ? RT.False : t.uid);
+                    Object((object)t.Parent ?? RT.False);
+                    _w.Write((byte)(t._sealed ? 1 : 0));
+                    _w.Write((byte)(t._opaque ? 1 : 0));
+                    _w.Write7BitEncodedInt(t.Fields.Length);
+                    foreach (var f in t.Fields) { _w.Write((byte)(f._mutable ? 1 : 0)); String(f.Name); }
+                    return;
+                case RecordConstructorDescriptor rcd when rcd.protocol == null:
+                    _w.Write(Rcd);
+                    Object(rcd.type);
+                    Object((object)rcd.parent ?? RT.False);
+                    return;
+                case CompoundCondition cc:
+                    _w.Write(Cnd);
+                    _w.Write7BitEncodedInt(cc._conds.Length);
+                    foreach (var e in cc._conds) Object(e);
+                    return;
+                case Record r when r.Rtd != null:
+                    _w.Write(Rec);
+                    Object(r.Rtd);
+                    _w.Write7BitEncodedInt(r.Fields.Length);
+                    foreach (var e in r.Fields) Object(e);
+                    return;
+                case Annotation a: _w.Write(Ann); Object(a.expression); Object(a.source); Object(a.stripped); return;
+                case System.Collections.Hashtable h when IsEqHashtable(h):
+                    {
+                        _w.Write(EqHt);
+                        _w.Write7BitEncodedInt(h.Count);
+                        foreach (var (k, v) in SortedEntries(h)) { Object(k); Object(v); }
+                        return;
+                    }
+            }
+            if (ReferenceEquals(o, Builtins.EofObject())) { _w.Write(EofTag); return; }
+            Errors.AssertionViolation("fasl-write", "cannot serialize object", o);
+        }
     }
 
     /// <summary>条目按键排序（符号、字符串、数按其文本），使相同内容的表写出相同字节；其余键保持枚举顺序。</summary>
-    static List<(object, object)> SortedEntries(System.Collections.Hashtable h)
+    private static List<(object, object)> SortedEntries(System.Collections.Hashtable h)
     {
-      var list = new List<(object Key, object Value)>();
-      foreach (System.Collections.DictionaryEntry e in h) list.Add((Hashtables.FromNull(e.Key), e.Value));
-      static string SortKey(object k) => k switch { Symbol s => "s" + s.Name, string s => "t" + s, int i => "i" + i.ToString("D11"), _ => null };
-      if (list.TrueForAll(e => SortKey(e.Key) != null)) list.Sort((a, b) => string.CompareOrdinal(SortKey(a.Key), SortKey(b.Key)));
-      return list.ConvertAll(e => (e.Key, e.Value));
+        var list = new List<(object Key, object Value)>();
+        foreach (System.Collections.DictionaryEntry e in h) list.Add((Hashtables.FromNull(e.Key), e.Value));
+        static string SortKey(object k) => k switch { Symbol s => "s" + s.Name, string s => "t" + s, int i => "i" + i.ToString("D11"), _ => null };
+        if (list.TrueForAll(e => SortKey(e.Key) != null)) list.Sort((a, b) => string.CompareOrdinal(SortKey(a.Key), SortKey(b.Key)));
+        return list.ConvertAll(e => (e.Key, e.Value));
     }
 
     #endregion
-  }
 }

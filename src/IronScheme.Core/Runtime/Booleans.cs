@@ -6,14 +6,13 @@
 #endregion
 
 using System.Collections.Generic;
-namespace IronScheme.Core
+namespace IronScheme.Core;
+
+public partial class Builtins
 {
-  public partial class Builtins
-  {
     [Primitive("not", Flags = PrimitiveFlags.Pure, Inline = "not")]
     public static object Not(object obj)
     {
-      return GetBool(!(!(obj is bool) || (bool)obj));
+        return GetBool(!(!(obj is bool) || (bool)obj));
     }
-  }
 }
