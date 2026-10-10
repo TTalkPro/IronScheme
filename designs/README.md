@@ -18,5 +18,6 @@ IronScheme 派生改造：去掉 DLR，用 nanopass 编译器把 Scheme 直接�
 | [11-portability.md](11-portability.md) | 可移植性：`(ironscheme clr)` 名字不改、互操作三层（宿主绑定 / 可移植包装 / 核心只用原语）、把托管运行时当作目标机器、JVM 靠交叉编译自举 |
 | [12-strings.md](12-strings.md) | 字符串表示：按码点的窄/宽字符串（iron-055） |
 | [13-clr-exceptions.md](13-clr-exceptions.md) | guard 与宿主异常（.NET/JVM）的互通：为何不能统一为 try/catch、分层澄清、源头转换方案（提案） |
+| [14-erts-target.md](14-erts-target.md) | ERTS/BEAM 作为目标平台的评估：契合点（尾调用/异常/进程）、不可变堆与 `eq?` 身份的错配、spike 先行（提案） |
 
 任务索引见仓库根目录 [TASK.md](../TASK.md)。
