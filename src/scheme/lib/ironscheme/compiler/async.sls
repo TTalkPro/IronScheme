@@ -17,8 +17,8 @@ See docs/license.txt. |#
 ;;; dynamic-wind 与 with-exception-handler 是 (boot exceptions) 里的 Scheme 过程，展开后是全局位置 (gref g$dynamic-wind$…)，
 ;;; 编译器看不到绑定身份，这里按位置符号的名字识别（见 10 §3.2 的说明）；call-with-values 与 call/cc 是原语（primcall）。
 (library (ironscheme compiler async)
-  (export lower-async)
-  (import (rnrs) (only (ironscheme) void) (nanopass) (ironscheme compiler languages))
+  (export lower-async lower-loops reset-fresh-names! loops-made)
+  (import (rnrs) (only (ironscheme) void) (only (ironscheme unsafe) $get-environment-variable) (nanopass) (ironscheme compiler languages))
 
   ;; —— 通用工具 ——
 
@@ -120,16 +120,19 @@ See docs/license.txt. |#
          [(clause (,x* ...) ,x ,body) (if x (values #f #f) (values x* body))])]
       [else (values #f #f)]))
 
+  ;; 系统的过程：名字相符，且位置是 boot 镜像的（后缀 $%b，05 §7；用户自己定义的同名过程带进程戳，iron-034f 补）
   (define (gref-named? e name)
     (nanopass-case (L0 Expr) e
-      [(gref ,s) (string=? (pretty-name s) name)]
+      [(gref ,s) (and (string=? (pretty-name s) name)
+                      (let* ((str (symbol->string s)) (n (string-length str)))
+                        (and (> n 3) (string=? (substring str (- n 3) n) "$%b"))))]
       [else #f]))
 
   ;; —— 入口 ——
 
   (define (lower-async ir)
     (if (scan ir)                                  ; 只有 await 没有 async-lambda 时 transform 报错
-        (begin (set! counter 0) (transform ir))   ; 临时变量名按单元从头编号，输出确定
+        (transform ir)
         ir))
 
   ;; 找到每个 async-lambda，先处理嵌套的，再整理它自己的体；async-lambda 之外的 await 报错
@@ -158,6 +161,8 @@ See docs/license.txt. |#
   ;; —— D9 / D10：prep ——
 
   (define counter 0)
+  ;; 临时变量名按编译单元从头编号（驱动在每个单元开始时调用），输出确定
+  (define (reset-fresh-names!) (set! counter 0))
   (define (fresh name)
     (set! counter (+ counter 1))
     (string->symbol (string-append name "%" (number->string counter))))
@@ -431,4 +436,101 @@ See docs/license.txt. |#
          (err "await in a finally part (dynamic-wind after thunk, or handler cleanup)" e))
        (check e0 reasons)
        (check e1 reasons)]
-      [else (for-each (lambda (k) (check k reasons)) (kids e))])))
+      [else (for-each (lambda (k) (check k reasons)) (kids e))]))
+
+  ;; —— lower-loops（iron-034b）：D9 推广到全部代码 ——
+  ;; 单绑定 letrec 的 lambda，全部引用都是参数个数相符的尾调用（相对于 letrec 的体或 lambda 自己的体）时，
+  ;; 改为 (label f (x …) body fbody) 与 (jump f e …)：命名 let 与 do 不再各生成一个过程类，循环变量是局部变量。
+  ;; 只做 D9，不做 D10 / D11；跨 try、跨嵌套 lambda 的调用不算尾调用（check-refs），jump 不会跳出 try 区域。
+  ;; ((letrec ((f le)) f) e …)（命名 let 的展开形状）先归一成 (letrec ((f le)) (f e …))。
+  ;; 至今生成的 label 个数：编译驱动据此只对含循环的形式做类型推断（codegen 的 loop-forms）
+  (define loops-count 0)
+  ;; 测量开关：IRONSCHEME_NO_034 含 letlab 时不做 let 的降级
+  (define let-labels? (let ((v ($get-environment-variable "IRONSCHEME_NO_034")))
+                        (not (and (string? v) (let loop ((i 0)) (and (<= (+ i 6) (string-length v))
+                                                                      (or (string=? (substring v i (+ i 6)) "letlab") (loop (+ i 1)))))))))
+  (define (loops-made) loops-count)
+
+  (define-pass lower-loops : L0 (ir) -> L0 ()
+    (definitions
+      ;; (lambda () body) → body，否则 #f
+      (define (thunk-literal? e)
+        (nanopass-case (L0 Expr) e
+          [(lambda ,nm ,cl)
+           (nanopass-case (L0 Clause) cl [(clause (,x* ...) ,x ,body) (and (null? x*) (not x) body)])]
+          [else #f]))
+      (define (consumer-literal? e)
+        (nanopass-case (L0 Expr) e [(lambda ,nm ,cl) #t] [else #f]))
+      (define (consumer-parts e)
+        (nanopass-case (L0 Expr) e
+          [(lambda ,nm ,cl) (nanopass-case (L0 Clause) cl [(clause (,x* ...) ,x ,body) (values nm x* x body)])]))
+      ;; let 绑定的单子句 lambda，体里只在尾位置按相符的参数个数调用（不作为值、不在嵌套 lambda 里）：
+      ;; 变成 label（nanopass 生成的处理器每个子句一个 rhs / else-th 闭包，每次调用都分配；变成 label 后不再分配）。
+      ;; let 的右边看不到同一 let 绑定的名字，所以 lambda 体里不会跳到兄弟 label；label 依次嵌套在体外，
+      ;; 其余绑定照旧放在最外层的 let 里（先求值，与原来顺序相同；lambda 的创建没有副作用）
+      (define (lower-let x* e* body)
+        (let loop ((xs x*) (es e*) (keep-x '()) (keep-e '()) (labels '()))
+          (if (pair? xs)
+              (let-values (((p* fbody) (simple-lambda (car es))))
+                (if (and let-labels? p* (not (check-refs (car xs) (length p*) body #t #f)))
+                    (loop (cdr xs) (cdr es) keep-x keep-e (cons (list (car xs) p* fbody) labels))
+                    (loop (cdr xs) (cdr es) (cons (car xs) keep-x) (cons (car es) keep-e) labels)))
+              (with-output-language (L0 Expr)
+                (if (null? labels)
+                    `(let ([,x* ,(map Expr e*)] ...) ,(Expr body))
+                    (let* ((jbody (fold-left (lambda (b l) (jumpify (car l) b)) body labels))
+                           (inner (fold-left (lambda (b l)
+                                               (set! loops-count (+ loops-count 1))
+                                               `(label ,(car l) (,(cadr l) ...) ,b ,(Expr (caddr l))))
+                                             (Expr jbody)
+                                             labels)))
+                      (if (null? keep-x)
+                          inner
+                          `(let ([,(reverse keep-x) ,(map Expr (reverse keep-e))] ...) ,inner))))))))
+      (define (named-letrec? e)
+        (nanopass-case (L0 Expr) e
+          [(letrec ([,x* ,e*] ...) ,body)
+           (and (= (length x*) 1) (var-ref? body (car x*)) (cons (car x*) (car e*)))]
+          [else #f])))
+    (Expr : Expr (ir) -> Expr ()
+      [(call ,e ,e* ...)
+       (cond
+         ((named-letrec? e)
+          => (lambda (f.le)
+               (Expr `(letrec ([,(car f.le) ,(cdr f.le)]) (call ,(car f.le) ,e* ...)))))
+         (else
+          (let-values (((p* b) (simple-lambda e)))
+            (if (and p* (= (length p*) (length e*)))
+                (lower-let p* e* b)                  ; 立即调用的 lambda 就是 let
+                `(call ,(Expr e) ,(map Expr e*) ...)))))]
+      ;; D6：(call-with-values (lambda () p) (lambda (x … [. r]) b)) →
+      ;;   (let ((t p)) (if (个数相符 t) (let ((x ($values-ref t i)) … [(r ($values-tail t n))]) b) 原来的形式报错))
+      ;; 错误分支用同名、同形参的空体 lambda 当消费者，由它报与原来相同的参数个数错误
+      [(primcall ,pr ,e* ...)
+       (guard (and (eq? pr 'call-with-values) (= (length e*) 2) (thunk-literal? (car e*)) (consumer-literal? (cadr e*))))
+       (let-values (((nm x* rest cbody) (consumer-parts (cadr e*))))
+         (let* ((t (fresh "values"))
+                (n (length x*))
+                (count `(primcall $values-count ,t))
+                (test (if rest `(primcall $fx>=? ,count (quote ,n)) `(primcall $fx=? ,count (quote ,n))))
+                (refs (let loop ((i 0) (xs x*))
+                        (if (null? xs) '() (cons `(primcall $values-ref ,t (quote ,i)) (loop (+ i 1) (cdr xs))))))
+                (bind-x* (if rest (append x* (list rest)) x*))
+                (bind-e* (if rest (append refs (list `(primcall $values-tail ,t (quote ,n)))) refs)))
+           `(let ([,t ,(Expr (thunk-literal? (car e*)))])
+              (if ,test
+                  (let ([,bind-x* ,bind-e*] ...) ,(Expr cbody))
+                  (primcall call-with-values
+                            (lambda #f (clause () #f ,t))
+                            (lambda ,nm (clause (,(map (lambda (x) (fresh "arg")) x*) ...) ,(and rest (fresh "rest")) (quote #f))))))))]
+      ;; let（也包括立即调用的 lambda，即展开器的 let）：见 definitions 中的 lower-let
+      [(let ([,x* ,e*] ...) ,body) (lower-let x* e* body)]
+      [(letrec ([,x* ,e*] ...) ,body)
+       (let-values (((p* fbody) (if (= (length x*) 1) (simple-lambda (car e*)) (values #f #f))))
+         (if (and p*
+                  (let ((f (car x*)) (n (length p*)))
+                    (not (or (check-refs f n body #t #f) (check-refs f n fbody #t #f)))))
+             (let ((f (car x*)))
+               (set! loops-count (+ loops-count 1))
+               `(label ,f (,p* ...) ,(Expr (jumpify f body)) ,(Expr (jumpify f fbody))))
+             `(letrec ([,x* ,(map Expr e*)] ...) ,(Expr body))))])))

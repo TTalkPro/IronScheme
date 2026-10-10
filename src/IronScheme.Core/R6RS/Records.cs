@@ -237,6 +237,31 @@ public class Records : Builtins
         return t.Fields[i].Mutator;
     }
 
+    // —— define-record-type 展开用（iron-034 D6）：访问器 / 修改器 / 谓词展开为调用这些原语的 lambda，
+    // 成为已知过程，调用点直接 call 静态方法（原来是 record-accessor 返回的过程对象，经 callvirt Invoke1）。
+    // 检查与报错与 FieldAccessor / FieldMutator / RecordPredicate 完全相同。k 是本类型内的字段下标（同 record-accessor）。
+
+    [Primitive("$record-field-ref", Flags = PrimitiveFlags.Unsafe)]
+    public static object RecordFieldRef(object rtd, object k, object obj)
+    {
+        var t = (RecordTypeDescriptor)rtd;
+        var fd = t.Fields[(int)k];
+        return t.IsInstance(obj) ? ((Record)obj).Fields[fd.Index] : AssertionViolation(t.Name + "-" + fd.Name, "not a record of type " + t.Name, obj);
+    }
+
+    [Primitive("$record-field-set!", Flags = PrimitiveFlags.Unsafe)]
+    public static object RecordFieldSet(object rtd, object k, object obj, object value)
+    {
+        var t = (RecordTypeDescriptor)rtd;
+        var fd = t.Fields[(int)k];
+        if (!t.IsInstance(obj)) return AssertionViolation(t.Name + "-" + fd.Name + "-set!", "not a record of type " + t.Name, obj);
+        ((Record)obj).Fields[fd.Index] = value;
+        return IronScheme.Core.Unspecified.Instance;
+    }
+
+    [Primitive("$record-instance?", Flags = PrimitiveFlags.Unsafe)]
+    public static object RecordInstance(object rtd, object obj) => GetBool(((RecordTypeDescriptor)rtd).IsInstance(obj));
+
     [Primitive("record?")]
     public static object IsRecord(object obj) => GetBool(obj is Record r && r.Rtd != null && !r.Rtd._opaque);
 

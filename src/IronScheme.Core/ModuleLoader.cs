@@ -72,12 +72,18 @@ public static class ModuleLoader
     /// <summary>调用模块入口并返回其结果；入口抛出的异常原样传出。</summary>
     public static object Run(Assembly asm)
     {
+        BootInterface.Register(asm);
         var entry = EntryPoint(asm);
         var f = (Func<object>)Delegate.CreateDelegate(typeof(Func<object>), entry);
         return f();
     }
 
-    public static object LoadModule(string path, bool inMemory = false) => Run(LoadAssembly(path, inMemory));
+    public static object LoadModule(string path, bool inMemory = false)
+    {
+        var asm = LoadAssembly(path, inMemory);
+        BootInterface.RegisterInterfaceFile(Path.GetFullPath(ResolvePath(path)), asm);
+        return Run(asm);
+    }
 
     /// <summary>
     /// (load-fasl 文件名) → compile-file / compile-library / compile-program 产物（.fasl）入口的返回值（iron-037）。

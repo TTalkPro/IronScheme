@@ -38,6 +38,8 @@
   <Target Name="IronSchemeSingleFilePublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishSingleFile)' == 'true'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'$(EmbedBootImage)' == 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'ironscheme.boot.dll'" />
+      <!-- 嵌入的镜像没有文件路径，接口文件（iron-034e）用不上，不发布 -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'$(EmbedBootImage)' == 'true' and '%(ResolvedFileToPublish.RelativePath)' == 'ironscheme.boot.ifc'" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'$(IronSchemeApp)' != '' and $([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\','/').StartsWith('lib/'))" />
       <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\','/').StartsWith('lib/'))">
         <ExcludeFromSingleFile>true</ExcludeFromSingleFile>

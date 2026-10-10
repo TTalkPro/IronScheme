@@ -53,6 +53,8 @@ public abstract class Procedure
 
     public override string ToString() => "#<procedure " + Name + ">";
 
+    internal object ArityErrorPublic(int given) => ArityError(given);
+
     protected object ArityError(int given) =>
       Errors.AssertionViolation(Name, "incorrect number of arguments", RT.Box(given));
 }

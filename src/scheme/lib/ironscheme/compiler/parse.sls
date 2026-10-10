@@ -12,10 +12,11 @@ See docs/license.txt. |#
 ;;;   (async-lambda fmls body) → (async-lambda 名字 (clause …))；特殊原语 await → (await e)（10 §3.1）；
 ;;; - 注解（annotated-*）剥离。第一版不保留源位置。
 (library (ironscheme compiler parse)
-  (export parse-core)
+  (export parse-core typed-clauses-made)
   (import
     (rnrs)
     (only (ironscheme) void)
+    (only (ironscheme unsafe) $get-environment-variable)
     (nanopass)
     (ironscheme compiler languages)
     (ironscheme compiler primitives))
@@ -75,6 +76,24 @@ See docs/license.txt. |#
         (bad-form who form)))
 
   (define (static-instance? x) (equal? x ''()))
+
+;; typed-lambda 的类型说明（iron-034 D6）：形参类型为 Int32 / Double 时，形参改名，体外包
+  ;;   (let ((x ($as-fixnum x$typed))) 体)
+  ;; codegen 把 $as-fixnum / $as-flonum 当作 fixnum / flonum 的来源（034c 的拆箱），x 用 int32 / double 局部变量。
+  ;; 这些 typed-lambda 都在检查过参数之后调用（boot 的 define-fx / define-fl），与旧系统强类型形参的约定相同。
+  ;; 计数供编译驱动决定哪些形式做类型推断（loop-forms）
+  (define typed-count 0)
+  (define (typed-clauses-made) typed-count)
+
+  ;; 测量开关：IRONSCHEME_NO_034 含 typed 时不用 typed-lambda 的类型说明
+  (define typed-on? (let ((v ($get-environment-variable "IRONSCHEME_NO_034")))
+                      (not (and (string? v) (let loop ((i 0)) (and (<= (+ i 5) (string-length v))
+                                                                    (or (string=? (substring v i (+ i 5)) "typed") (loop (+ i 1)))))))))
+  (define (typed-kind t)
+    (case (and typed-on? t)
+      ((Int32 System.Int32 int fixnum) 'fx)
+      ((Double System.Double double flonum) 'fl)
+      (else #f)))
 
   (define (parse-core x)
     (let ((kinds (make-eq-hashtable)))
@@ -270,11 +289,25 @@ See docs/license.txt. |#
              (unless (symbol? (car f)) (bad-form "formals" form))
              (loop (cdr f) (cons (car f) req)))
             ((or (null? f) (symbol? f))
-             (let ((req (reverse req)) (rest (and (symbol? f) f)))
+             (let* ((req (reverse req)) (rest (and (symbol? f) f))
+                    (kinds (if (and typed? (pair? (cadr c)) (list? (car (cadr c))) (= (length (car (cadr c))) (length req)))
+                               (map typed-kind (car (cadr c)))
+                               (map (lambda (v) #f) req)))
+                    (params (map (lambda (v k) (if k (string->symbol (string-append (symbol->string v) "$typed")) v)) req kinds)))
                (for-each (lambda (v) (bind! v 'lex)) req)
+               (for-each (lambda (p) (bind! p 'lex)) params)
                (when rest (bind! rest 'lex))
-               (with-output-language (L0 Clause)
-                 `(clause (,req ...) ,rest ,(Body (if typed? (cddr c) (cdr c)) form)))))
+               (let ((body (Body (if typed? (cddr c) (cdr c)) form))
+                     (typed (filter car (map list kinds req params))))
+                 (unless (null? typed) (set! typed-count (+ typed-count 1)))
+                 (with-output-language (L0 Clause)
+                   `(clause (,params ...) ,rest
+                      ,(if (null? typed)
+                           body
+                           (with-output-language (L0 Expr)
+                             `(let ([,(map cadr typed)
+                                     ,(map (lambda (t) `(primcall ,(if (eq? (car t) 'fx) '$as-fixnum '$as-flonum) ,(caddr t))) typed)] ...)
+                                ,body))))))))
             (else (bad-form "formals" form)))))
 
       (Expr x)))

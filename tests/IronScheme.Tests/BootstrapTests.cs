@@ -71,6 +71,9 @@ public class Bootstrap : TestRunner
         Directory.CreateDirectory(Path.GetDirectoryName(Paths.Boot));
         File.Copy(Dll(3), Paths.Boot, true);
         File.Copy(Lcil(3), Path.ChangeExtension(Paths.Boot, ".lcil"), true);
+        // 接口文件（iron-034e）记录镜像 id：与镜像一起换，否则编译器认为它过期而不用
+        var ifc = Path.ChangeExtension(Dll(3), ".ifc");
+        if (File.Exists(ifc)) File.Copy(ifc, Path.ChangeExtension(Paths.Boot, ".ifc"), true);
     }
 
     /// <summary>
@@ -91,6 +94,9 @@ public class Bootstrap : TestRunner
     "-r", Path.Combine(core, "IronScheme.Core.dll"),
     "-r", Paths.Emit,
   }).ToArray();
+        // 编译产物可能直接调用 boot 镜像中的过程（iron-034e）：校验它们时引用 boot；校验 boot 镜像本身时不重复
+        if (!assemblies.Any(a => Path.GetFileName(a) == "ironscheme.boot.dll") && File.Exists(Paths.Boot))
+            args = args.Concat(new[] { "-r", Paths.Boot }).ToArray();
         return RunProcess(tool, args, null, Paths.SchemeDir, checkExitCode: false);
     }
 }

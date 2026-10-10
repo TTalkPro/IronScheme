@@ -4,11 +4,11 @@
 
 | 项 | 决定 |
 |---|---|
-| nanopass 框架 | **第三方依赖**：git 子模块 `src/scheme/lib/nanopass-framework-scheme`（固定提交 `c14d3924`；iron-002 已在旧系统上验证可直接运行）（上游 https://github.com/nanopass/nanopass-framework-scheme，MIT 许可）。该目录加入库搜索路径，使 `(nanopass)` 解析到其中的 `nanopass.ss`。用其 `implementation-helpers.ironscheme.sls` 适配；需要的修改以补丁或覆盖库的形式放在子模块之外，不改子模块内容 |
+| nanopass 框架 | 覆盖库 `lib/nanopass/implementation-helpers.ironscheme.sls`（iron-034）：`define-nanopass-record` 不再在每个 pass 的过程体里展开 `define-record-type`（每次调用都重建记录类型），记录类型在库里定义一次。**第三方依赖**：git 子模块 `src/scheme/lib/nanopass-framework-scheme`（固定提交 `c14d3924`；iron-002 已在旧系统上验证可直接运行）（上游 https://github.com/nanopass/nanopass-framework-scheme，MIT 许可）。该目录加入库搜索路径，使 `(nanopass)` 解析到其中的 `nanopass.ss`。用其 `implementation-helpers.ironscheme.sls` 适配；需要的修改以补丁或覆盖库的形式放在子模块之外，不改子模块内容 |
 | 编译器源码 | `Console/lib/ironscheme/compiler/*.sls`，库名 `(ironscheme compiler …)`：放在标准库目录下，经库路径（`-I lib`）直接解析（iron-020 调整）。`Console/compiler/` 只放原语表等数据文件与编译器测试（`tests/compiler/`） |
 | 原语表 | `src/scheme/boot/primitives.ss`，由 `IronScheme.PrimGen` 生成（02 §5） |
 | 进入 boot 镜像 | 是。新系统运行时 `eval` 需要编译器，所以编译器库与 nanopass 一起编进 boot 镜像 |
-| 纯函数原则 | 编译器**不读运行时状态**：不调 `symbol-value` 查绑定，不执行目标原语，不反射目标程序集。它的全部输入是 Lcore 数据、原语表数据和编译选项 |
+| 纯函数原则 | 编译器**不读运行时状态**：不调 `symbol-value` 查绑定，不执行目标原语，不反射目标程序集。它的全部输入是 Lcore 数据、原语表数据和编译选项。例外（iron-034e）：接口文件是编译器的输入数据——boot 镜像旁的 `ironscheme.boot.ifc`（读时核对正在运行的镜像 id，即 MVID，不同就不用），以及已加载的 `.fasl` / 库 dll 旁的 `名字.ifc`（记录的程序集名与加载的相同才登记） |
 
 ## 2. 输入语言 Lcore
 
@@ -38,7 +38,7 @@ body ::= e ...                           ; 展开器实际只生成一个
 ```
 
 - `$try/finally`、`$throw`、`$break`、`$and?`、`$or?`、`await` 等以**原语调用**的形式出现（`($try/finally e1 e2)`），由编译器按原语表中的"特殊原语"处理。
-- `typed-…-lambda` 第一版**按无类型处理**：忽略类型说明，参数和返回值按 `object` 编译；以后再利用类型做拆箱。
+- `typed-…-lambda`：形参类型为 `Int32` / `Double` 时，parse 把形参包成 `$as-fixnum` / `$as-flonum`，codegen 用 `int32` / `double` 局部变量（iron-034 D6）；其余类型与返回值仍按 `object` 编译。
 - `annotated-*` 中的注解只取源位置，供调试信息使用。
 
 ## 3. 符号分类（parse-core 时决定，不查运行时）
@@ -90,20 +90,25 @@ body ::= e ...                           ; 展开器实际只生成一个
 
 | 步骤 | 实现 |
 |---|---|
-| 1 parse-core | `parse.sls`，L0 |
+| 1 parse-core | `parse.sls`，L0。`typed-lambda` 的 `Int32` / `Double` 形参改名并包 `(let ((x ($as-fixnum x$typed))) 体)`，codegen 据此拆箱（iron-034 D6） |
 | — lower-async | `async.sls`，L0 → L0（iron-051，[10 §3.2](10-async.md)）：只改 `async-lambda` 的体——命名 let / `do` 的单绑定 letrec 变 `label`/`jump`，立即调用的 lambda 与 `dynamic-wind` / `with-exception-handler` / `call-with-values` / `call/cc` 的字面 lambda 实参内联，`await` 拆到语句位置，剩余不合法的 `await` 报错；没有 `async-lambda` 的单元原样返回 |
+| — lower-loops | `async.sls`，L0 → L0（iron-034b、D6）：普通 lambda 里只被尾调用的单绑定 `letrec` lambda（命名 let、`do`）变 `label`/`jump`，不再生成闭包类；`let`（含立即调用的 lambda）绑定、只在体的尾位置按相符参数个数调用的单子句 lambda 同样变成嵌套的 label（nanopass 处理器的 rhs / else-th 形状不再每次调用分配闭包）；`(call-with-values (lambda () p) (lambda (x … . r) b))` 内联为一次求值 + `$values-count` 检查 + `$values-ref` / `$values-tail` 绑定，个数不符时退回原 `call-with-values`（报错与原来相同） |
 | — analyze | `front.sls`：一遍分析得出被赋值、被捕获的词法变量，letrec 右边引用的同组变量，被 `mset!` 的库变量 |
 | 2、3 recognize-let + simplify-letrec | 合为一个 pass（`front.sls`，L0 → L1）：连续的、未被赋值的 lambda 绑定成一组 `letrec`；其余为 `let`；右边引用了此后（不在同一组）才绑定的变量时，该变量先绑定为未指定值再按序 `set!` |
 | 4 cp0-lite | `if` 常量测试、`begin` 中的常量、少量纯原语（`$fx+` 等、`not`、`null?`、`pair?`、`eq?`）的常量折叠 |
 | 5 convert-assignments | 既被赋值又被捕获的变量改为 Box（形参在子句入口装箱） |
 | 6 uncover-free | `closures.sls`，L2 → L3 |
-| 7 ~ 14 | 合在 `codegen.sls` 的一遍按上下文（value / effect / test / tail）生成栈式代码中：lambda → Procedure 子类（无自由变量者静态方法 + 单例）；库变量 → 模块静态字段；库中无自由变量且不被再赋值的 lambda 为"已知过程"，入口先预链接（创建并写入字段与位置，等同旧系统的静态链接，支持跨库前向调用），参数个数相符的调用直接 `call` 静态子句方法；自尾调用 → 重新赋参数并跳回方法开头；其余尾调用加 `tail.`（try 内不加）；尾位置的 `apply` 展开后 `tail. callvirt InvokeN`；谓词原语在 test 上下文直接生成比较；后面的操作数含 try 时先把全部操作数存入临时变量（lift-try）；`.maxstack` 由发射器计算 |
+| 7 ~ 14 | 合在 `codegen.sls` 的一遍按上下文（value / effect / test / tail）生成栈式代码中：lambda → Procedure 子类（无自由变量者静态方法 + 单例）；库变量 → 模块静态字段；库中无自由变量且不被再赋值的 lambda 为"已知过程"，入口先预链接（创建并写入字段与位置，等同旧系统的静态链接，支持跨库前向调用），参数个数相符的调用直接 `call` 静态子句方法；自尾调用 → 重新赋参数并跳回方法开头；其余尾调用加 `tail.`（try 内不加）；尾位置的 `apply` 展开后 `tail. callvirt InvokeN`；谓词原语在 test 上下文直接生成比较；后面的操作数含 try 时先把全部操作数存入临时变量（lift-try）；`.maxstack` 由发射器计算。iron-034 加入：同步方法中的 `label`/`jump`（034b）；**类型推断与拆箱**（034c）——每个形式先由 `infer-walk` 求出只装 fixnum 或只装 flonum、未被捕获与赋值的局部变量 / `label` 形参（依赖工作表求不动点，拆箱的读多于装箱的读才拆），这些变量用 `int32` / `double` 的 IL 局部变量，`$fx` / `$fl` 原语与内联算术直接用原始值，作为对象使用时装箱；**通用算术与比较内联**（034f，§6）；**已知过程的单元内与跨单元直接调用**（034e）——`(gref 位置)` 若是本单元某库导出的已知过程，或 boot 接口文件里的已知过程，值为该类的 `Instance`，参数个数相符的调用直接 `call 类::C<i>`（跨单元时类名为 `类名, 程序集名`：boot 的，或已加载的 `.fasl` / 库 dll 的，后者的程序集名唯一，`compile-library-dll` 在旁边写接口文件，产物里嵌套的库形式中的已知过程同样登记），用了 boot 接口的单元在入口先调 `BootInterface.Check(镜像 id)`，镜像重新构建后旧的 `.fasl` / 库 dll 报错（库由加载方退回源码）。与 Chez 相同，`set-symbol-value!` 改写导出名的值槽不影响已编译的直接调用点（R6RS 本不允许对导入的名字赋值）。async 方法不拆箱；很大的过程体（超过 2000 个 L3 节点）既不拆箱也不内联。**共享过程类**（034d）：无自由变量的同步过程的子句方法放进每单元的持有类 `#Module$P<k>`，过程对象是单元的 `#Module$SP : StaticProcedure` 的实例（入口委托由持有类的静态构造函数创建，`InvokeK` 以 `tail. callvirt` 调委托），不再每过程一个类 |
 | 15 emit-lcil | `lcil.sls`，块状结构逐行写出 |
 
 与 ChezScheme 的对照（`~/workspace/ChezScheme/s`）：
 - **原语数据**：Chez 的 `primdata.ss` 用 `define-symbol-flags*` 声明每个原语的签名（参数类型 → 结果类型，如 `[sig [(fixnum fixnum) -> (boolean)]]`）、谓词信息与细分标志（`pure`、`mifoldable`、`discard`、`unrestricted`、`safeongoodargs`、`arith-op`、`cp02` …），按库分组。我们的 `primitives.ss` 由 C# 特性生成，只有重载、`pure`/`unsafe`/`allow-tail-call` 与内联模板名，没有类型签名。M6 做类型推断与拆箱（iron-033）时应仿照 Chez 加入签名与"可折叠 / 可丢弃"的区分。
 - **内联**：Chez 的 `cpprim.ss` 用 `define-inline 级别 名字 [子句 …]` 表驱动地写了 600 多个内联处理器，安全级别（2）先做类型检查、失败时退回库调用（`build-libcall`）。我们的内联模板写在代码生成的 `case` 中，带检查的 `car`/`cdr` 等仍是静态调用。以后宜把模板移到独立的表驱动模块，并加入"检查 + 退回"的安全内联。
 - **pass 粒度**：Chez 的 `np-languages.ss` 定义了 L1 ~ L16 等二十多个语言，`cpnanopass.ss` 中 `np-recognize-let`、`np-convert-assignments`、`np-recognize-loops`、`np-convert-closures`、`np-optimize-direct-call`、`np-simplify-if` 等几十个小 pass 各做一件事。我们第一版把第 7 ~ 14 步合在一个代码生成过程里；M6 优化时宜按 Chez 的方式拆成独立 pass（循环识别、闭包转换、直接调用优化、if 化简各一个语言层次）。
+
+通用算术内联（iron-034f）：boot 位置（后缀 `$%b`）上的 `+ - * = < <= > >=`、`fx+ fx- fx* fx=? …`、`fl+ fl- fl* fl/ fl=? …` 的两参数调用在过程体中展开为"`isinst` 检查 → 直接算（`+ - *` 经 `InlineArith`，溢出转大整数；`fx` 溢出走慢路径报错）→ 否则经值槽调原过程"，顶层 `Init` 方法与很大的过程体不展开。
+
+记录（iron-034 D6）：`define-record-type` 的谓词、访问器、修改器由展开器生成为调用 `$record-instance?` / `$record-field-ref` / `$record-field-set!` 的 lambda，库中是已知过程，调用点直接调用（检查与报错同 `record-accessor` 等返回的过程）。
 
 内联模板：`void` `$car` `$cdr` `cons` `eq?` `not` `null?` `pair?`、`$fx` 算术 / 位运算 / 比较 / 零与符号判断、`$fl` 算术与比较（`<=`、`>=` 对 NaN 为假）；其余原语静态调用。`call/cc`、`call-with-values`、`values` 用原语表中的后备实现（静态调用）；`ffi-*`、`pinvoke-call-internal`、`define-clr-class-internal` 编译为运行时报"尚不支持"。第一版不生成序列点（注解在 parse-core 剥离）。
 

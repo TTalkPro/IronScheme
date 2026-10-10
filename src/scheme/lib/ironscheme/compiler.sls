@@ -20,10 +20,11 @@ See docs/license.txt. |#
     front-end
     primitive-table-file
     canonical-gensyms
+    unit-interface
     current-compile-target)
   (import
     (rnrs)
-    (only (ironscheme) make-parameter parameterize)
+    (only (ironscheme) make-parameter parameterize gensym)
     (ironscheme clr)
     (ironscheme compiler primitives)
     (ironscheme compiler parse)
@@ -48,19 +49,22 @@ See docs/license.txt. |#
           name))))
 
   ;; 调试：设置环境变量 IRONSCHEME_DUMP_PASSES=前缀 时，把各阶段的中间语言写到 <前缀>.l0 / .la / .l1 / .l2 / .l3
+  ;; （eval 的单元另写 <前缀>.lcil）
   ;; （.la 是 lower-async 的输出，10 §3.2）
   (define (dump-pass tag unparse x)
     (let ((prefix (clr-static-call System.Environment GetEnvironmentVariable "IRONSCHEME_DUMP_PASSES")))
       (when (string? prefix)
         (let ((f (string-append prefix "." tag)))
           (when (file-exists? f) (delete-file f))
-          (call-with-output-file f (lambda (p) (write (unparse x) p)))))))
+          (call-with-output-file f (lambda (p) (let ((y (unparse x))) (if (string? y) (put-string p y) (write y p)))))))))
 
   ;; Lcore → L3；返回 (values L3 analysis)
   (define (front-end x)
     (let* ((l0 (parse-core x))
            (_ (dump-pass "l0" unparse-L0 l0))
-           (l0 (lower-async l0))
+           (l0 (let ((l (lower-async l0)))           ; lower-loops：局部循环降级（iron-034b；IRONSCHEME_NO_034 时关，测量用）
+                 (let ((v (clr-static-call System.Environment GetEnvironmentVariable "IRONSCHEME_NO_034")))
+                   (if (and (string? v) (or (string=? v "1") (string=? v "loops"))) l (lower-loops l)))))
            (_ (dump-pass "la" unparse-L0 l0))
            (an (analyze l0))
            (l1 (cp0-lite (check-forward (simplify-letrec l0 an) an)))
@@ -77,15 +81,19 @@ See docs/license.txt. |#
 
   ;; 返回 (values Lcil 常量列表)；live? 见 generate-unit
   (define (compile-forms->lcil* forms assembly-name module-name live?)
+    (reset-fresh-names!)        ; lower-async / lower-loops 的临时变量名在单元内唯一、跨编译确定
     (let ((massigned (make-eq-hashtable)))
-      (let ((l3s (map (lambda (f)
-                        (let-values (((l3 an) (front-end f)))
-                          (let-values (((ks vs) (hashtable-entries (analysis-massigned an))))
-                            (vector-for-each (lambda (k) (hashtable-set! massigned k #t)) ks))
-                          l3))
-                      forms)))
-        (parameterize ((current-target (target-of (current-compile-target))))
-          (generate-unit l3s assembly-name module-name massigned live?)))))
+      ;; 按顺序逐个形式走前端，同时记下哪些形式含循环（loop-forms，只对它们做类型推断）
+      (let loop ((fs forms) (l3s '()) (loops '()))
+        (if (pair? fs)
+            (let ((n0 (+ (loops-made) (typed-clauses-made))))
+              (let-values (((l3 an) (front-end (car fs))))
+                (let-values (((ks vs) (hashtable-entries (analysis-massigned an))))
+                  (vector-for-each (lambda (k) (hashtable-set! massigned k #t)) ks))
+                (loop (cdr fs) (cons l3 l3s) (cons (> (+ (loops-made) (typed-clauses-made)) n0) loops))))
+            (parameterize ((current-target (target-of (current-compile-target)))
+                           (loop-forms (reverse loops)))
+              (generate-unit (reverse l3s) assembly-name module-name massigned live?))))))
 
   (define (compile->lcil-text forms assembly-name module-name)
     (lcil->string (compile-forms->lcil forms assembly-name module-name)))
@@ -113,6 +121,7 @@ See docs/license.txt. |#
     (set! eval-counter (+ eval-counter 1))
     (let*-values (((name) (string-append "eval$" (number->string eval-counter)))
                   ((lcil consts) (compile-forms->lcil* (list e) name "#Module" #t))
+                  ((_) (dump-pass "lcil" compile->lcil-text-from-sexpr lcil))
                   ;; 直接交出 Lcil 的 S 表达式，不经文本（iron-033）；IRONSCHEME_DUMP_PASSES 的 .lcil 仍可用 compile->lcil-text 得到
                   ((asm) (clr-static-call IronScheme.Emit.LcilEmitter (EmitInMemoryData Object String Object[])
                                           lcil name (list->vector consts))))
@@ -123,11 +132,36 @@ See docs/license.txt. |#
     (let* ((f (clr-static-call System.IO.Path GetFileNameWithoutExtension filename)))
       f))
 
+  ;; .fasl / 库 dll（iron-034e）：.fasl 的程序集名 = 文件名 + "$" + 进程内唯一的后缀，别的单元按名字直接引用其中的类时
+  ;; 不会与同名文件（另一目录的 util.fasl）的产物混淆；库 dll 的文件名由库名决定，程序集名就用文件名。
+  ;; 旁边写出接口文件 名字.ifc（运行时加载产物时登记，codegen 的 library-known 读）
   (define (compile-library-dll filename e)
     ;; Lcil 的 S 表达式直接交给发射器，不经文本（iron-033）
-    (let ((lcil (compile-forms->lcil (list e) (assembly-name-of filename) "#Module")))
+    (let* ((asm (if (string-ci=? (clr-static-call System.IO.Path GetExtension filename) ".dll")
+                    (assembly-name-of filename)    ; 库 dll：文件名由库名决定，已唯一（ILVerify 等按文件名解析引用）
+                    (string-append (assembly-name-of filename) "$" (assembly-safe (symbol->string (gensym))))))
+           (lcil (compile-forms->lcil (list e) asm "#Module"))
+           (entries (unit-interface)))
       (clr-static-call IronScheme.Emit.LcilEmitter (SaveData Object String String Boolean) lcil filename filename #f)
+      (write-interface-file filename asm entries)
       #t))
+
+  ;; 程序集名只用字母、数字与 _ $ - .（gensym 的进程后缀里可能有 = + 等）
+  (define (assembly-safe s)
+    (list->string
+      (map (lambda (c) (if (or (char-alphabetic? c) (char-numeric? c) (memv c '(#\_ #\$ #\- #\.))) c #\_))
+           (string->list s))))
+
+  (define (write-interface-file filename asm entries)
+    (let ((ifc (clr-static-call System.IO.Path ChangeExtension filename ".ifc")))
+      (when (file-exists? ifc) (delete-file ifc))
+      (unless (null? entries)
+        (call-with-output-file ifc
+          (lambda (p)
+            (put-string p "(ironscheme-interface 1 ")
+            (write asm p)
+            (for-each (lambda (x) (newline p) (write x p)) entries)
+            (put-string p ")\n"))))))
 
   (define compile-bootfile
     (case-lambda

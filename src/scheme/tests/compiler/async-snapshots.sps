@@ -68,7 +68,7 @@
 
 (define (lower lcore)
   (let* ((l0 (parse-core lcore))
-         (la (lower-async l0))
+         (la (begin (reset-fresh-names!) (lower-async l0)))
          (an (analyze la))
          (l2 (convert-assignments (cp0-lite (check-forward (simplify-letrec la an) an)) an))
          (l3 (uncover-free l2)))

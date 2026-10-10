@@ -23,15 +23,15 @@ See docs/license.txt. |#
 ;;; - try 要求进入时求值栈为空：多操作数的形式中，若排在后面的操作数含 try，先把各操作数存入临时变量（lift-try）。
 ;;; - 常量：fixnum、布尔、'()、字符、字符串直接生成；其余进常量表（iron-020 的编码）。
 (library (ironscheme compiler codegen)
-  (export generate-unit canonical-gensyms current-target)
+  (export generate-unit canonical-gensyms current-target unit-interface loop-forms)
   (import
     (rnrs)
-    (only (ironscheme) void unspecified? make-parameter gensym)
+    (only (ironscheme) void unspecified? make-parameter gensym symbol-bound? symbol-value)
     (nanopass)
     (ironscheme compiler languages)
     (ironscheme compiler primitives)
     (ironscheme compiler constants)
-    (only (ironscheme unsafe) $immutable-string?)
+    (only (ironscheme unsafe) $immutable-string? $get-environment-variable)
     (ironscheme compiler targets))
 
   ;; 规范 gensym 名（iron-030，designs/05-bootstrap.md §7 的后备方案）：设为 #t 时，常量表中本进程生成的 gensym
@@ -67,6 +67,7 @@ See docs/license.txt. |#
            (list (car x) (rename (cadr x))))
           ((pair? x) (map walk x))
           (else x)))
+      (set! last-renamed renamed)
       (map walk encs)))
 
   ;; "g$名字$序号$后缀" 中 "g$名字" 的结束位置
@@ -90,6 +91,7 @@ See docs/license.txt. |#
   (define-target-type bool-type boolean)
   (define-target-type char-type char)
   (define-target-type string-type string)
+  (define-target-type boot-interface-type boot-interface)
   (define-target-type void-type void)
   (define-target-type exception-type exception)
   (define-target-type unspecified-type unspecified)
@@ -100,6 +102,7 @@ See docs/license.txt. |#
   (define-target-type symbol-type symbol)
   (define-target-type rt-type rt)
   (define-target-type calls-type calls)
+  (define-target-type arith-type inline-arith)
   (define-target-type frame-type async-frame)
   (define-target-type task-type task)
   (define-target-type escape-type escape-continuation)
@@ -125,10 +128,93 @@ See docs/license.txt. |#
             known                ; eq 哈希表：库变量 → known 记录（已知过程）
             (mutable prelink)    ; ((类名 字段名 位置符号或 #f) …)
             (mutable counter)
-            massigned))
+            massigned
+            known-loc            ; eq 哈希表：位置符号 → known 记录（本单元导出的已知过程，iron-034e）
+            (mutable boot-ref)    ; 见下行
+            (mutable shared-count) ; 034d：共享持有类中已分配的过程个数
+            shared))              ; 034d：eqv 哈希表 持有类下标 → #(字段 方法 初始化代码)（各逆序）
+  ;; 跨单元引用 boot 的已知过程：off（不可用）| #f（可用、还没用）| #t（用过，入口要核对镜像）
 
+  ;; 已知过程：class 是过程的名字（共享过程的方法前缀 / 单独的类名），子句方法在 owner 类里，名为 prefix + "C<i>"
   (define-record-type known
-    (fields class clauses))      ; clauses：((固定参数个数 . 剩余?) …)
+    (fields class clauses owner prefix))      ; clauses：((固定参数个数 . 剩余?) …)
+
+  ;; 过程对象所在的静态字段：单独的类是 Instance；共享持有类（034d）是前缀去掉末尾的 $（P<id>）
+  (define (known-field k)
+    (let ((p (known-prefix k)))
+      (if (string=? p "") "Instance" (substring p 0 (- (string-length p) 1)))))
+
+  ;; 034d（D3）：无自由变量的同步过程不各生成一个类，子句方法放进共享持有类（每 200 个一个），
+  ;; 过程对象是单元的 StaticProcedure 子类的实例（委托），由持有类的静态构造函数创建。
+  ;; IRONSCHEME_NO_034 含 shared 时关（opt-shared? 定义在 opt-off? 之后）
+  (define shared-per-holder 200)
+
+  ;; 分配一个共享位置：(持有类名 . 前缀 "P<id>$")
+  (define (shared-slot! u)
+    (let ((id (unit-shared-count u)))
+      (unit-shared-count-set! u (+ id 1))
+      (cons (string-append (unit-module u) "$P" (number->string (div id shared-per-holder)))
+            (string-append "P" (number->string id) "$"))))
+
+  (define (holder-entry u holder)
+    (let ((k (string->number (substring holder (+ (string-length (unit-module u)) 2) (string-length holder)))))
+      (or (hashtable-ref (unit-shared u) k #f)
+          (let ((v (vector '() '() '())))
+            (hashtable-set! (unit-shared u) k v)
+            v))))
+
+  ;; 每个单元一个 StaticProcedure 的子类：InvokeK / InvokeN 以 tail. callvirt 调委托（C# 写不出 tail. 前缀，
+  ;; 不能依赖 JIT 的优化级别），保证经过程对象的尾调用不占栈
+  (define (sp-class u) (string-append (unit-module u) "$SP"))
+  (define (sp-ctor-params)
+    (list "System.String" "System.Object" "System.Object"
+          (func-type 0) (func-type 1) (func-type 2) (func-type 3) (func-type 4) func-n-type))
+
+  (define (sp-class-def u)
+    (define (lbl s) (string->symbol s))
+    (define (invoke-k k)
+      `(method ,(string-append "Invoke" (number->string k)) (attrs override) (params ,@(objs k)) (ret ,obj)
+         (body (ldarg 0) (ldfld ,static-proc-type ,(string-append "_f" (number->string k))) (dup) (brfalse ,(lbl "NOFIXED"))
+               ,@(let a ((j 1)) (if (> j k) '() (cons `(ldarg ,j) (a (+ j 1)))))
+               (tail) (callvirt ,(func-type k) "Invoke" ,(objs k) ,obj) (ret)
+               (label ,(lbl "NOFIXED")) (pop)
+               (ldarg 0) (ldfld ,static-proc-type "_fn") (dup) (brfalse ,(lbl "NOENTRY"))
+               (ldc.i4 ,k) (newarr ,obj)
+               ,@(let a ((j 0)) (if (= j k) '() (append `((dup) (ldc.i4 ,j) (ldarg ,(+ j 1)) (stelem.ref)) (a (+ j 1)))))
+               (tail) (callvirt ,func-n-type "Invoke" (,obj-array) ,obj) (ret)
+               (label ,(lbl "NOENTRY")) (pop)
+               (ldarg 0) (ldc.i4 ,k) (call ,static-proc-type "ArityFail" (,int32-type) ,obj) (ret))))
+    `(type ,(sp-class u) (base ,static-proc-type) (attrs sealed)
+       (method ".ctor" (attrs ctor) (params ,@(sp-ctor-params))
+         (body ,@(let a ((j 0)) (if (> j 9) '() (cons `(ldarg ,j) (a (+ j 1)))))
+               (call ,static-proc-type ".ctor" ,(sp-ctor-params) ,void-type) (ret)))
+       ,@(map invoke-k '(0 1 2 3 4))
+       (method "InvokeN" (attrs override) (params ,obj-array) (ret ,obj)
+         (body (ldarg 0) (ldfld ,static-proc-type "_fn") (dup) (brfalse ,(lbl "NOENTRY"))
+               (ldarg 1) (tail) (callvirt ,func-n-type "Invoke" (,obj-array) ,obj) (ret)
+               (label ,(lbl "NOENTRY")) (pop)
+               (ldarg 0) (ldarg 1) (call ,static-proc-type "DispatchN" (,obj-array) ,obj) (ret)))))
+
+  ;; 单元结束时生成持有类：静态字段、子句方法与静态构造函数（依次创建各过程对象）
+  (define (emit-holders! u)
+    (let-values (((ks vs) (hashtable-entries (unit-shared u))))
+      (when (> (vector-length ks) 0) (add-class! u (sp-class-def u)))
+      (for-each
+        (lambda (k)
+          (let ((v (hashtable-ref (unit-shared u) k #f))
+                (holder (string-append (unit-module u) "$P" (number->string k))))
+            (add-class! u
+              `(type ,holder (attrs abstract sealed)
+                 ,@(reverse (vector-ref v 0))
+                 ,@(reverse (vector-ref v 1))
+                 (method ".cctor" (attrs cctor) (params)
+                   (body ,@(apply append (reverse (vector-ref v 2))) (ret)))))))
+        (list-sort < (vector->list ks)))))
+
+  ;; 过程对象的描述（lambda-class! 的结果）：(#t 类名)（无自由变量：静态单例）| (#f 类名)（闭包）
+  ;; 静态过程的单例压栈
+  (define (load-static-proc! mc c)
+    (emit! mc `(ldsfld ,(cadr c) ,(caddr c))))
 
   (define (next-id! u)
     (let ((n (unit-counter u)))
@@ -205,10 +291,16 @@ See docs/license.txt. |#
             loop-arity           ; 当前子句的固定参数个数（有剩余参数时为 #f）
             self-mref            ; 已知过程自己的库变量（自尾调用识别），或 #f
             arg-base             ; 第一个形参的 ldarg 下标（实例方法为 1）
-            (mutable async)))    ; async-lambda 的 MoveNext：aframe 记录；否则 #f
+            (mutable async)      ; async-lambda 的 MoveNext：aframe 记录；否则 #f
+            labels               ; eq 哈希表：label 的名字 → (IL 标签 . 形参表)（局部循环，iron-034b）
+            (mutable big?)))     ; 方法体很大（只执行一次的测试过程之类）：不内联算术（iron-034f）
 
   (define (make-method-ctx u class static? loop-label loop-arity self-mref)
-    (make-mctx u class static? (make-eq-hashtable) '() 0 '() 0 0 loop-label loop-arity self-mref (if static? 0 1) #f))
+    (make-mctx u class static? (make-eq-hashtable) '() 0 '() 0 0 loop-label loop-arity self-mref (if static? 0 1) #f (make-eq-hashtable) #f))
+
+  ;; code（指令树）里有没有 (br L)
+  (define (branches-to? code l)
+    (exists (lambda (i) (and (pair? i) (or (and (eq? (car i) 'br) (pair? (cdr i)) (eq? (cadr i) l)) (branches-to? i l)))) code))
 
   ;; ———————————————— async 方法上下文（designs/10-async.md §3.3 D12 ~ D13）————————————————
   ;;
@@ -223,7 +315,7 @@ See docs/license.txt. |#
             (mutable nresume)
             end-label            ; MoveNext 末尾：挂起与完成都 leave 到这里
             (mutable scratch)    ; stfld 用的临时 IL 局部变量下标，按需分配
-            labels))             ; eq 哈希表：label 的名字 → (IL 标签 . 形参表)
+            unused-labels))      ; 未用（label 表在 mctx-labels）
 
   (define (new-field! mc)
     (let* ((af (mctx-async mc)) (n (aframe-nfields af)) (f (string-append "v" (number->string n))))
@@ -378,6 +470,400 @@ See docs/license.txt. |#
 
   (define (load-symbol! mc s) (emit! mc `(ldconst ,(constant-index! (mctx-unit mc) s))))
 
+  ;; ———————————————— 拆箱的局部变量（iron-034c，D4）————————————————
+  ;;
+  ;; 候选：普通方法里 let 绑定的变量与 label 的形参（不在 async 体内、不被 set!、不被任何 lambda 捕获）。
+  ;; 定义点（let 的右边、各 jump 的实参）的类型全是 fixnum（或全是 flonum）时，变量用 int32（double）的 IL 局部变量，
+  ;; 读作 object 时才装箱。表达式的类型：fixnum / flonum 常量、$fx… / $fl… 原语与 fx… / fl… 的内联调用的结果
+  ;; （它们要么返回该类型、要么报错）、已定类型的变量、两个分支同类型的 if。通用 + - * 可能溢出成大整数，不算。
+  ;; 循环变量靠乐观不动点定类型（定义点引用变量自己）。
+  (define var-types (make-eq-hashtable))     ; 变量 → fx | fl；每个编译单元重算
+
+  ;; 测量用（iron-034）：环境变量 IRONSCHEME_NO_034 设置时关掉 034 的生成优化（内联算术、拆箱、单元内直接调用），
+  ;; 同一个 boot 镜像里对照编译时间与运行时间
+  (define no-034 (or ($get-environment-variable "IRONSCHEME_NO_034") ""))
+  (define (opt-off? name)
+    (or (string=? no-034 "1")
+        (let ((n (string-length name)) (m (string-length no-034)))
+          (let loop ((i 0)) (and (<= (+ i n) m) (or (string=? (substring no-034 i (+ i n)) name) (loop (+ i 1))))))))
+  (define opt-034? (not (opt-off? "known")))
+  (define opt-inline? (not (opt-off? "inline")))
+  (define opt-infer? (not (opt-off? "infer")))
+  (define opt-shared? (not (opt-off? "shared")))
+
+  ;; ———————————————— boot 镜像的接口（iron-034e，D5）————————————————
+  ;; nano 构建脚本在镜像旁写出 ironscheme.boot.ifc：
+  ;;   (ironscheme-interface 1 "镜像 id" ("位置符号名" "类名" ((固定参数个数 . 剩余?) …)) …)
+  ;; 编译别的单元时，接口文件的 id 与正在运行的镜像一致才用；(gref 位置) 若是其中的已知过程，
+  ;; 值就是那个类的 Instance，参数个数相符的调用直接 call 类::C<i>（类名带程序集名 ironscheme.boot）。
+  ;; 用过的单元在入口核对镜像 id（BootInterface.Check），镜像重新构建后旧的编译产物报错 / 退回源码。
+
+  ;; 与 forms 对齐的布尔表：只对含循环（lower-loops 生成了 label）的形式做类型推断（iron-034c）。
+  ;; 拆箱的收益几乎都在循环变量上，推断一遍约占编译分配的 7%；#f 时对全部形式做
+  (define loop-forms (make-parameter #f))
+
+  (define boot-assembly-name "ironscheme.boot")
+
+  ;; 原语经符号取：编译器库也会在旧镜像（没有这些原语）里从源码加载，例如构建新镜像时
+  (define (host-prim name)
+    (and (symbol-bound? name) (symbol-value name)))
+
+  ;; (id . 字符串哈希表：位置符号名 → known) 或 #f；每个进程读一次
+  (define boot-interface-cache 'unread)
+  (define (boot-interface)
+    (when (eq? boot-interface-cache 'unread)
+      (set! boot-interface-cache (if opt-034? (read-boot-interface) #f)))
+    boot-interface-cache)
+
+  (define (read-boot-interface)
+    (let ((file-of (host-prim '$boot-interface-file)) (id-of (host-prim '$boot-image-id)))
+      (and file-of id-of
+           (let ((file (file-of)) (id (id-of)))
+             (and (string? file) (string? id)
+                  (let ((x (guard (e (#t #f)) (call-with-input-file file read))))
+                    (and (pair? x) (eq? (car x) 'ironscheme-interface)
+                         (pair? (cdr x)) (eqv? (cadr x) 1)
+                         (pair? (cddr x)) (equal? (caddr x) id)
+                         (let ((table (make-hashtable string-hash string=?)))
+                           (for-each
+                             (lambda (entry)
+                               (let ((class (string-append (cadr entry) ", " boot-assembly-name)))
+                                 (hashtable-set! table (car entry)
+                                   (make-known class (caddr entry) class (if (pair? (cdddr entry)) (cadddr entry) "")))))
+                             (cdddr x))
+                           (cons id table)))))))))
+
+  ;; (gref s) 的已知过程：本单元的导出，或 boot 镜像接口里的
+  (define (known-loc u s)
+    (or (hashtable-ref (unit-known-loc u) s #f)
+        (and (not (eq? (unit-boot-ref u) 'off))
+             (boot-location? s)
+             (let ((k (hashtable-ref (cdr (boot-interface)) (symbol->string s) #f)))
+               (when k (unit-boot-ref-set! u #t))
+               k))
+        (and opt-034?
+             (not (string=? (unit-name u) boot-assembly-name))
+             (not (boot-location? s))
+             (library-known u s))))
+
+  ;; 用户库的接口文件（iron-034e）：compile-library-dll 在 .fasl / 库 dll 旁写出 名字.ifc，
+  ;;   (ironscheme-interface 1 "程序集名" ("位置符号名" "类名" 子句形状) …)
+  ;; 运行时加载这些产物时登记旁边的接口文件（原语 $library-interface-files，按加载顺序）。
+  ;; 只用真正加载过的产物的接口：装入的库实例就是那个产物，它的程序集已加载、模块字段由其入口初始化。
+  ;; 同一进程里刚编译、但装入的是源码展开实例的库（compile-library 之后）不用——它的产物程序集没有加载。
+  ;; 位置符号是展开时的 gensym，每次展开都不同：库从源码重新展开后旧条目不会命中，所以不需要另外的 id 核对；
+  ;; 编译好的程序 / 库对被调库编译实例的依赖由现有的 id 检查保护（requires a different compilation of a library）。
+  (define library-ifc-table (make-hashtable string-hash string=?))
+  (define library-ifc-seen 0)
+  (define (library-known u s)
+    (let ((files-of (host-prim '$library-interface-files)))
+      (when files-of
+        (let* ((files (files-of)) (n (length files)))
+          (when (> n library-ifc-seen)
+            (for-each read-library-interface! (list-tail files library-ifc-seen))
+            (set! library-ifc-seen n)))))
+    (hashtable-ref library-ifc-table (symbol->string s) #f))
+
+  (define (read-library-interface! file)
+    (let ((x (guard (e (#t #f)) (call-with-input-file file read))))
+      (when (and (pair? x) (eq? (car x) 'ironscheme-interface)
+                 (pair? (cdr x)) (eqv? (cadr x) 1) (pair? (cddr x)) (string? (caddr x)))
+        (add-interface-entries! library-ifc-table (caddr x) (cdddr x)))))
+
+  (define (add-interface-entries! table asm entries)
+    (for-each
+      (lambda (entry)
+        (let ((class (string-append (cadr entry) ", " asm)))
+          (hashtable-set! table (car entry)
+            (make-known class (caddr entry) class (if (pair? (cdddr entry)) (cadddr entry) "")))))
+      entries))
+
+;; 上一个单元的接口条目：(("位置符号名" "类名" 子句形状) …)，供构建脚本写 boot 的 .ifc、compile-library-dll 写库的 .ifc。
+  ;; 规范 gensym 名时（boot）位置符号名取改名后的
+  (define last-renamed #f)
+  (define last-interface '())
+  (define last-unit #f)
+  (define last-canonical? #f)
+  (define (unit-interface)
+    (when last-unit
+      (set! last-interface (compute-interface last-unit last-canonical?))
+      (set! last-unit #f))
+    last-interface)
+
+  ;; 每个单元结束时只记下单元本身，条目在有人要（unit-interface）时才算
+  (define (record-interface! u)
+    (set! last-unit u)
+    (set! last-canonical? (and (canonical-gensyms) #t))
+    (set! last-interface '()))
+
+  (define (compute-interface u canonical?)
+      (if (or (not canonical?) last-renamed)
+          (let-values (((ss ks) (hashtable-entries (unit-known-loc u))))
+            (list-sort (lambda (a b) (string<? (car a) (car b)))
+                       (let loop ((i 0) (acc '()))
+                         (if (= i (vector-length ss))
+                             acc
+                             (let ((name (if canonical?
+                                             (hashtable-ref last-renamed (symbol->string (vector-ref ss i)) #f)
+                                             (symbol->string (vector-ref ss i))))
+                                   (k (vector-ref ks i)))
+                               (loop (+ i 1)
+                                     (if (and name (string=? (known-owner k) (known-class k)))
+                                         ;; 共享持有类中的过程（034d）多一项前缀
+                                         (cons (if (string=? (known-prefix k) "")
+                                                   (list name (known-class k) (known-clauses k))
+                                                   (list name (known-class k) (known-clauses k) (known-prefix k)))
+                                               acc)
+                                         acc)))))))
+          '()))
+
+  (define fx-result-prims '($fx+ $fx- $fx* $fxand $fxior $fxxor $fxnot $as-fixnum))
+  (define fx-compare-prims '($fx=? $fx<? $fx>? $fx<=? $fx>=? $fxzero? $fxnegative? $fxpositive?))
+  (define fl-compare-prims '($fl=? $fl<? $fl>? $fl<=? $fl>=?))
+  (define fl-result-prims '($fl+ $fl- $fl* $fl/ $as-flonum))
+
+  ;; 表达式的类型：fx / fl / #f；env：变量 → fx | fl | top（还没定）| #f
+  (define (expr-type e env)
+    (nanopass-case (L3 Expr) e
+      [(quote ,d) (cond ((and (fixnum? d) (exact? d)) 'fx) ((flonum? d) 'fl) (else #f))]
+      [,x (hashtable-ref env x #f)]
+      [(primcall ,pr ,e* ...)
+       (cond ((memq pr fx-result-prims) 'fx) ((memq pr fl-result-prims) 'fl) (else #f))]
+      [(call ,e0 ,e* ...)
+       (let ((op (inline-op e0 (length e*))))
+         (and op (memq (car op) '(add sub mul div)) (memq (cdr op) '(fx fl)) (cdr op)))]
+      [(if ,e0 ,e1 ,e2) (meet-type (expr-type e1 env) (expr-type e2 env))]
+      [(begin ,e* ... ,e) (expr-type e env)]
+      [(let ([,x* ,e*] ...) ,body) (expr-type body env)]
+      [(jump ,x ,e* ...) 'top]                 ; 不返回：不影响 if 另一支的类型
+      [(throw ,e) 'top]
+      [else #f]))
+
+  (define (meet-type a b)
+    (cond ((eq? a 'top) b) ((eq? b 'top) a) ((eq? a b) a) (else #f)))
+
+  ;; 收集候选（iron-034c）。用库层的一个 define-pass 遍历整棵树：nanopass-case 每次调用都现场建一个 pass
+  ;; （一组闭包），按节点调用它的遍历每个节点约 1 KB，编译种子时多分配一百多 MB
+  ;; 句法上可能有类型的右边（expr-type 能给出 fx / fl 的形状）才登记为定义；其余一定是 #f
+  ;; candidate?：变量是否已登记为候选（外层的 let 与 label 先于内层登记，所以引用处已经知道）
+  ;; use!：变量 x 的一次引用，raw? 为真表示在能直接用原始值的位置（算术原语与内联算术的操作数、let 的右边、
+  ;; jump 的实参），否则读出后要装箱（传参、存进数据结构 …）。装箱用途多于原始用途的变量不拆箱：
+  ;; 每次读都装箱反而更慢（double 每次分配）
+  (define-pass infer-walk : L3 (ir add-def! exclude! labels candidate? use!) -> * (v)
+    ;; 是否在 async-lambda 体内：可变变量，进出 lambda 时保存恢复；处理器只取一个参数，for-each 直接传处理器，
+    ;; 不为每个节点新建闭包
+    (definitions (define async? #f))
+    (MaybeTyped : Expr (ir) -> * (b)
+      [(quote ,d) (or (fixnum? d) (flonum? d))]
+      [,x (candidate? x)]
+      [(primcall ,pr ,e* ...) (and (or (memq pr fx-result-prims) (memq pr fl-result-prims)) #t)]
+      [(call ,e0 ,e* ...) (and (inline-op e0 (length e*)) #t)]
+      [(if ,e0 ,e1 ,e2) (or (MaybeTyped e1) (MaybeTyped e2))]
+      [(begin ,e* ... ,e) (MaybeTyped e)]
+      [(let ([,x* ,e*] ...) ,body) (MaybeTyped body)]
+      [(jump ,x ,e* ...) #t]
+      [(throw ,e) #t]
+      [else #f])
+    (Body : Clause (ir) -> * (v)
+      [(clause (,x* ...) ,x ,body) (Expr body)])
+    ;; 原始值位置的操作数：变量记一次原始用途，其余照常遍历
+    (Raw : Expr (ir) -> * (v)
+      [,x (use! x #t)]
+      [else (Expr ir)])
+    (Expr : Expr (ir) -> * (v)
+      [,x (use! x #f)]
+      [(quote ,d) (void)]
+      [(if ,e0 ,e1 ,e2) (Expr e0) (Expr e1) (Expr e2)]
+      [(begin ,e* ... ,e) (for-each Expr e*) (Expr e)]
+      [(set! ,x ,e) (exclude! x) (Expr e)]
+      [(gref ,s) (void)]
+      [(gset! ,s ,e) (Expr e)]
+      [(mref ,x) (void)]
+      [(mset! ,x ,e) (Expr e)]
+      [(prim ,pr) (void)]
+      [(primcall ,pr ,e* ...)
+       (if (or (memq pr fx-result-prims) (memq pr fl-result-prims) (memq pr fx-compare-prims) (memq pr fl-compare-prims))
+           (for-each Raw e*)
+           (for-each Expr e*))]
+      [(lambda ,nm (,x* ...) ,cl* ...)
+       (for-each exclude! x*)
+       (let ((saved async?)) (set! async? #f) (for-each Body cl*) (set! async? saved))]
+      [(async-lambda ,nm (,x* ...) ,cl)
+       (for-each exclude! x*)
+       (let ((saved async?)) (set! async? #t) (Body cl) (set! async? saved))]
+      [(letrec ([,x* ,le*] ...) ,body) (for-each Expr le*) (Expr body)]
+      [(let ([,x* ,e*] ...) ,body)
+       (unless async? (for-each (lambda (x e) (when (MaybeTyped e) (add-def! x e))) x* e*))
+       (for-each Raw e*)
+       (Expr body)]
+      [(library ,d ([,x* ,s* ,e*] ...) ,body) (for-each Expr e*) (Expr body)]
+      [(call ,e ,e* ...) (Expr e) (for-each (if (inline-op e (length e*)) Raw Expr) e*)]
+      [(and ,e* ...) (for-each Expr e*)]
+      [(or ,e* ...) (for-each Expr e*)]
+      [(throw ,e) (Expr e)]
+      [(break) (void)]
+      [(try-finally ,e0 ,e1) (Expr e0) (Expr e1)]
+      [(await ,e) (Expr e)]
+      [(label ,x (,x* ...) ,body0 ,body1)
+       (unless async?
+         (hashtable-set! labels x x*)
+         (for-each (lambda (p) (add-def! p #f)) x*))
+       (Expr body0) (Expr body1)]
+      [(jump ,x ,e* ...)
+       (let ((ps (hashtable-ref labels x #f)))
+         (when ps (for-each add-def! ps e*)))
+       (for-each Raw e*)]
+      [(escape-frame ,x ,body) (Expr body)]
+      [(host-call ,d0 ,d1 ,st ,e* ...) (for-each Expr e*)]
+      [(host-field-get ,d0 ,d1 ,st ,e* ...) (for-each Expr e*)]
+      [(host-field-set ,d0 ,d1 ,st ,e* ...) (for-each Expr e*)]
+      [(host-new ,d ,e* ...) (for-each Expr e*)]
+      [(host-new-array ,d ,e) (Expr e)]
+      [(host-cast ,d ,e) (Expr e)]
+      [(host-is ,d ,e) (Expr e)]
+      [(unsupported ,d ,e* ...) (for-each Expr e*)]
+      [(box ,e) (Expr e)]
+      [(set-box! ,x ,e) (Expr e)]
+      [else (void)])
+    (Expr ir))
+
+  ;; 过程体的 L3 节点数是否超过 n（数到 n 就停）；嵌套的 lambda 是别的方法，不数
+  (define-pass count-nodes : L3 (ir n) -> * (v)
+    (definitions
+      (define count 0)
+      (define (more?) (set! count (+ count 1)) (<= count n)))
+    (Expr : Expr (ir) -> * (v)
+      [(lambda ,nm (,x* ...) ,cl* ...) (void)]
+      [(async-lambda ,nm (,x* ...) ,cl) (void)]
+      [(if ,e0 ,e1 ,e2) (when (more?) (Expr e0) (Expr e1) (Expr e2))]
+      [(begin ,e* ... ,e) (when (more?) (for-each Expr e*) (Expr e))]
+      [(set! ,x ,e) (when (more?) (Expr e))]
+      [(gset! ,s ,e) (when (more?) (Expr e))]
+      [(mset! ,x ,e) (when (more?) (Expr e))]
+      [(primcall ,pr ,e* ...) (when (more?) (for-each Expr e*))]
+      [(letrec ([,x* ,le*] ...) ,body) (when (more?) (Expr body))]
+      [(let ([,x* ,e*] ...) ,body) (when (more?) (for-each Expr e*) (Expr body))]
+      [(call ,e ,e* ...) (when (more?) (Expr e) (for-each Expr e*))]
+      [(and ,e* ...) (when (more?) (for-each Expr e*))]
+      [(or ,e* ...) (when (more?) (for-each Expr e*))]
+      [(throw ,e) (when (more?) (Expr e))]
+      [(try-finally ,e0 ,e1) (when (more?) (Expr e0) (Expr e1))]
+      [(await ,e) (when (more?) (Expr e))]
+      [(label ,x (,x* ...) ,body0 ,body1) (when (more?) (Expr body0) (Expr body1))]
+      [(jump ,x ,e* ...) (when (more?) (for-each Expr e*))]
+      [(escape-frame ,x ,body) (when (more?) (Expr body))]
+      [(host-call ,d0 ,d1 ,st ,e* ...) (when (more?) (for-each Expr e*))]
+      [(host-new ,d ,e* ...) (when (more?) (for-each Expr e*))]
+      [else (more?)])
+    (Expr ir)
+    (> count n))
+
+  (define (infer-var-types! form)
+    (let ((defs (make-eq-hashtable))       ; 候选变量 → 定义表达式列表（#f 是占位：label 的形参先登记）
+          (excluded (make-eq-hashtable))
+          (labels (make-eq-hashtable)))    ; label 名 → 形参表
+      (define raw-uses (make-eq-hashtable))
+      (define boxed-uses (make-eq-hashtable))
+      (infer-walk form
+                  (lambda (x e) (hashtable-set! defs x (let ((l (hashtable-ref defs x '()))) (if e (cons e l) l))))
+                  (lambda (v) (hashtable-set! excluded v #t))
+                  labels
+                  (lambda (x) (hashtable-contains? defs x))
+                  (lambda (x raw?)
+                    (when (hashtable-contains? defs x)
+                      (let ((t (if raw? raw-uses boxed-uses)))
+                        (hashtable-set! t x (+ 1 (hashtable-ref t x 0)))))))
+      ;; 工作表求不动点：类型只会从 top 往下走（top → fx/fl → #f），某个变量变了只重算依赖它的变量
+      (let ((env (make-eq-hashtable))
+            (users (make-eq-hashtable))     ; 变量 → 定义里引用了它的候选
+            (cands (filter (lambda (x) (not (hashtable-ref excluded x #f)))
+                           (vector->list (hashtable-keys defs)))))
+        (define (deps e)                     ; expr-type 会查的变量
+          (nanopass-case (L3 Expr) e
+            [,x (list x)]
+            [(if ,e0 ,e1 ,e2) (append (deps e1) (deps e2))]
+            [(begin ,e* ... ,e) (deps e)]
+            [(let ([,x* ,e*] ...) ,body) (deps body)]
+            [else '()]))
+        (for-each (lambda (x) (hashtable-set! env x 'top)) cands)
+        (for-each (lambda (x)
+                    (for-each (lambda (e)
+                                (for-each (lambda (v) (hashtable-set! users v (cons x (hashtable-ref users v '()))))
+                                          (deps e)))
+                              (hashtable-ref defs x '())))
+                  cands)
+        (let loop ((work cands))
+          (unless (null? work)
+            (let* ((x (car work))
+                   (old (hashtable-ref env x #f))
+                   (new (and old
+                             (let f ((es (hashtable-ref defs x '())) (t 'top))
+                               (if (or (null? es) (not t)) t (f (cdr es) (meet-type t (expr-type (car es) env))))))))
+              (if (and old (not (eq? old new)))
+                  (begin
+                    (hashtable-set! env x new)
+                    (loop (append (hashtable-ref users x '()) (cdr work))))
+                  (loop (cdr work))))))
+        (for-each (lambda (x)
+                    (let ((t (hashtable-ref env x #f)))
+                      (when (and (memq t '(fx fl))
+                                 (<= (hashtable-ref boxed-uses x 0) (hashtable-ref raw-uses x 0)))
+                        (hashtable-set! var-types x t))))
+                  cands))))
+
+  (define (type-clr t) (if (eq? t 'fl) double-type int32-type))
+
+  ;; 把 e 的值以 t（fx / fl）的原始形式压栈；e 的类型必须已知是 t（expr-type 保证），否则先求值再 unbox.any
+  (define (cg-raw e mc t)
+    (define (fallback) (cg e mc 'value) (emit! mc `(unbox.any ,(type-clr t))))
+    (nanopass-case (L3 Expr) e
+      [(quote ,d)
+       (cond ((and (eq? t 'fx) (fixnum? d) (exact? d)) (emit! mc `(ldc.i4 ,d)))
+             ((and (eq? t 'fl) (flonum-constant e)) (emit! mc `(ldc.r8 ,d)))
+             (else (fallback)))]
+      [,x (let ((loc (hashtable-ref (mctx-vars mc) x #f)))
+            (if (and loc (eq? (car loc) 'tlocal) (eq? (cddr loc) t))
+                (emit! mc `(ldloc ,(cadr loc)))
+                (fallback)))]
+      [(primcall ,pr ,e* ...)
+       (if (and (eq? (expr-type e var-types) t) (raw-prim! pr e* mc))
+           (void)
+           (fallback))]
+      [(call ,e0 ,e* ...)
+       (let ((op (inline-op e0 (length e*))))
+         (if (and op (eq? (cdr op) 'fl) (eq? t 'fl) (memq (car op) '(add sub mul div))
+                  (for-all (lambda (a) (eq? (expr-type a var-types) 'fl)) e*))
+             (begin
+               (for-each (lambda (a) (cg-raw a mc 'fl)) e*)
+               (emit! mc (case (car op) ((add) '(add)) ((sub) '(sub)) ((mul) '(mul)) (else '(div)))))
+             (fallback)))]
+      [else (fallback)]))
+
+  ;; $fx… / $fl… 算术原语的原始结果（不装箱）；不认识时返回 #f 且不生成代码
+  (define (raw-prim! pr e* mc)
+    (define (args t) (operands! mc (map (lambda (x) (lambda () (cg-raw x mc t))) e*)))
+    (let ((argc (length e*)))
+      (case pr
+        (($fx+ $fx* $fxand $fxior $fxxor)
+         (and (= argc 2)
+              (begin (args 'fx)
+                     (emit! mc (case pr (($fx+) '(add)) (($fx*) '(mul)) (($fxand) '(and)) (($fxior) '(or)) (else '(xor))))
+                     #t)))
+        (($fx-) (and (<= 1 argc 2) (begin (args 'fx) (emit! mc (if (= argc 1) '(neg) '(sub))) #t)))
+        (($fxnot) (and (= argc 1) (begin (args 'fx) (emit! mc '(not)) #t)))
+        ;; typed-lambda 的形参（parse 生成，D6）：原始值就是拆箱后的参数
+        (($as-fixnum) (and (= argc 1) (begin (args 'fx) #t)))
+        (($as-flonum) (and (= argc 1) (begin (args 'fl) #t)))
+        (($fl+ $fl* $fl/)
+         (and (= argc 2) (begin (args 'fl) (emit! mc (case pr (($fl+) '(add)) (($fl*) '(mul)) (else '(div)))) #t)))
+        (($fl-) (and (<= 1 argc 2) (begin (args 'fl) (emit! mc (if (= argc 1) '(neg) '(sub))) #t)))
+        (else #f))))
+
+  (define (box-raw! mc t)
+    (if (eq? t 'fl)
+        (emit! mc `(box ,double-type))
+        (emit! mc `(call ,rt-type "Box" (,int32-type) ,obj))))
+
   ;; ———————————————— 变量 ————————————————
 
   (define (var-location mc x)
@@ -389,16 +875,19 @@ See docs/license.txt. |#
       (case (car loc)
         ((arg) (emit! mc `(ldarg ,(cdr loc))))
         ((local) (emit! mc `(ldloc ,(cdr loc))))
+        ((tlocal) (emit! mc `(ldloc ,(cadr loc))) (box-raw! mc (cddr loc)))
         ((field) (emit! mc '(ldarg 0) `(ldfld ,(mctx-class mc) ,(cdr loc))))
-        ((self) (if (mctx-static? mc)
-                    (emit! mc `(ldsfld ,(mctx-class mc) "Instance"))
-                    (emit! mc '(ldarg 0)))))))
+        ((self) (cond
+                  ((pair? (cdr loc)) (emit! mc `(ldsfld ,(cadr loc) ,(cddr loc))))   ; 034d：共享持有类中的过程
+                  ((mctx-static? mc) (emit! mc `(ldsfld ,(mctx-class mc) "Instance")))
+                  (else (emit! mc '(ldarg 0))))))))
 
   (define (store-var! mc x)
     (let ((loc (var-location mc x)))
       (case (car loc)
         ((arg) (emit! mc `(starg ,(cdr loc))))
         ((local) (emit! mc `(stloc ,(cdr loc))))
+        ((tlocal) (emit! mc `(stloc ,(cadr loc))))   ; 栈上须是原始值（cg-raw）
         ((field)
          ;; 帧字段（async）：值先存临时变量，再 ldarg 0 / stfld
          (if (mctx-async mc)
@@ -409,6 +898,15 @@ See docs/license.txt. |#
 
   ;; 为词法变量分配存储：IL 局部变量；async 体内是帧字段。返回下标或字段名
   (define (bind-local! mc x)
+    (cond
+      ((and (not (mctx-async mc)) (not (mctx-big? mc)) (hashtable-ref var-types x #f))
+       => (lambda (t)
+            (let ((i (new-local! mc (type-clr t))))
+              (hashtable-set! (mctx-vars mc) x (cons 'tlocal (cons i t)))
+              i)))
+      (else (bind-local-object! mc x))))
+
+  (define (bind-local-object! mc x)
     (if (mctx-async mc)
         (let ((f (new-field! mc)))
           (hashtable-set! (mctx-vars mc) x (cons 'field f))
@@ -421,6 +919,11 @@ See docs/license.txt. |#
   (define (bind-value! mc x)
     (bind-local! mc x)
     (store-var! mc x))
+
+  ;; 变量的原始类型（fx / fl），普通变量为 #f
+  (define (var-raw-type mc x)
+    (let ((loc (hashtable-ref (mctx-vars mc) x #f)))
+      (and loc (eq? (car loc) 'tlocal) (cddr loc))))
 
   ;; 实参都是 (host-cast T e) 时返回类型名列表（Lcil 的实参类型提示，发射器据此静态决议重载，iron-033）；否则 #f
   (define (cast-types e*)
@@ -458,21 +961,27 @@ See docs/license.txt. |#
                 `(label ,l) '(ldarg 0) `(call ,frame-type "Resume" () ,obj))
          (finish-value! mc ctx))]
       [(label ,x (,x* ...) ,body0 ,body1)
-       ;; 局部循环（10 §3.2 D9）：形参是帧字段，jump 给它们赋值后 br 到循环体
-       (unless (mctx-async mc) (async-unsupported e))
+       ;; 局部循环（10 §3.2 D9；iron-034b 起普通代码也有）：形参是 IL 局部变量（async 下是帧字段），
+       ;; jump 给它们赋值后 br 到循环体。body0 一次都没跳到循环体时循环体不可达，不生成
+       ;; （否则无条件分支之后的标签处栈深无法单遍推导，ECMA-335 III.1.7.5）
        (for-each (lambda (p) (bind-local! mc p)) x*)
        (let ((lf (new-label! mc)) (end-l (new-label! mc)))
-         (hashtable-set! (aframe-labels (mctx-async mc)) x (cons lf x*))
-         (cg body0 mc ctx)
-         (unless (eq? ctx 'tail) (emit! mc `(br ,end-l)))
-         (emit! mc `(label ,lf))
-         (cg body1 mc ctx)
-         (unless (eq? ctx 'tail) (emit! mc `(label ,end-l))))]
+         (hashtable-set! (mctx-labels mc) x (cons lf x*))
+         (let ((code (with-buffer mc (lambda () (cg body0 mc ctx)))))
+           (emit-code! mc code)
+           (when (branches-to? code lf)
+             (unless (eq? ctx 'tail) (emit! mc `(br ,end-l)))
+             (emit! mc `(label ,lf))
+             (cg body1 mc ctx)
+             (unless (eq? ctx 'tail) (emit! mc `(label ,end-l))))))]
       [(jump ,x ,e* ...)
-       (unless (mctx-async mc) (async-unsupported e))
-       (let* ((entry (or (hashtable-ref (aframe-labels (mctx-async mc)) x #f) (error 'codegen "jump to unknown label" x)))
-              ;; 实参先全部求值到临时变量再写入形参字段（并行赋值）
-              (temps (map (lambda (a) (cg a mc 'value) (let ((t (new-local! mc obj))) (emit! mc `(stloc ,t)) t)) e*)))
+       (let* ((entry (or (hashtable-ref (mctx-labels mc) x #f) (error 'codegen "jump to unknown label" x)))
+              ;; 实参先全部求值到临时变量再写入形参（并行赋值）；有类型的形参用原始值的临时变量
+              (temps (map (lambda (p a)
+                            (let ((rt (var-raw-type mc p)))
+                              (if rt (cg-raw a mc rt) (cg a mc 'value))
+                              (let ((t (new-local! mc (if rt (type-clr rt) obj)))) (emit! mc `(stloc ,t)) t)))
+                          (cdr entry) e*)))
          (for-each (lambda (p t) (emit! mc `(ldloc ,t)) (store-var! mc p)) (cdr entry) temps)
          (emit! mc `(br ,(car entry)))
          ;; 之后的代码不可达；补一个值保持栈形状一致（同 throw）
@@ -540,8 +1049,12 @@ See docs/license.txt. |#
        (finish-none! mc ctx)]
       [(gref ,s)
        (unless (eq? ctx 'effect)
-         (load-symbol! mc s)
-         (emit! mc `(call ,calls-type "Global" (,obj) ,obj))
+         (let ((k (known-loc (mctx-unit mc) s)))
+           (if k
+               (emit! mc `(ldsfld ,(known-class k) ,(known-field k)))
+               (begin
+                 (load-symbol! mc s)
+                 (emit! mc `(call ,calls-type "Global" (,obj) ,obj)))))
          (finish-value! mc ctx))]
       [(gset! ,s ,e)
        (operands! mc (list (lambda () (load-symbol! mc s)) (lambda () (cg e mc 'value))))
@@ -573,7 +1086,7 @@ See docs/license.txt. |#
          (for-each
            (lambda (x c)
              (if (car c)
-                 (emit! mc `(ldsfld ,(cadr c) "Instance"))
+                 (load-static-proc! mc c)
                  (emit! mc `(newobj ,(cadr c) ())))
              (store-var! mc x))
            x* classes)
@@ -588,18 +1101,27 @@ See docs/license.txt. |#
            x* classes le*)
          (cg body mc ctx))]
       [(let ([,x* ,e*] ...) ,body)
-       ;; 右边依次求值并存入新变量（IL 局部变量；async 体内是帧字段）；右边看不到同一 let 绑定的变量
-       (let ((codes (map (lambda (e) (with-buffer mc (lambda () (cg e mc 'value)))) e*)))
+       ;; 右边依次求值并存入新变量（IL 局部变量；async 体内是帧字段；有类型的是 int32 / double 局部变量）；
+       ;; 右边看不到同一 let 绑定的变量
+       (let ((codes (map (lambda (x e)
+                           (with-buffer mc (lambda ()
+                                             (let ((t (and (not (mctx-async mc)) (not (mctx-big? mc)) (hashtable-ref var-types x #f))))
+                                               (if t (cg-raw e mc t) (cg e mc 'value))))))
+                         x* e*)))
          (for-each (lambda (x code) (emit-code! mc code) (bind-value! mc x)) x* codes)
          (cg body mc ctx))]
       [(library ,d ([,x* ,s* ,e*] ...) ,body)
        ;; 非顶层的 library-letrec*（compile-library 把库的 invoke 代码包在 lambda 中）：库变量仍是模块静态字段，
-       ;; 按顺序求值并写入；不做已知过程的预链接
+       ;; 按顺序求值并写入；不做已知过程的预链接（已知过程的直接调用不经字段，类的单例由其静态构造函数建立）
        (let ((u (mctx-unit mc)))
          (for-each
            (lambda (x s e)
-             (let ((field (mfield! u x)))
-               (cg e mc 'value)
+             (let ((field (mfield! u x))
+                   (k (hashtable-ref (unit-known u) x #f)))
+               ;; 已知过程（collect-known! 的 nested-libraries）用登记的类名生成
+               (if k
+                   (load-static-proc! mc (lambda-class! e mc #f x k))
+                   (cg e mc 'value))
                (emit! mc `(stsfld ,(unit-module u) ,field))
                (unless (null? d)
                  (emit! mc `(ldconst ,(constant-index! u s)) `(castclass ,symbol-type)
@@ -716,22 +1238,142 @@ See docs/license.txt. |#
       [else #f]))
 
   ;; 已知过程：按参数个数取第一个匹配的子句；是固定参数子句时返回其下标
-  (define (known-target e0 mc argc)
+  ;; 位置符号 s 是本单元某个库的导出、且绑定的是已知过程时（iron-034e），(gref s) 就是那个过程：
+  ;; 已知过程不被再赋值，预链接在单元入口一开始就写好了位置与字段
+  (define (known-of e0 mc)
     (nanopass-case (L3 Expr) e0
-      [(mref ,x)
-       (let ((k (hashtable-ref (unit-known (mctx-unit mc)) x #f)))
-         (and k
-              (let loop ((cls (known-clauses k)) (i 0))
-                (cond
-                  ((null? cls) #f)
-                  ((cdar cls) #f)   ; 先匹配到剩余参数子句：走一般调用
-                  ((= (caar cls) argc) (cons (known-class k) i))
-                  (else (loop (cdr cls) (+ i 1)))))))]
+      [(mref ,x) (hashtable-ref (unit-known (mctx-unit mc)) x #f)]
+      [(gref ,s) (known-loc (mctx-unit mc) s)]
       [else #f]))
+
+  (define (known-target e0 mc argc)
+    (let ((k (known-of e0 mc)))
+      (and k
+           (let loop ((cls (known-clauses k)) (i 0))
+             (cond
+               ((null? cls) #f)
+               ((cdar cls) #f)   ; 先匹配到剩余参数子句：走一般调用
+               ((= (caar cls) argc) (cons k i))
+               (else (loop (cdr cls) (+ i 1))))))))
+
+  ;; ———————————————— 通用算术与比较在调用处内联（iron-034f，D8）————————————————
+  ;;
+  ;; 用户代码里的 + = fx+ fl< … 是 boot 导出的全局位置（rewrite 把 (primitive +) 换成了 g$+$N$%b），
+  ;; 不是原语。按位置符号识别：去掉 gensym 后缀的名字在表里，且后缀是 $%b（boot 镜像规范改名后的后缀，
+  ;; 05 §7；用户库自己定义的 + 的位置带进程戳，不会被误认）。两个参数时生成"都是 fixnum（或 flonum）→ 直接算，
+  ;; 否则调原过程"，原过程负责其余类型与报错。
+  (define inline-ops
+    '(("+" add . generic) ("-" sub . generic) ("*" mul . generic)
+      ("=" eq . generic) ("<" lt . generic) ("<=" le . generic) (">" gt . generic) (">=" ge . generic)
+      ("fx+" add . fx) ("fx-" sub . fx) ("fx*" mul . fx)
+      ("fx=?" eq . fx) ("fx<?" lt . fx) ("fx<=?" le . fx) ("fx>?" gt . fx) ("fx>=?" ge . fx)
+      ("fl+" add . fl) ("fl-" sub . fl) ("fl*" mul . fl) ("fl/" div . fl)
+      ("fl=?" eq . fl) ("fl<?" lt . fl) ("fl<=?" le . fl) ("fl>?" gt . fl) ("fl>=?" ge . fl)))
+
+  (define (boot-location? s)
+    (let* ((str (symbol->string s)) (n (string-length str)))
+      (and (> n 3) (string=? (substring str (- n 3) n) "$%b"))))
+
+  ;; (op . kind) 或 #f
+  (define (top-level-mc? mc) (or (mctx-big? mc) (string=? (mctx-class mc) (unit-module (mctx-unit mc)))))
+
+  ;; 过程体是否很大（R6RS 测试库把上千个测试展开在一个过程里）：这种过程往往只执行一次，
+  ;; 内联让 IL 更大、发射与 JIT 更慢，换不回时间
+  (define big-body-nodes 2000)
+  (define (bigger-than? e n) (count-nodes e n))
+
+  ;; (op . kind) 或 #f。按位置符号缓存：每个调用都要问，名字的字符串处理不能每次做
+  (define inline-op-cache (make-eq-hashtable))
+  (define (inline-op e0 argc)
+    (and (= argc 2)
+         (nanopass-case (L3 Expr) e0
+           [(gref ,s)
+            (let ((r (hashtable-ref inline-op-cache s 'unknown)))
+              (if (eq? r 'unknown)
+                  (let ((r (and (boot-location? s)
+                                (let ((r (assoc (pretty s) inline-ops))) (and r (cdr r))))))
+                    (hashtable-set! inline-op-cache s r)
+                    r)
+                  r))]
+           [else #f])))
+
+  (define (flonum-constant e)
+    (nanopass-case (L3 Expr) e
+      [(quote ,d) (and (flonum? d) (not (nan? d)) (not (infinite? d)) d)]
+      [else #f]))
+
+  (define (cg-inline-op op kind e0 e* mc ctx)
+    (let* ((fl? (eq? kind 'fl))
+           (clr-type (if fl? double-type int32-type))
+           (const (lambda (e) (if fl? (flonum-constant e) (fixnum-constant e))))
+           (slow (new-label! mc))
+           (end (new-label! mc))
+           (raw-t (if fl? 'fl 'fx))
+           ;; 操作数从左到右求值：常量留在原处；已知类型的（iron-034c）存入原始值的临时变量，不再检查；其余存入 object 临时变量
+           (slots (map (lambda (e)
+                         (cond
+                           ((const e) (cons 'const e))
+                           ((eq? (expr-type e var-types) raw-t)
+                            (cg-raw e mc raw-t)
+                            (let ((t (new-local! mc clr-type))) (emit! mc `(stloc ,t)) (cons 'raw t)))
+                           (else
+                            (cg e mc 'value)
+                            (let ((t (new-local! mc obj))) (emit! mc `(stloc ,t)) (cons 'local t)))))
+                       e*)))
+      (define (load-boxed s)
+        (case (car s)
+          ((local) (emit! mc `(ldloc ,(cdr s))))
+          ((raw) (emit! mc `(ldloc ,(cdr s))) (box-raw! mc raw-t))
+          (else (cg (cdr s) mc 'value))))
+      (define (load-raw s)
+        (case (car s)
+          ((local) (emit! mc `(ldloc ,(cdr s)) `(unbox.any ,clr-type)))
+          ((raw) (emit! mc `(ldloc ,(cdr s))))
+          (else (let ((k (const (cdr s)))) (emit! mc (if fl? `(ldc.r8 ,k) `(ldc.i4 ,k)))))))
+      ;; 类型检查
+      (for-each (lambda (s)
+                  (when (eq? (car s) 'local)
+                    (emit! mc `(ldloc ,(cdr s)) `(isinst ,clr-type) `(brfalse ,slow))))
+                slots)
+      (for-each load-raw slots)
+      (case op
+        ((eq lt le gt ge)
+         (emit-compare! mc (if fl?
+                               (case op ((eq) '$fl=?) ((lt) '$fl<?) ((le) '$fl<=?) ((gt) '$fl>?) (else '$fl>=?))
+                               (case op ((eq) '$fx=?) ((lt) '$fx<?) ((le) '$fx<=?) ((gt) '$fx>?) (else '$fx>=?)))
+                        fl?)
+         (finish-bool! mc ctx))
+        (else
+         (cond
+           (fl?
+            (emit! mc (case op ((add) '(add)) ((sub) '(sub)) ((mul) '(mul)) (else '(div))) `(box ,double-type))
+            (finish-value! mc ctx))
+           ((eq? kind 'generic)
+            (emit! mc `(call ,arith-type ,(case op ((add) "Add") ((sub) "Subtract") (else "Multiply")) (,int32-type ,int32-type) ,obj))
+            (finish-value! mc ctx))
+           (else
+            ;; fx+ fx- fx*：溢出时助手返回 null，转去慢路径由原过程报错
+            (let ((r (new-local! mc obj)))
+              (emit! mc `(call ,arith-type ,(case op ((add) "FxAdd") ((sub) "FxSubtract") (else "FxMultiply")) (,int32-type ,int32-type) ,obj)
+                     `(stloc ,r) `(ldloc ,r) `(brfalse ,slow) `(ldloc ,r))
+              (finish-value! mc ctx))))))
+      (unless (eq? ctx 'tail) (emit! mc `(br ,end)))
+      ;; 慢路径：与一般调用相同（经值槽、callvirt Invoke2），错误信息与 who 由原过程给出
+      (emit! mc `(label ,slow))
+      (cg e0 mc 'value)
+      (emit! mc `(call ,calls-type "Proc" (,obj) ,proc-type))
+      (for-each load-boxed slots)
+      (when (tail-ok? mc ctx) (emit! mc '(tail)))
+      (emit! mc (invoke-method 2))
+      (finish-value! mc ctx)
+      (unless (eq? ctx 'tail) (emit! mc `(label ,end)))))
 
   (define (cg-call e0 e* mc ctx)
     (let ((argc (length e*)))
       (cond
+        ;; 顶层初始化代码（Init 方法）只执行一次，内联的代码量换不回时间（发射与 JIT 更贵），只在过程体里内联
+        ((and opt-inline? (not (top-level-mc? mc)) (inline-op e0 argc))
+         => (lambda (op.kind) (cg-inline-op (car op.kind) (cdr op.kind) e0 e* mc ctx)))
         ;; 自尾调用 → 循环
         ((and (tail-ok? mc ctx) (mctx-loop-label mc) (eqv? (mctx-loop-arity mc) argc) (self-call? e0 mc))
          (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
@@ -745,7 +1387,7 @@ See docs/license.txt. |#
          => (lambda (t)
               (operands! mc (map (lambda (x) (lambda () (cg x mc 'value))) e*))
               (when (tail-ok? mc ctx) (emit! mc '(tail)))
-              (emit! mc `(call ,(car t) ,(string-append "C" (number->string (cdr t))) ,(objs argc) ,obj))
+              (emit! mc `(call ,(known-owner (car t)) ,(string-append (known-prefix (car t)) "C" (number->string (cdr t))) ,(objs argc) ,obj))
               (finish-value! mc ctx)))
         (else
          (operands! mc (cons (lambda () (cg e0 mc 'value) (emit! mc `(call ,calls-type "Proc" (,obj) ,proc-type)))
@@ -765,11 +1407,7 @@ See docs/license.txt. |#
       ;; 拆箱的操作数；fixnum 常量直接 ldc.i4，不装箱再拆箱
       (define (unbox-args! type)
         (operands! mc (map (lambda (x)
-                             (lambda ()
-                               (let ((k (and (string=? type int32-type) (fixnum-constant x))))
-                                 (if k
-                                     (emit! mc `(ldc.i4 ,k))
-                                     (begin (cg x mc 'value) (emit! mc `(unbox.any ,type)))))))
+                             (lambda () (cg-raw x mc (if (string=? type int32-type) 'fx 'fl))))
                            e*)))
       (cond
         ((not o)
@@ -883,11 +1521,103 @@ See docs/license.txt. |#
       [(async-lambda ,nm (,x1* ...) ,cl) (procedure-class! mc nm x1* (list cl) #t self self-mref preset)]))
 
   ;; async? 为真时（10 §3.3 D12）子句方法 C0 新建帧、复制自由变量与实参并 Start，帧类另外生成
+  ;; preset：已知过程的 known 记录（类名 / 持有类与前缀已在 collect-known! 中确定）
   (define (procedure-class! mc nm x1* cl* async? self self-mref preset)
+    (let ((fields (if self (remq self x1*) x1*)))
+      (if (and opt-shared? (null? fields) (not async?))
+          (shared-procedure! mc nm cl* self self-mref (and (pair? preset) (car preset)))
+          (procedure-class1! mc nm x1* cl* async? self self-mref preset))))
+
+  ;; 034d：共享持有类中的过程。返回 (#t 持有类 字段)
+  (define (shared-procedure! mc nm cl* self self-mref k)
+    (let* ((u (mctx-unit mc))
+           (slot (if k (cons (known-owner k) (known-prefix k)) (shared-slot! u)))
+           (holder (car slot))
+           (prefix (cdr slot))
+           (field (substring prefix 0 (- (string-length prefix) 1)))
+           (entry (holder-entry u holder))
+           (clauses (map clause-shape cl*))
+           (self-loc (cons* 'self holder field))
+           (methods '()))
+      (define (add-method! m) (set! methods (cons m methods)))
+      (let loop ((cl* cl*) (i 0))
+        (unless (null? cl*)
+          (add-method! (clause-method u holder #t (car cl*) i '() '() self self-mref prefix self-loc))
+          (loop (cdr cl*) (+ i 1))))
+      (let ((need-n (exists (lambda (c) (or (cdr c) (> (car c) 4))) clauses)))
+        (when need-n (add-method! (shared-invoke-n-method holder prefix field clauses)))
+        (vector-set! entry 0 (cons `(field ,field ,proc-type static) (vector-ref entry 0)))
+        (vector-set! entry 1 (append methods (vector-ref entry 1)))
+        (vector-set! entry 2
+          (cons
+            `(,@(if nm `((ldstr ,(if (symbol? nm) (symbol->string nm) nm))) '((ldnull)))
+              ,@(arity-code u clauses)
+              ,@(if (null? cl*) '((ldnull)) `((ldconst ,(constant-index! u (map (lambda (cl) (clause-form nm cl)) cl*)))))
+              ,@(let k-loop ((n 0))
+                  (if (> n 4)
+                      '()
+                      (append
+                        (let ((t (first-match clauses n)))
+                          (if (and t (not (cdr (list-ref clauses t))))
+                              `((ldnull) (ldftn ,holder ,(string-append prefix "C" (number->string t)) ,(objs n) ,obj)
+                                (newobj ,(func-type n) (,obj "System.IntPtr")))
+                              '((ldnull))))
+                        (k-loop (+ n 1)))))
+              ,@(if need-n
+                    `((ldnull) (ldftn ,holder ,(string-append prefix "N") (,obj-array) ,obj)
+                      (newobj ,func-n-type (,obj "System.IntPtr")))
+                    '((ldnull)))
+              (newobj ,(sp-class u)
+                      (,string-type ,obj ,obj ,(func-type 0) ,(func-type 1) ,(func-type 2) ,(func-type 3) ,(func-type 4) ,func-n-type))
+              (stsfld ,holder ,field))
+            (vector-ref entry 2))))
+      (list #t holder field)))
+
+  (define (func-type n)
+    (case n
+      ((0) "System.Func`1[System.Object]")
+      ((1) "System.Func`2[System.Object,System.Object]")
+      ((2) "System.Func`3[System.Object,System.Object,System.Object]")
+      ((3) "System.Func`4[System.Object,System.Object,System.Object,System.Object]")
+      (else "System.Func`5[System.Object,System.Object,System.Object,System.Object,System.Object]")))
+  (define func-n-type "System.Func`2[System.Object[],System.Object]")
+  (define static-proc-type "IronScheme.Core.StaticProcedure")
+
+  ;; procedure-arity 的值（与 get_Arity 相同）
+  (define (arity-code u clauses)
+    (let ((arity (let ((as (map (lambda (c) (if (cdr c) (inexact (car c)) (car c))) clauses)))
+                   (cond ((null? as) '()) ((null? (cdr as)) (car as)) (else as)))))
+      (cond
+        ((null? arity) '((ldnull)))
+        ((fixnum? arity) `((ldc.i4 ,arity) (call ,rt-type "Box" (,int32-type) ,obj)))
+        (else `((ldconst ,(constant-index! u arity)))))))
+
+  ;; 共享持有类中的通用入口（静态方法，参数为实参数组）：按子句顺序分派，没有匹配时由过程对象报参数个数错误
+  (define (shared-invoke-n-method holder prefix field clauses)
+    (let loop ((cs clauses) (i 0) (code '()))
+      (if (null? cs)
+          `(method ,(string-append prefix "N") (attrs static) (params ,obj-array) (ret ,obj)
+             (body ,@(reverse code)
+                   (ldsfld ,holder ,field) (ldarg 0)
+                   (call ,static-proc-type "NoMatch" (,obj ,obj-array) ,obj)
+                   (ret)))
+          (let* ((n (caar cs)) (rest? (cdar cs))
+                 (next (string->symbol (string-append "N" (number->string i))))
+                 (load-args (let a-loop ((j 0)) (if (= j n) '() (cons* '(ldarg 0) `(ldc.i4 ,j) '(ldelem.ref) (a-loop (+ j 1))))))
+                 (block
+                  `((ldarg 0) (ldlen) (conv.i4) (ldc.i4 ,n) ,(if rest? `(blt ,next) `(bne.un ,next))
+                    ,@load-args
+                    ,@(if rest? `((ldarg 0) (ldc.i4 ,n) (call ,static-proc-type "Rest" (,obj-array ,int32-type) ,obj)) '())
+                    (call ,holder ,(string-append prefix "C" (number->string i)) ,(objs (+ n (if rest? 1 0))) ,obj)
+                    (ret)
+                    (label ,next))))
+            (loop (cdr cs) (+ i 1) (append (reverse block) code))))))
+
+  (define (procedure-class1! mc nm x1* cl* async? self self-mref preset)
        (let* ((u (mctx-unit mc))
               (fields (if self (remq self x1*) x1*))
               (static? (null? fields))
-              (name (if (pair? preset) (car preset) (class-name u nm)))
+              (name (if (pair? preset) (known-class (car preset)) (class-name u nm)))
               (clauses (map clause-shape cl*))
               (variadic? (exists cdr clauses))
               (base (if variadic? variadic-type proc-type))
@@ -946,7 +1676,7 @@ See docs/license.txt. |#
            `(type ,name (base ,base) (attrs sealed)
               ,@(if static? `((field "Instance" ,name static)) (map (lambda (f) `(field ,f ,obj)) field-names))
               ,@(reverse methods)))
-         (list static? name)))
+         (list static? name "Instance")))
 
   ;; async-lambda 的子句方法（10 §3.3 D12 ~ D13）：
   ;;   帧类 名字$Frame : AsyncFrame，字段 = 自由变量（含 letrec 中的自己）+ 形参 + 体内的变量，override MoveNext；
@@ -1066,7 +1796,7 @@ See docs/license.txt. |#
                     (label ,next))))
             (loop (cdr cs) (+ i 1) (append (reverse block) code))))))
 
-  (define (clause-method u class static? cl i fields field-names self self-mref)
+  (define (clause-method u class static? cl i fields field-names self self-mref . shared)
     (nanopass-case (L3 Clause) cl
       [(clause (,x* ...) ,x ,body)
        (let* ((start (string->symbol "start"))
@@ -1077,10 +1807,11 @@ See docs/license.txt. |#
              (hashtable-set! (mctx-vars mc) (car ps) (cons 'arg j))
              (loop (cdr ps) (+ j 1))))
          (for-each (lambda (f n) (hashtable-set! (mctx-vars mc) f (cons 'field n))) fields field-names)
-         (when self (hashtable-set! (mctx-vars mc) self '(self)))
+         (when self (hashtable-set! (mctx-vars mc) self (if (pair? shared) (cadr shared) '(self))))
+         (mctx-big?-set! mc (bigger-than? body big-body-nodes))
          (emit! mc `(label ,start))
          (cg body mc 'tail)
-         (finish-method mc (string-append "C" (number->string i)) (if static? '(static) '()) (objs (length params))))]))
+         (finish-method mc (string-append (if (pair? shared) (car shared) "") "C" (number->string i)) (if static? '(static) '()) (objs (length params))))]))
 
   (define (finish-method mc name attrs params)
     `(method ,name (attrs ,@attrs) (params ,@params) (ret ,obj)
@@ -1091,7 +1822,7 @@ See docs/license.txt. |#
   ;; 创建闭包：newobj 后逐个写自由变量字段
   (define (make-closure! mc c fv* self)
     (if (car c)
-        (emit! mc `(ldsfld ,(cadr c) "Instance"))
+        (load-static-proc! mc c)
         (begin
           (emit! mc `(newobj ,(cadr c) ()))
           (fill-fields! mc c fv* #f))))
@@ -1112,23 +1843,36 @@ See docs/license.txt. |#
   ;; 语法对象的 mark、rib 靠 eq? 身份工作，编码再解码的副本会破坏它们。
   (define (generate-unit forms assembly-name module-name massigned . live?)
     (let ((u (make-unit assembly-name module-name '() '() 0 (make-eq-hashtable) '() '() '() (make-eq-hashtable)
-                        (make-eq-hashtable) '() 0 massigned)))
+                        (make-eq-hashtable) '() 0 massigned (make-eq-hashtable)
+                        (if (and opt-034? (not (string=? assembly-name boot-assembly-name)) (boot-interface)) #f 'off)
+                        0 (make-eqv-hashtable))))
       ;; 1. 已知过程：库变量绑定的、无自由变量且不被再赋值的 lambda
       (for-each (lambda (f) (collect-known! u f)) forms)
+      (hashtable-clear! var-types)
+      (when opt-infer?
+        (let ((flags (loop-forms)))
+          (if (and (list? flags) (= (length flags) (length forms)))
+              (for-each (lambda (f loop?) (when loop? (infer-var-types! f))) forms flags)
+              (for-each infer-var-types! forms))))
       ;; 2. 每个顶层形式一个静态方法 Init<k>
       (let* ((inits
               (let loop ((fs forms) (k 0))
                 (if (null? fs)
                     '()
                     (cons (top-level-method u (car fs) k) (loop (cdr fs) (+ k 1))))))
+             (holders (emit-holders! u))
              (entry
               `(method "Initialize" (attrs static) (params) (ret ,obj)
                  (body
+                   ;; 直接调用了 boot 镜像中的过程：先核对正在运行的镜像就是编译时的那个（iron-034e）
+                   ,@(if (eq? (unit-boot-ref u) #t)
+                         `((ldstr ,(car (boot-interface))) (call ,boot-interface-type "Check" (,string-type) ,void-type))
+                         '())
                    ;; 预链接：先建好全部已知过程并写入字段与位置
                    ,@(apply append
                        (map (lambda (p)
-                              (let ((class (car p)) (field (cadr p)) (loc (caddr p)))
-                                `((ldsfld ,class "Instance") (stsfld ,module-name ,field)
+                              (let ((load (car p)) (field (cadr p)) (loc (caddr p)))
+                                `(,@load (stsfld ,module-name ,field)
                                   ,@(if loc
                                         `((ldconst ,(constant-index! u loc)) (castclass ,symbol-type)
                                           (ldsfld ,module-name ,field) (stfld ,symbol-type "Value"))
@@ -1145,8 +1889,7 @@ See docs/license.txt. |#
                  ,@inits
                  ,entry))
              (namespaces (unit-namespaces u)))
-        (values
-         `(lcil 1
+        (let ((lcil `(lcil 1
            (assembly ,assembly-name
              (references ,(target-core-assembly (current-target)) ,@(unit-references u))
              (entry ,module-name "Initialize"))
@@ -1159,8 +1902,9 @@ See docs/license.txt. |#
                                                      (if (canonical-gensyms) (canonicalize-encodings e) e)))
                                             (i 0))
                                    (if (null? encs) '() (cons (list i (car encs)) (loop (cdr encs) (+ i 1))))))))))
-           ,@(map (lambda (t) (fill-namespaces t namespaces)) (cons module (reverse (unit-classes u)))))
-          (reverse (unit-consts u))))))
+           ,@(map (lambda (t) (fill-namespaces t namespaces)) (cons module (reverse (unit-classes u)))))))
+          (record-interface! u)
+          (values lcil (reverse (unit-consts u)))))))
 
   (define (init-name k) (string-append "Init" (number->string k)))
 
@@ -1182,13 +1926,41 @@ See docs/license.txt. |#
            (nanopass-case (L3 Expr) e
              [(lambda ,nm (,x1* ...) ,cl* ...)
               (when (and (null? x1*) (not (hashtable-ref (unit-massigned u) x #f)))
-                (hashtable-set! (unit-known u) x (make-known (class-name u nm) (map clause-shape cl*))))]
+                (let ((k (if opt-shared?
+                             (let ((slot (shared-slot! u)))
+                               (make-known (car slot) (map clause-shape cl*) (car slot) (cdr slot)))
+                             (let ((name (class-name u nm)))
+                               (make-known name (map clause-shape cl*) name "")))))
+                  (hashtable-set! (unit-known u) x k)
+                  (unless (or (null? d) (not opt-034?)) (hashtable-set! (unit-known-loc u) s k))))]
              [(async-lambda ,nm (,x1* ...) ,cl)
               (when (and (null? x1*) (not (hashtable-ref (unit-massigned u) x #f)))
-                (hashtable-set! (unit-known u) x (make-known (class-name u nm) (list (clause-shape cl)))))]
+                (let* ((name (class-name u nm))
+                       (k (make-known name (list (clause-shape cl)) name "")))
+                  (hashtable-set! (unit-known u) x k)
+                  (unless (or (null? d) (not opt-034?)) (hashtable-set! (unit-known-loc u) s k))))]
              [else (void)]))
          x* s* e*)]
-      [else (void)]))
+      ;; compile-library 的产物（.fasl / 库 dll）：库形式包在 (list … (lambda () (library …)) …) 里（iron-034e）。
+      ;; 其中的已知过程同样登记，类名固定，别的单元可经接口文件直接调用；求值顺序不变（不预链接，见 cg 的 library）
+      [else (when opt-034?
+              (for-each (lambda (lib) (collect-known! u lib)) (nested-libraries form)))]))
+
+  ;; 只沿调用的实参与"体就是一个 library 的无参 lambda"向下找，不进入别的代码
+  (define (nested-libraries form)
+    (nanopass-case (L3 Expr) form
+      [(call ,e0 ,e* ...) (apply append (map nested-libraries e*))]
+      [(lambda ,nm (,x* ...) ,cl* ...)
+       (if (not (= (length cl*) 1))
+           '()
+       (nanopass-case (L3 Clause) (car cl*)
+         [(clause (,x1* ...) ,x ,body)
+          (if (or (pair? x1*) x)
+              '()
+              (nanopass-case (L3 Expr) body
+                [(library ,d ([,x2* ,s* ,e*] ...) ,body1) (if (null? d) '() (list body))]
+                [else '()]))]))]
+      [else '()]))
 
   (define (top-level-method u form k)
     (let ((mc (make-method-ctx u (unit-module u) #t #f #f #f)))
@@ -1201,8 +1973,9 @@ See docs/license.txt. |#
                      (k (hashtable-ref (unit-known u) x #f)))
                  (if k
                      ;; 已知过程：类在这里生成，赋值由入口的预链接完成
-                     (let ((c (lambda-class! e mc #f x (known-class k))))
-                       (unit-prelink-set! u (cons (list (cadr c) field (if program? #f s)) (unit-prelink u))))
+                     (let ((c (lambda-class! e mc #f x k)))
+                       (unit-prelink-set! u (cons (list (with-buffer mc (lambda () (load-static-proc! mc c))) field (if program? #f s))
+                                                  (unit-prelink u))))
                      (begin
                        (cg (named-lambda e) mc 'value)
                        (emit! mc `(stsfld ,(unit-module u) ,field))

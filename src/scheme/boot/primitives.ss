@@ -16,6 +16,12 @@
     (overload "IronScheme.Core.AnnotationPrimitives" "IsAnnotation" 1 #f (pure unsafe) #f))
   (primitive $application-directory
     (overload "IronScheme.Core.HostPrimitives" "ApplicationDirectory" 0 #f (unsafe) #f))
+  (primitive $as-fixnum
+    (overload "IronScheme.Core.TypedPrimitives" "AsFixnum" 1 #f (unsafe) #f))
+  (primitive $as-flonum
+    (overload "IronScheme.Core.TypedPrimitives" "AsFlonum" 1 #f (unsafe) #f))
+  (primitive $assembly-file-id
+    (overload "IronScheme.Core.BootInterface" "AssemblyFileId" 1 #f (unsafe) #f))
   (primitive $bignum->bytes
     (overload "IronScheme.Core.HostPrimitives" "BignumToBytes" 1 #f (pure unsafe) #f))
   (primitive $bignum->fixnum
@@ -66,6 +72,10 @@
     (overload "IronScheme.Core.PortPrimitives" "IsBinaryPort" 1 #f (pure unsafe) #f))
   (primitive $boolean?
     (overload "IronScheme.Core.HostPrimitives" "IsBoolean" 1 #f (pure unsafe) #f))
+  (primitive $boot-image-id
+    (overload "IronScheme.Core.BootInterface" "ImageId" 0 #f (unsafe) #f))
+  (primitive $boot-interface-file
+    (overload "IronScheme.Core.BootInterface" "InterfaceFile" 0 #f (unsafe) #f))
   (primitive $buffered-port?
     (overload "IronScheme.Core.PortPrimitives" "IsBufferedPort" 1 #f (pure unsafe) #f))
   (primitive $bytes->bignum
@@ -396,6 +406,8 @@
     (overload "IronScheme.Core.HostPrimitives" "IntegerToChar" 1 #f (pure unsafe) #f))
   (primitive $latin-1-codec
     (overload "IronScheme.Core.PortPrimitives" "Latin1Codec" 0 #f (unsafe) #f))
+  (primitive $library-interface-files
+    (overload "IronScheme.Core.BootInterface" "LibraryInterfaceFiles" 0 #f (unsafe) #f))
   (primitive $list->typed-vector
     (overload "IronScheme.Core.HostPrimitives" "ListToTypedVector" 2 #f (unsafe) #f))
   (primitive $list->vector
@@ -570,8 +582,14 @@
     (overload "IronScheme.Core.HostPrimitives" "IsRcd" 1 #f (pure unsafe) #f))
   (primitive $real-compare
     (overload "IronScheme.Core.HostPrimitives" "RealCompare" 2 #f (pure unsafe) #f))
+  (primitive $record-field-ref
+    (overload "IronScheme.Core.Records" "RecordFieldRef" 3 #f (unsafe) #f))
+  (primitive $record-field-set!
+    (overload "IronScheme.Core.Records" "RecordFieldSet" 4 #f (unsafe) #f))
   (primitive $record-fields
     (overload "IronScheme.Core.HostPrimitives" "RecordFields" 1 #f (pure unsafe) #f))
+  (primitive $record-instance?
+    (overload "IronScheme.Core.Records" "RecordInstance" 2 #f (unsafe) #f))
   (primitive $record-rtd
     (overload "IronScheme.Core.HostPrimitives" "RecordRtd" 1 #f (pure unsafe) #f))
   (primitive $record?
@@ -710,6 +728,12 @@
     (overload "IronScheme.Core.PortPrimitives" "Utf16Codec" 0 #f (unsafe) #f))
   (primitive $utf-8-codec
     (overload "IronScheme.Core.PortPrimitives" "Utf8Codec" 0 #f (unsafe) #f))
+  (primitive $values-count
+    (overload "IronScheme.Core.ValuesPrimitives" "Count" 1 #f (pure unsafe) #f))
+  (primitive $values-ref
+    (overload "IronScheme.Core.ValuesPrimitives" "Ref" 2 #f (pure unsafe) #f))
+  (primitive $values-tail
+    (overload "IronScheme.Core.ValuesPrimitives" "Tail" 2 #f (pure unsafe) #f))
   (primitive $valuetype-vector?
     (overload "IronScheme.Core.HostPrimitives" "IsValueTypeVector" 1 #f (pure unsafe) #f))
   (primitive $vector->list

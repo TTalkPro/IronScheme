@@ -51,6 +51,8 @@ See docs/license.txt. |#
         (symbol . "IronScheme.Core.Symbol")
         (rt . "IronScheme.Core.RT")
         (calls . "IronScheme.Core.Calls")
+        (inline-arith . "IronScheme.Core.InlineArith")
+        (boot-interface . "IronScheme.Core.BootInterface")
         (unspecified . "IronScheme.Core.Unspecified")
         (async-frame . "IronScheme.Core.AsyncFrame")
         (escape-continuation . "IronScheme.Core.EscapeContinuation")

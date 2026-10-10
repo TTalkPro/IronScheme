@@ -38,6 +38,7 @@
     <BootImageInput Include="$(SchemeDir)\boot\boot-seed.core;$(SchemeDir)\boot\ironscheme-buildscript-nano.sps;$(SchemeDir)\boot\primitives.ss" />
     <BootImageInput Include="$(SchemeDir)\boot\**\*.sls" />
     <BootImageInput Include="$(SchemeDir)\lib\ironscheme\**\*.sls;$(SchemeDir)\lib\ironscheme\**\*.ss" />
+    <BootImageInput Include="$(SchemeDir)\lib\nanopass\**\*.sls" />
     <BootImageInput Include="$(SchemeDir)\lib\nanopass-framework-scheme\nanopass\**\*.ss;$(SchemeDir)\lib\nanopass-framework-scheme\nanopass\**\*.sls;$(SchemeDir)\lib\nanopass-framework-scheme\nanopass.ss" />
     <BootImageInput Include="$(Stage0Dir)\stage0.dll;$(Stage0Dir)\IronScheme.Core.dll;$(Stage0Dir)\IronScheme.Emit.dll" />
   </ItemGroup>
@@ -45,6 +46,8 @@
   <!-- 运行时文件：boot 镜像与 lib/ironscheme（(ironscheme clr) 等不在 boot 中的系统库源码），随引用传递到应用的输出目录 -->
   <ItemGroup>
     <None Include="$(BootImage)" Link="ironscheme.boot.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <!-- 接口文件（iron-034e）：其它单元据此直接调用镜像中的已知过程；缺了只是退回经位置的调用 -->
+    <None Include="$(BootImageDir)\ironscheme.boot.ifc" Link="ironscheme.boot.ifc" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <None Include="$(SchemeDir)\lib\ironscheme\**\*" Link="lib\ironscheme\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 

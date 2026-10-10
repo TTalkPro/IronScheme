@@ -1,15 +1,7 @@
-(call
-  (letrec ((loop
-             (lambda "loop"
-               (clause
-                 (i acc)
-                 #f
-                 (if (primcall $fx=? i '10)
-                   acc
-                   (call
-                     loop
-                     (primcall $fx+ i '1)
-                     (primcall cons i acc)))))))
-    loop)
-  '0
-  '())
+(label
+  loop
+  (i acc)
+  (jump loop '0 '())
+  (if (primcall $fx=? i '10)
+    acc
+    (jump loop (primcall $fx+ i '1) (primcall cons i acc))))

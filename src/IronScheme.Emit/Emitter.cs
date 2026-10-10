@@ -179,6 +179,18 @@ public sealed partial class LcilEmitter
         if (_types.TryGetValue(name, out var tb)) return tb;
         if (s_staticTypes.TryGetValue(name, out var cached)) return cached;
         var t = Type.GetType(name);
+        if (t == null && QualifiedSplit(name) is int comma)
+        {
+            // "类型名, 程序集名"（iron-034e：直接引用 boot 镜像或已加载的库产物中的类）。Type.GetType 经运行时的解析
+            // （ModuleLoader 登记的程序集）找不到时，按简单名在已加载的程序集中找
+            string asmName = name.Substring(comma + 1).Trim(), typeName = name.Substring(0, comma).Trim();
+            foreach (var a in _references.Concat(AppDomain.CurrentDomain.GetAssemblies()))
+            {
+                if (a.IsDynamic || a.GetName().Name != asmName) continue;
+                var u = a.GetType(typeName);
+                if (u != null && (u.IsPublic || u.IsNestedPublic)) return u;
+            }
+        }
         if (t == null)
             foreach (var a in _references.Concat(AppDomain.CurrentDomain.GetAssemblies()))
             {
@@ -188,8 +200,24 @@ public sealed partial class LcilEmitter
             }
         if (t == null) throw Err(pos, "type not found: " + name);
         // 只缓存非动态程序集中的类型：已加载的程序集不会卸载，结果不变；每次 eval 都新增动态程序集，不缓存时查找越来越慢（iron-033）
-        if (!t.Assembly.IsDynamic) s_staticTypes[name] = t;
+        // 库产物（.fasl / 库 dll）可能被重新加载出同名的新副本，运行时按最新的解析：程序集限定名只缓存 boot 的
+        if (!t.Assembly.IsDynamic && (QualifiedSplit(name) == null || name.EndsWith(", ironscheme.boot", StringComparison.Ordinal)))
+            s_staticTypes[name] = t;
         return t;
+    }
+
+    /// <summary>方括号外的第一个逗号的位置（程序集限定名），没有时为 null。</summary>
+    private static int? QualifiedSplit(string name)
+    {
+        int depth = 0;
+        for (int i = 0; i < name.Length; i++)
+            switch (name[i])
+            {
+                case '[': depth++; break;
+                case ']': depth--; break;
+                case ',' when depth == 0: return i;
+            }
+        return null;
     }
 
     private Type[] Ts(IEnumerable<string> names, SNode pos) => names.Select(n => T(n, pos)).ToArray();

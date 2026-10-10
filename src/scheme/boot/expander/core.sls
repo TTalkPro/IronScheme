@@ -2111,15 +2111,19 @@
                (define ,foo-rcd ,foo-rcd-code)
                (define-syntax ,foo 
                  (list '$rtd (syntax ,foo-rtd) (syntax ,foo-rcd)))
-               (define ,foo? (record-predicate ,foo-rtd))
+               ;; 谓词、访问器、修改器展开为 lambda（iron-034 D6）：库中成为已知过程，调用点直接调用其静态方法；
+               ;; 原语的检查与报错与 record-predicate / record-accessor / record-mutator 返回的过程相同。
+               ;; 形参用固定名字（经 bless 成为卫生的标识符；体内没有用户代码）：不多调 gensym，
+               ;; 否则 gensym 计数与种子展开器的不同，自举不动点里规范 gensym 名会错开
+               (define ,foo? (lambda (obj) ($record-instance? ,foo-rtd obj)))
                (define ,make-foo (record-constructor ,foo-rcd))
                ,@(map 
                    (lambda (foo-x idx)
-                     `(define ,foo-x (record-accessor ,foo-rtd ,idx)))
+                     `(define ,foo-x (lambda (obj) ($record-field-ref ,foo-rtd ,idx obj))))
                    foo-x* idx*)
                ,@(map 
                    (lambda (set-foo-x! idx)
-                     `(define ,set-foo-x! (record-mutator ,foo-rtd ,idx)))
+                     `(define ,set-foo-x! (lambda (obj val) ($record-field-set! ,foo-rtd ,idx obj val))))
                    set-foo-x!* set-foo-idx*)))))
       (define (verify-clauses x cls*)
         (define valid-kwds 

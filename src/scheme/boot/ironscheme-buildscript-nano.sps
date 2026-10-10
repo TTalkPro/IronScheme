@@ -46,7 +46,7 @@
   (only (ironscheme core) format)
   (only (ironscheme) time-it include import library)
   (only (ironscheme clr) clr-static-call clr-static-prop-get)
-  (only (ironscheme compiler) compile-forms->lcil compile->lcil-text-from-sexpr canonical-gensyms)
+  (only (ironscheme compiler) compile-forms->lcil compile->lcil-text-from-sexpr canonical-gensyms unit-interface)
   (only (ironscheme) ungensym symbol-bound?)
   (prefix (only (rnrs eval) eval environment) running:))
 
@@ -1571,6 +1571,9 @@
     (record-constructor                         i r rp)
     (record-mutator                             i r rp)
     (record-predicate                           i r rp)
+    ($record-field-ref                          $boot)
+    ($record-field-set!                         $boot)
+    ($record-instance?                          $boot)
     (record-type-descriptor?                    i r rp)
     ;;;
     (bound-identifier=?                         i r sc)
@@ -2124,6 +2127,17 @@
               (let ((t3 (ticks)))
                 (clr-static-call IronScheme.Emit.LcilEmitter (Save String String String Boolean) text lcil-path dll-path #f)
                 (report "emit" t3))
+              ;; 接口文件（iron-034e）：镜像 id 与导出的已知过程，其它单元据此直接调用镜像中的类
+              (let ((ifc-path (string-append output-dir "/ironscheme.boot.ifc"))
+                    (entries (unit-interface)))
+                (when (file-exists? ifc-path) (delete-file ifc-path))
+                (call-with-output-file ifc-path
+                  (lambda (p)
+                    (put-string p "(ironscheme-interface 1 ")
+                    (write (clr-static-call IronScheme.Core.BootInterface AssemblyFileId dll-path) p)
+                    (for-each (lambda (e) (newline p) (write e p)) entries)
+                    (put-string p ")\n")))
+                (display "interface: ") (display (length entries)) (display " procedures -> ") (display ifc-path) (newline))
               (display "forms: ") (display (length forms))
               (display "; Lcil: ") (display (string-length text)) (display " chars -> ") (display lcil-path) (newline)
               (display "boot image: ") (display dll-path) (newline)

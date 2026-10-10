@@ -1520,6 +1520,9 @@
     (record-constructor                         i r rp)
     (record-mutator                             i r rp)
     (record-predicate                           i r rp)
+    ($record-field-ref                          $boot)
+    ($record-field-set!                         $boot)
+    ($record-instance?                          $boot)
     (record-type-descriptor?                    i r rp)
     ;;;
     (bound-identifier=?                         i r sc)

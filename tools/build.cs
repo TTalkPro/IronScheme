@@ -111,10 +111,13 @@ void ILVerify(string dll)
     if (!File.Exists(tool)) throw new CommandFailed($"ilverify not found at {tool}: dotnet tool install -g dotnet-ilverify (or set ILVERIFY)");
     // 本程序运行在 .NET 10 上，其运行时目录就是要引用的框架程序集
     string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
+    // 编译产物可能直接调用 boot 镜像中的过程（iron-034e）：校验它们时引用 boot；校验 boot 自己时不重复
+    string boot = Path.Combine(schemeDir, "boot", "ironscheme.boot.dll");
+    string[] bootRef = Path.GetFileName(dll) == "ironscheme.boot.dll" || !File.Exists(boot) ? [] : ["-r", boot];
     Run(tool, [dll,
              "-r", Path.Combine(runtimeDir, "*.dll"),
              "-r", Bin("IronScheme.Core", "IronScheme.Core.dll"),
-             "-r", Bin("IronScheme.Emit", "IronScheme.Emit.dll")]);
+             "-r", Bin("IronScheme.Emit", "IronScheme.Emit.dll"), ..bootRef]);
 }
 
 void Publish(string[] a)
